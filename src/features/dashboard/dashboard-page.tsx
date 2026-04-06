@@ -83,6 +83,10 @@ export function DashboardPage() {
     : session?.user.email ?? 'Signed in'
   const isLoadingAccounts =
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
+  const hasPairingDetails = Boolean(pairingError || pairingCommand)
+  const hasAccountsDetails = Boolean(
+    accountsQuery.error || isLoadingAccounts || accounts.length > 0,
+  )
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -347,7 +351,9 @@ export function DashboardPage() {
                   ) : null}
 
                   <Card>
-                    <CardHeader className="border-b border-border">
+                    <CardHeader
+                      className={hasPairingDetails ? 'border-b border-border' : undefined}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <CardTitle>Connect Codex</CardTitle>
                         <Button
@@ -362,55 +368,58 @@ export function DashboardPage() {
                         </Button>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    {hasPairingDetails ? (
+                      <CardContent className="space-y-4">
+                        {pairingError ? (
+                          <InlineMessage tone="error">{pairingError}</InlineMessage>
+                        ) : null}
 
-                      {pairingError ? (
-                        <InlineMessage tone="error">{pairingError}</InlineMessage>
-                      ) : null}
-
-                      {pairingCommand ? (
-                        <div className="space-y-3">
-                          <label className="block text-sm font-medium text-foreground">
-                            Run this on the local machine
-                          </label>
-                          <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                            {pairingCommand.command}
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs text-muted-foreground">
-                              Expires {formatTimestamp(pairingCommand.expiresAt)}
-                            </p>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void handleCopyCommand()}
-                            >
-                              <Copy className="mr-2 size-3.5" />
-                              Copy
-                            </Button>
-                          </div>
-                          {copyNotice ? (
-                            <p className="text-xs text-muted-foreground">
-                              {copyNotice}
-                            </p>
-                          ) : null}
-                          <div className="space-y-2 border-t border-border pt-3">
+                        {pairingCommand ? (
+                          <div className="space-y-3">
                             <label className="block text-sm font-medium text-foreground">
-                              Keep this running for live updates
+                              Run this on the local machine
                             </label>
                             <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                              {pairingCommand.syncCommand}
+                              {pairingCommand.command}
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs text-muted-foreground">
+                                Expires {formatTimestamp(pairingCommand.expiresAt)}
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleCopyCommand()}
+                              >
+                                <Copy className="mr-2 size-3.5" />
+                                Copy
+                              </Button>
+                            </div>
+                            {copyNotice ? (
+                              <p className="text-xs text-muted-foreground">
+                                {copyNotice}
+                              </p>
+                            ) : null}
+                            <div className="space-y-2 border-t border-border pt-3">
+                              <label className="block text-sm font-medium text-foreground">
+                                Keep this running for live updates
+                              </label>
+                              <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                                {pairingCommand.syncCommand}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ) : null}
-                    </CardContent>
+                        ) : null}
+                      </CardContent>
+                    ) : null}
                   </Card>
 
                 </div>
 
                 <Card className="min-w-0">
-                  <CardHeader className="border-b border-border">
+                  <CardHeader
+                    className={hasAccountsDetails ? 'border-b border-border' : undefined}
+                  >
                     <div className="flex flex-wrap items-end justify-between gap-3">
                       <div className="min-w-0">
                         <CardTitle>Your synced accounts</CardTitle>
@@ -437,25 +446,27 @@ export function DashboardPage() {
                       </Button>
                     </div>
                   </CardHeader>
-                  <CardContent className="px-0 py-0">
-                    {accountsQuery.error ? (
-                      <ErrorBanner message={accountsQuery.error.message} />
-                    ) : null}
-                    {isLoadingAccounts ? <LoadingRows /> : null}
-                    {!isLoadingAccounts && accounts.length === 0 ? (
-                      <EmptyState />
-                    ) : null}
-                    {accounts.length > 0 ? (
-                      <>
-                        <div className="md:hidden">
-                          <AccountSummaryList accounts={accounts} />
-                        </div>
-                        <div className="hidden md:block">
-                          <AccountTable accounts={accounts} />
-                        </div>
-                      </>
-                    ) : null}
-                  </CardContent>
+                  {hasAccountsDetails ? (
+                    <CardContent className="px-0 py-0">
+                      {accountsQuery.error ? (
+                        <ErrorBanner message={accountsQuery.error.message} />
+                      ) : null}
+                      {isLoadingAccounts ? <LoadingRows /> : null}
+                      {!isLoadingAccounts && accounts.length === 0 ? (
+                        <EmptyState />
+                      ) : null}
+                      {accounts.length > 0 ? (
+                        <>
+                          <div className="md:hidden">
+                            <AccountSummaryList accounts={accounts} />
+                          </div>
+                          <div className="hidden md:block">
+                            <AccountTable accounts={accounts} />
+                          </div>
+                        </>
+                      ) : null}
+                    </CardContent>
+                  ) : null}
                 </Card>
               </div>
             </div>
@@ -596,17 +607,7 @@ function LoadingRows() {
 }
 
 function EmptyState() {
-  return (
-    <div className="px-4 py-8 sm:px-5">
-      <h3 className="text-base font-semibold text-foreground">
-        No Codex snapshots yet
-      </h3>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-        Generate the pairing command, run it on the machine that already has
-        Codex, and the account list will populate after the first sync.
-      </p>
-    </div>
-  )
+  return null
 }
 
 function getAccountIdentityLines(account: DashboardAccountRow) {
