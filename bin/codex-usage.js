@@ -9,6 +9,7 @@ import process from 'node:process'
 
 const DEFAULT_POLL_MS = 60_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
+const NPX_COMMAND = 'npx codex-usage-dashboard@latest'
 
 class StdioCodexClient {
   constructor({ codexHome }) {
@@ -197,6 +198,11 @@ async function main() {
     return
   }
 
+  if (command === 'connect') {
+    await runConnectCommand(args)
+    return
+  }
+
   if (command === 'sync') {
     await runSyncCommand(args)
     return
@@ -236,7 +242,86 @@ async function runPairCommand(args) {
     }
 
     const config = {
+      authMode: 'website-paired',
       codexHome,
+      deviceId: payload.deviceId,
+      deviceToken: payload.deviceToken,
+      dashboardOrigin: new URL(pairUrl).origin,
+      label: device.label,
+      pollMs: payload.pollMs ?? DEFAULT_POLL_MS,
+      syncUrl: payload.syncUrl,
+    }
+
+    await writeConfig(codexHome, config)
+    console.log('Pairing complete.')
+    console.log(`Config saved to ${resolveConfigPath(codexHome)}`)
+    console.log(
+      `Next: run \`${NPX_COMMAND} sync --watch\` on this machine for live updates.`,
+    )
+
+    if (args.options.watch) {
+      await runWatchLoop(client, config, args)
+    }
+  } finally {
+    await client.close()
+  }
+}
+
+async function runConnectCommand(args) {
+  const codexHome = resolveCodexHome(args.options['codex-home'])
+  const existingConfig = await readConfig(codexHome)
+  const client = new StdioCodexClient({ codexHome })
+
+  try {
+    await client.connect()
+
+    if (existingConfig) {
+      const dashboardUrl = await resolveExistingDashboardUrl(existingConfig, args)
+
+      if (dashboardUrl) {
+        await openDashboard(dashboardUrl)
+      }
+
+      await syncOnce(client, existingConfig, args)
+      console.log('Dashboard opened.')
+
+      if (args.options.watch) {
+        await runWatchLoop(client, existingConfig, args)
+      }
+
+      return
+    }
+
+    const siteOrigin = resolveSiteOrigin(args.options.site)
+    if (!siteOrigin) {
+      throw new Error(
+        'Pass --site <url> the first time you run connect, or set CODEX_USAGE_SITE_URL.',
+      )
+    }
+
+    const snapshot = await readSnapshot(client, true)
+    const device = buildDevicePayload(args, codexHome)
+    const response = await fetch(new URL('/api/connect/start', siteOrigin), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        accountState: snapshot.accountState,
+        device,
+        rateLimits: snapshot.rateLimits,
+      }),
+    })
+
+    const payload = await parseJsonResponse(response)
+    if (!response.ok) {
+      throw new Error(payload.error ?? 'Unable to connect this machine.')
+    }
+
+    const config = {
+      authMode: 'guest-link',
+      codexHome,
+      dashboardOrigin: siteOrigin,
       deviceId: payload.deviceId,
       deviceToken: payload.deviceToken,
       label: device.label,
@@ -245,12 +330,11 @@ async function runPairCommand(args) {
     }
 
     await writeConfig(codexHome, config)
-
-    const cliUrl = new URL('/api/cli', pairUrl).toString()
-    console.log('Pairing complete.')
+    await openDashboard(payload.dashboardUrl)
+    console.log('Dashboard opened.')
     console.log(`Config saved to ${resolveConfigPath(codexHome)}`)
     console.log(
-      `Next: run \`curl -fsSL "${cliUrl}" | node - sync --watch\` on this machine for live updates.`,
+      `Next: rerun \`${NPX_COMMAND} connect --site "${siteOrigin}"\` to reopen this dashboard, or \`${NPX_COMMAND} sync --watch\` for live updates only.`,
     )
 
     if (args.options.watch) {
@@ -266,7 +350,7 @@ async function runSyncCommand(args) {
   const config = await readConfig(codexHome)
   if (!config) {
     throw new Error(
-      'No pairing config found. Pair this machine from the website first.',
+      'No pairing config found. Run `connect` or pair this machine from the website first.',
     )
   }
 
@@ -369,6 +453,34 @@ async function syncOnce(client, config, args) {
   }
 }
 
+async function resolveExistingDashboardUrl(config, args) {
+  if (config.authMode === 'guest-link') {
+    const response = await fetch(new URL('/api/connect/open', config.syncUrl), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        deviceToken: config.deviceToken,
+      }),
+    })
+
+    const payload = await parseJsonResponse(response)
+    if (!response.ok) {
+      throw new Error(payload.error ?? 'Unable to open the dashboard.')
+    }
+
+    return payload.dashboardUrl ?? null
+  }
+
+  const siteOrigin =
+    resolveSiteOrigin(args.options.site) ??
+    config.dashboardOrigin ??
+    new URL(config.syncUrl).origin
+
+  return siteOrigin || null
+}
+
 async function readSnapshot(client, failWhenLoggedOut) {
   const accountState = await client.request('account/read', {
     refreshToken: false,
@@ -399,6 +511,14 @@ function buildDevicePayload(args, codexHome, fallbackLabel) {
       node: process.version,
       platform: process.platform,
     },
+  }
+}
+
+async function openDashboard(url) {
+  try {
+    await openInBrowser(url)
+  } catch {
+    console.log(`Open this URL in your browser: ${url}`)
   }
 }
 
@@ -433,6 +553,15 @@ function parseArgs(rawArgs) {
   return { options, positionals }
 }
 
+function resolveSiteOrigin(configuredValue) {
+  const value = configuredValue ?? process.env.CODEX_USAGE_SITE_URL
+  if (!value) {
+    return null
+  }
+
+  return new URL(value).origin
+}
+
 function resolveCodexHome(configuredValue) {
   const home = configuredValue ?? process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex')
 
@@ -445,6 +574,28 @@ function resolveCodexHome(configuredValue) {
 
 function resolveConfigPath(codexHome) {
   return path.join(codexHome, CONFIG_FILE_NAME)
+}
+
+function openInBrowser(url) {
+  return new Promise((resolve, reject) => {
+    const target =
+      process.platform === 'darwin'
+        ? { args: [url], command: 'open' }
+        : process.platform === 'win32'
+          ? { args: ['/c', 'start', '', url], command: 'cmd' }
+          : { args: [url], command: 'xdg-open' }
+
+    const child = spawn(target.command, target.args, {
+      detached: true,
+      stdio: 'ignore',
+    })
+
+    child.once('error', reject)
+    child.once('spawn', () => {
+      child.unref()
+      resolve()
+    })
+  })
 }
 
 async function writeConfig(codexHome, config) {
@@ -499,6 +650,7 @@ function waitForTermination(cleanup) {
 
 function printUsage() {
   console.log('Usage:')
+  console.log('  codex-usage connect [--site <url>] [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
 }

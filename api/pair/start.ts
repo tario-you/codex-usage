@@ -1,4 +1,5 @@
 import { requireUser } from '../_lib/auth'
+import { buildPairCommand, buildSyncCommand } from '../../src/shared/cli'
 import { errorResponse, jsonResponse } from '../_lib/http'
 import { createOpaqueToken, hashToken } from '../_lib/security'
 import { serviceRoleSupabase } from '../_lib/supabase'
@@ -11,7 +12,6 @@ export async function POST(request: Request) {
     const pairToken = createOpaqueToken()
     const expiresAt = new Date(Date.now() + PAIRING_TTL_MS).toISOString()
     const origin = new URL(request.url).origin
-    const cliUrl = `${origin}/api/cli`
     const pairUrl = `${origin}/api/pair/complete?token=${encodeURIComponent(pairToken)}`
 
     const { error } = await serviceRoleSupabase
@@ -28,10 +28,10 @@ export async function POST(request: Request) {
     }
 
     return jsonResponse({
-      command: `curl -fsSL "${cliUrl}" | node - pair "${pairUrl}"`,
+      command: buildPairCommand(pairUrl),
       expiresAt,
       pairUrl,
-      syncCommand: `curl -fsSL "${cliUrl}" | node - sync --watch`,
+      syncCommand: buildSyncCommand(),
     })
   } catch (error) {
     const message =

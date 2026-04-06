@@ -1,0 +1,65 @@
+import { z } from 'zod'
+
+import { buildConnectedDashboardUrl } from '../../src/shared/cli'
+import { errorResponse, jsonResponse } from '../_lib/http'
+import { hashToken } from '../_lib/security'
+import { serviceRoleSupabase } from '../_lib/supabase'
+
+const connectOpenBodySchema = z.object({
+  deviceToken: z.string().min(1),
+})
+
+export async function POST(request: Request) {
+  try {
+    const url = new URL(request.url)
+    const rawBody = await request.json().catch(() => null)
+    const body = connectOpenBodySchema.parse(rawBody)
+
+    const { data: device, error: deviceError } = await serviceRoleSupabase
+      .from('codex_devices')
+      .select('owner_user_id')
+      .eq('device_token_hash', hashToken(body.deviceToken))
+      .is('revoked_at', null)
+      .maybeSingle()
+
+    if (deviceError) {
+      throw deviceError
+    }
+
+    if (!device) {
+      return errorResponse('This device is no longer authorized.', 401)
+    }
+
+    const { data: userData, error: userError } =
+      await serviceRoleSupabase.auth.admin.getUserById(device.owner_user_id)
+
+    if (userError || !userData.user?.email) {
+      throw userError ?? new Error('Unable to find a dashboard login for this device.')
+    }
+
+    const { data: linkData, error: linkError } =
+      await serviceRoleSupabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: userData.user.email,
+        options: {
+          redirectTo: buildConnectedDashboardUrl(url.origin),
+        },
+      })
+
+    if (linkError || !linkData.properties?.action_link) {
+      throw linkError ?? new Error('Unable to create a dashboard login link.')
+    }
+
+    return jsonResponse({
+      dashboardUrl: linkData.properties.action_link,
+    })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return errorResponse(error.issues.map((issue) => issue.message).join('; '))
+    }
+
+    const message =
+      error instanceof Error ? error.message : 'Unable to open the dashboard.'
+    return errorResponse(message, 400)
+  }
+}

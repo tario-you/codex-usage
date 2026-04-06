@@ -1,6 +1,6 @@
 # Codex Usage Dashboard
 
-Multi-user Codex usage tracking with a Vercel-hosted dashboard, Supabase Auth, and a one-line CLI pairing flow.
+Multi-user Codex usage tracking with a Vercel-hosted dashboard, Supabase Auth, and both direct `npx` connect and website pairing flows.
 
 ## Stack
 
@@ -13,9 +13,9 @@ Multi-user Codex usage tracking with a Vercel-hosted dashboard, Supabase Auth, a
 
 This repo no longer treats the dashboard as a public read-only board.
 
-- Users sign in on the website first.
-- The website creates a short-lived pairing command.
-- The local machine runs one CLI command against its existing Codex install.
+- Users can start from the website with Google, or from the terminal with a one-line `npx` command.
+- The direct terminal path provisions a dashboard session, opens the browser, and stores the local sync token under `CODEX_HOME`.
+- The website pairing flow is still available and now emits `npx` commands instead of `curl | node`.
 - Vercel receives sync payloads and writes them to Supabase with the service-role key.
 - Row-level security keeps each signed-in user scoped to their own accounts and snapshots.
 
@@ -39,11 +39,32 @@ The Vite dev server now serves the local pairing and sync API routes under `/api
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-4. Deploy to Vercel.
+4. In Supabase Auth settings, enable `Manual linking` if you want guest dashboard sessions to upgrade into Google later.
+5. If you want the website-first flow, enable the Google provider in Supabase Auth.
+6. Deploy to Vercel.
 
 `npm run setup:hosted` now writes the local env files and pushes any pending hosted Supabase migrations.
 
-## Pairing flow
+## Direct connect flow
+
+Run this on any machine that already has Codex installed:
+
+```bash
+npx codex-usage-dashboard@latest connect --site "https://your-site.vercel.app"
+```
+
+That command:
+
+- starts a local `codex app-server`
+- reads the current Codex account and rate limits
+- provisions a dashboard owner session without requiring Google first
+- opens the hosted dashboard in the browser
+- stores the device token under `CODEX_HOME` in `codex-usage-sync.json`
+- pushes the first snapshot to the dashboard
+
+If the same machine is already connected, rerun the same command to reopen the dashboard and refresh the local snapshot.
+
+## Website pairing flow
 
 1. Sign in on the website.
 2. Click `Create pairing command`.
@@ -52,29 +73,22 @@ The Vite dev server now serves the local pairing and sync API routes under `/api
 The generated command looks like:
 
 ```bash
-curl -fsSL "https://your-site.vercel.app/api/cli" | node - pair "https://your-site.vercel.app/api/pair/complete?token=..."
+npx codex-usage-dashboard@latest pair "https://your-site.vercel.app/api/pair/complete?token=..."
 ```
-
-That command:
-
-- starts a local `codex app-server`
-- reads the current Codex account and rate limits
-- exchanges the pairing token for a device token
-- stores the device token under `CODEX_HOME` in `codex-usage-sync.json`
-- pushes the first snapshot to the dashboard
 
 ## Live sync after pairing
 
 To keep syncing from that machine:
 
 ```bash
-curl -fsSL "https://your-site.vercel.app/api/cli" | node - sync --watch
+npx codex-usage-dashboard@latest sync --watch
 ```
 
 The saved device token is read from the same Codex home that the CLI uses.
 
 ## Dev scripts
 
+- `npm run connect -- --site "<site-url>"`: local version of the direct connect command
 - `npm run pair -- "<pair-url>"`: local version of the hosted pairing command
 - `npm run sync -- --watch`: local version of the hosted sync command
 - `npm run collector`: legacy single-operator collector script

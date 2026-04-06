@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
   AlertTriangle,
   Copy,
@@ -33,6 +34,10 @@ import {
 } from '@/lib/dashboard'
 import { clientEnvError } from '@/lib/env'
 import { supabase } from '@/lib/supabase'
+import {
+  buildConnectCommand,
+  DASHBOARD_CONNECTED_QUERY_KEY,
+} from '@/shared/cli'
 import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
 
 interface PairingCommandState {
@@ -47,11 +52,13 @@ export function DashboardPage() {
   const [loginError, setLoginError] = useState<string | null>(null)
   const [isStartingGoogleLogin, setIsStartingGoogleLogin] = useState(false)
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false)
+  const [terminalCopyNotice, setTerminalCopyNotice] = useState<string | null>(null)
   const [pairingCommand, setPairingCommand] = useState<PairingCommandState | null>(
     null,
   )
   const [pairingError, setPairingError] = useState<string | null>(null)
   const [copyNotice, setCopyNotice] = useState<string | null>(null)
+  const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
 
   const accountsQuery = useQuery({
     ...dashboardAccountsQueryOptions(session?.user.id ?? 'guest'),
@@ -60,8 +67,31 @@ export function DashboardPage() {
 
   const accounts = accountsQuery.data ?? []
   const summary = buildSummary(accounts)
+  const connectCommand =
+    typeof window === 'undefined'
+      ? ''
+      : buildConnectCommand(window.location.origin)
+  const googleIdentityEmail = getProviderEmail(session, 'google')
+  const isGuestSession = getIsGuestSession(session)
+  const canLinkGoogle = Boolean(session) && isGuestSession && !googleIdentityEmail
+  const sessionLabel = isGuestSession
+    ? googleIdentityEmail ?? 'Local dashboard session'
+    : session?.user.email ?? 'Signed in'
   const isLoadingAccounts =
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has(DASHBOARD_CONNECTED_QUERY_KEY)) {
+      return
+    }
+
+    setConnectedNotice(
+      'This browser is connected to the dashboard for the current local Codex machine.',
+    )
+    url.searchParams.delete(DASHBOARD_CONNECTED_QUERY_KEY)
+    window.history.replaceState({}, '', url.toString())
+  }, [])
 
   async function handleGoogleSignIn() {
     setLoginError(null)
@@ -76,13 +106,20 @@ export function DashboardPage() {
 
     setIsStartingGoogleLogin(true)
 
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-        skipBrowserRedirect: true,
-      },
-    })
+    const authOptions = {
+      redirectTo: window.location.origin,
+      skipBrowserRedirect: true,
+    }
+
+    const { data, error } = isGuestSession
+      ? await supabase.auth.linkIdentity({
+          provider: 'google',
+          options: authOptions,
+        })
+      : await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: authOptions,
+        })
 
     setIsStartingGoogleLogin(false)
 
@@ -93,10 +130,15 @@ export function DashboardPage() {
       const providerDisabled =
         error.message.includes('Unsupported provider') ||
         error.message.includes('provider is not enabled')
+      const linkingDisabled =
+        error.message.includes('Manual account linking') ||
+        error.message.includes('manual linking')
 
       setLoginError(
         providerDisabled
           ? `Google sign-in is not enabled on the Supabase project backing this app (${currentSupabaseHost}).`
+          : linkingDisabled
+            ? `Manual account linking is not enabled on the Supabase project backing this app (${currentSupabaseHost}).`
           : error.message,
       )
       return
@@ -114,6 +156,8 @@ export function DashboardPage() {
     setPairingCommand(null)
     setPairingError(null)
     setCopyNotice(null)
+    setConnectedNotice(null)
+    setTerminalCopyNotice(null)
 
     if (!supabase) {
       return
@@ -179,6 +223,15 @@ export function DashboardPage() {
     }
   }
 
+  async function handleCopyTerminalCommand() {
+    try {
+      await navigator.clipboard.writeText(connectCommand)
+      setTerminalCopyNotice('Command copied.')
+    } catch {
+      setTerminalCopyNotice('Copy failed. Select the command manually.')
+    }
+  }
+
   if (!supabase) {
     return (
       <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
@@ -216,7 +269,7 @@ export function DashboardPage() {
               <div className="flex items-center gap-3">
                 <div className="text-right text-sm">
                   <p className="font-medium text-foreground">
-                    {session.user.email ?? 'Signed in'}
+                    {sessionLabel}
                   </p>
                   <p className="text-muted-foreground">
                     {summary.accountsTracked} tracked
@@ -236,147 +289,218 @@ export function DashboardPage() {
           {authIsLoading ? (
             <LoadingState />
           ) : session ? (
-            <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Connect Codex</CardTitle>
-                    <CardDescription>
-                      Create a one-time command, run it on the machine that
-                      already has Codex, and the sync token gets stored there.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <Button
-                      className="w-full justify-center"
-                      disabled={isGeneratingPairing}
-                      onClick={() => void handleStartPairing()}
-                    >
-                      <TerminalSquare className="mr-2 size-4" />
-                      {isGeneratingPairing
-                        ? 'Creating command...'
-                        : 'Create pairing command'}
-                    </Button>
+            <div className="space-y-6">
+              {connectedNotice ? (
+                <InlineMessage tone="default">{connectedNotice}</InlineMessage>
+              ) : null}
 
-                    {pairingError ? (
-                      <InlineMessage tone="error">{pairingError}</InlineMessage>
-                    ) : null}
+              <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="space-y-6">
+                  {canLinkGoogle ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Link Google</CardTitle>
+                        <CardDescription>
+                          The dashboard already works through the local terminal
+                          flow. Add Google if you want the same account to keep a
+                          reusable browser sign-in.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <Button
+                          disabled={isStartingGoogleLogin}
+                          onClick={() => void handleGoogleSignIn()}
+                          type="button"
+                        >
+                          <ExternalLink className="mr-2 size-4" />
+                          {isStartingGoogleLogin
+                            ? 'Redirecting to Google...'
+                            : 'Link Google'}
+                        </Button>
 
-                    {pairingCommand ? (
-                      <div className="space-y-3">
-                        <label className="block text-sm font-medium text-foreground">
-                          Run this on the local machine
-                        </label>
-                        <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                          {pairingCommand.command}
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs text-muted-foreground">
-                            Expires {formatTimestamp(pairingCommand.expiresAt)}
-                          </p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void handleCopyCommand()}
-                          >
-                            <Copy className="mr-2 size-3.5" />
-                            Copy
-                          </Button>
-                        </div>
-                        {copyNotice ? (
-                          <p className="text-xs text-muted-foreground">
-                            {copyNotice}
-                          </p>
+                        {loginError ? (
+                          <InlineMessage tone="error">{loginError}</InlineMessage>
                         ) : null}
-                        <div className="space-y-2 border-t border-border pt-3">
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Connect Codex</CardTitle>
+                      <CardDescription>
+                        Create a one-time command, run it on the machine that
+                        already has Codex, and the sync token gets stored there.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Button
+                        className="w-full justify-center"
+                        disabled={isGeneratingPairing}
+                        onClick={() => void handleStartPairing()}
+                      >
+                        <TerminalSquare className="mr-2 size-4" />
+                        {isGeneratingPairing
+                          ? 'Creating command...'
+                          : 'Create pairing command'}
+                      </Button>
+
+                      {pairingError ? (
+                        <InlineMessage tone="error">{pairingError}</InlineMessage>
+                      ) : null}
+
+                      {pairingCommand ? (
+                        <div className="space-y-3">
                           <label className="block text-sm font-medium text-foreground">
-                            Keep this running for live updates
+                            Run this on the local machine
                           </label>
                           <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                            {pairingCommand.syncCommand}
+                            {pairingCommand.command}
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs text-muted-foreground">
+                              Expires {formatTimestamp(pairingCommand.expiresAt)}
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void handleCopyCommand()}
+                            >
+                              <Copy className="mr-2 size-3.5" />
+                              Copy
+                            </Button>
+                          </div>
+                          {copyNotice ? (
+                            <p className="text-xs text-muted-foreground">
+                              {copyNotice}
+                            </p>
+                          ) : null}
+                          <div className="space-y-2 border-t border-border pt-3">
+                            <label className="block text-sm font-medium text-foreground">
+                              Keep this running for live updates
+                            </label>
+                            <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                              {pairingCommand.syncCommand}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
+                      ) : null}
+                    </CardContent>
+                  </Card>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>What happens next</CardTitle>
-                    <CardDescription>
-                      The command opens local Codex access, performs the first
-                      snapshot, and stores a device token under the same Codex
-                      home on that machine.
-                    </CardDescription>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>What happens next</CardTitle>
+                      <CardDescription>
+                        The command opens local Codex access, performs the first
+                        snapshot, and stores a device token under the same Codex
+                        home on that machine.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm text-muted-foreground">
+                      <p>1. Run the generated command where Codex is installed.</p>
+                      <p>2. If Codex is not logged in there, run `codex login` once.</p>
+                      <p>
+                        3. Keep the generated sync command running when you want
+                        live updates after the first pair.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card className="min-w-0">
+                  <CardHeader className="border-b border-border">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <CardTitle>Your synced accounts</CardTitle>
+                        <CardDescription>
+                          Latest sync{' '}
+                          {summary.mostRecentSync
+                            ? formatRelativeTimestamp(summary.mostRecentSync)
+                            : 'has not happened yet'}
+                          .
+                          {summary.staleAccounts > 0
+                            ? ` ${summary.staleAccounts} stale ${
+                                summary.staleAccounts === 1 ? 'account' : 'accounts'
+                              }.`
+                            : ''}
+                        </CardDescription>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={() => void accountsQuery.refetch()}
+                      >
+                        <RefreshCcw className="mr-2 size-4" />
+                        Refresh
+                      </Button>
+                    </div>
                   </CardHeader>
-                  <CardContent className="space-y-3 text-sm text-muted-foreground">
-                    <p>1. Run the generated command where Codex is installed.</p>
-                    <p>2. If Codex is not logged in there, run `codex login` once.</p>
-                    <p>
-                      3. Keep the generated sync command running when you want live
-                      updates after the first pair.
-                    </p>
+                  <CardContent className="px-0 py-0">
+                    {accountsQuery.error ? (
+                      <ErrorBanner message={accountsQuery.error.message} />
+                    ) : null}
+                    {isLoadingAccounts ? <LoadingRows /> : null}
+                    {!isLoadingAccounts && accounts.length === 0 ? (
+                      <EmptyState />
+                    ) : null}
+                    {accounts.length > 0 ? (
+                      <>
+                        <div className="md:hidden">
+                          <AccountSummaryList accounts={accounts} />
+                        </div>
+                        <div className="hidden md:block">
+                          <AccountTable accounts={accounts} />
+                        </div>
+                      </>
+                    ) : null}
                   </CardContent>
                 </Card>
               </div>
-
-              <Card className="min-w-0">
-                <CardHeader className="border-b border-border">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                      <CardTitle>Your synced accounts</CardTitle>
-                      <CardDescription>
-                        Latest sync{' '}
-                        {summary.mostRecentSync
-                          ? formatRelativeTimestamp(summary.mostRecentSync)
-                          : 'has not happened yet'}
-                        .
-                        {summary.staleAccounts > 0
-                          ? ` ${summary.staleAccounts} stale ${
-                              summary.staleAccounts === 1 ? 'account' : 'accounts'
-                            }.`
-                          : ''}
-                      </CardDescription>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={() => void accountsQuery.refetch()}
-                    >
-                      <RefreshCcw className="mr-2 size-4" />
-                      Refresh
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-0 py-0">
-                  {accountsQuery.error ? (
-                    <ErrorBanner message={accountsQuery.error.message} />
-                  ) : null}
-                  {isLoadingAccounts ? <LoadingRows /> : null}
-                  {!isLoadingAccounts && accounts.length === 0 ? (
-                    <EmptyState />
-                  ) : null}
-                  {accounts.length > 0 ? (
-                    <>
-                      <div className="md:hidden">
-                        <AccountSummaryList accounts={accounts} />
-                      </div>
-                      <div className="hidden md:block">
-                        <AccountTable accounts={accounts} />
-                      </div>
-                    </>
-                  ) : null}
-                </CardContent>
-              </Card>
             </div>
           ) : (
             <div className="mx-auto grid max-w-[960px] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
               <Card>
                 <CardHeader>
-                  <CardTitle>Sign in with Google</CardTitle>
+                  <CardTitle>Connect from terminal</CardTitle>
                   <CardDescription>
-                    Use Google through Supabase Auth. Pairing commands become
-                    available as soon as the OAuth session comes back to this site.
+                    Run one command on the machine that already has Codex. It
+                    opens this dashboard in the browser and does not require
+                    Google first.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                    {connectCommand}
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-muted-foreground">
+                      Rerun the same command later to reopen the dashboard on
+                      the same machine.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleCopyTerminalCommand()}
+                      type="button"
+                    >
+                      <Copy className="mr-2 size-3.5" />
+                      Copy
+                    </Button>
+                  </div>
+
+                  {terminalCopyNotice ? (
+                    <InlineMessage tone="default">{terminalCopyNotice}</InlineMessage>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Continue with Google</CardTitle>
+                  <CardDescription>
+                    Google still works through Supabase Auth. Use it if you want
+                    to start in the browser and generate pairing commands from
+                    the site.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -392,26 +516,14 @@ export function DashboardPage() {
                   </Button>
 
                   {loginError ? (
-                    <InlineMessage className="mt-4" tone="error">
-                      {loginError}
-                    </InlineMessage>
+                    <InlineMessage tone="error">{loginError}</InlineMessage>
                   ) : null}
-                </CardContent>
-              </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Pairing shape</CardTitle>
-                  <CardDescription>
-                    This stays website-first. The only local step is one CLI
-                    command that uses the user&apos;s existing Codex install.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
-                  <p>1. Continue with Google here.</p>
-                  <p>2. Generate the pairing command.</p>
-                  <p>3. Run it where Codex is already installed.</p>
-                  <p>4. Refresh this page after the first snapshot lands.</p>
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>1. Continue with Google here.</p>
+                    <p>2. Generate the pairing command.</p>
+                    <p>3. Run it where Codex is already installed.</p>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -657,4 +769,20 @@ function formatResetCountdown(value: Date | string | null | undefined) {
   const minuteLabel = minutes === 1 ? 'Minute' : 'Minutes'
 
   return `${days} ${dayLabel} ${hours} ${hourLabel} ${minutes} ${minuteLabel}`
+}
+
+function getIsGuestSession(session: Session | null) {
+  return session?.user.user_metadata?.guest === true
+}
+
+function getProviderEmail(
+  session: Session | null,
+  provider: UserIdentity['provider'],
+) {
+  const identity = session?.user.identities?.find(
+    (candidate) => candidate.provider === provider,
+  )
+  const email = identity?.identity_data?.email
+
+  return typeof email === 'string' ? email : null
 }

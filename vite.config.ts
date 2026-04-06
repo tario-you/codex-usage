@@ -23,6 +23,18 @@ const devRouteHandlers: Record<string, Partial<Record<string, RouteHandler>>> = 
       return module.GET()
     },
   },
+  '/api/connect/open': {
+    POST: async (request) => {
+      const module = await import('./api/connect/open')
+      return module.POST(request)
+    },
+  },
+  '/api/connect/start': {
+    POST: async (request) => {
+      const module = await import('./api/connect/start')
+      return module.POST(request)
+    },
+  },
   '/api/pair/complete': {
     POST: async (request) => {
       const module = await import('./api/pair/complete')
