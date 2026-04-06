@@ -197,10 +197,13 @@ function CollectorPanel() {
       <div className="space-y-4 px-4 py-4 text-sm leading-6">
         <ol className="space-y-3">
           <li>
-            <p className="font-medium text-foreground">Run local setup once.</p>
+            <p className="font-medium text-foreground">
+              Choose hosted or local setup once.
+            </p>
             <p className="text-muted-foreground">
-              `npm run setup:local` writes the app and collector env files from
-              your local Supabase status.
+              `npm run setup:hosted` points the app and collector at your linked
+              cloud project. `npm run setup:local` switches the same files back
+              to Docker-based local Supabase.
             </p>
           </li>
           <li>
@@ -226,7 +229,7 @@ function CollectorPanel() {
         <Separator />
 
         <pre className="overflow-x-auto rounded-md border border-border bg-[#f7f3eb] p-3 text-xs leading-6 text-foreground">
-          <code>{`npm run setup:local
+          <code>{`npm run setup:hosted
 npm run collector`}</code>
         </pre>
       </div>

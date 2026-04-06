@@ -17,6 +17,22 @@ One dashboard for up to three separate Codex accounts, backed by Supabase snapsh
 - `collector.sources.example.json`: three source slots you can enable
 - `ops/com.codex-usage.collector.plist`: a launchd agent for macOS background execution
 
+## Hosted setup
+
+1. Link the repo to a hosted Supabase project with `supabase link --project-ref <ref>`.
+2. Run `supabase db push --linked`.
+3. Run `npm run setup:hosted`.
+4. Run `npm run dev`.
+5. In another terminal, run `npm run collector`.
+
+`npm run setup:hosted` will:
+
+- read the linked project ref from `supabase/.temp/project-ref`
+- fetch the hosted anon and service role keys from Supabase
+- write `.env.local` for the app
+- write `.env.collector.local` for the collector
+- create `collector.sources.json` from the example if you have not already customized it
+
 ## Local setup
 
 1. Start Docker Desktop. The local Supabase stack needs Docker.
