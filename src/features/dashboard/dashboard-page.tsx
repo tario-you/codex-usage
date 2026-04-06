@@ -347,24 +347,22 @@ export function DashboardPage() {
                   ) : null}
 
                   <Card>
-                    <CardHeader>
-                      <CardTitle>Connect Codex</CardTitle>
-                      <CardDescription>
-                        Create a one-time command, run it on the machine that
-                        already has Codex, and the sync token gets stored there.
-                      </CardDescription>
+                    <CardHeader className="border-b border-border">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <CardTitle>Connect Codex</CardTitle>
+                        <Button
+                          className="shrink-0"
+                          disabled={isGeneratingPairing}
+                          onClick={() => void handleStartPairing()}
+                        >
+                          <TerminalSquare className="mr-2 size-4" />
+                          {isGeneratingPairing
+                            ? 'Creating command...'
+                            : 'Create pairing command'}
+                        </Button>
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <Button
-                        className="w-full justify-center"
-                        disabled={isGeneratingPairing}
-                        onClick={() => void handleStartPairing()}
-                      >
-                        <TerminalSquare className="mr-2 size-4" />
-                        {isGeneratingPairing
-                          ? 'Creating command...'
-                          : 'Create pairing command'}
-                      </Button>
 
                       {pairingError ? (
                         <InlineMessage tone="error">{pairingError}</InlineMessage>
@@ -409,30 +407,12 @@ export function DashboardPage() {
                     </CardContent>
                   </Card>
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>What happens next</CardTitle>
-                      <CardDescription>
-                        The command opens local Codex access, performs the first
-                        snapshot, and stores a device token under the same Codex
-                        home on that machine.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm text-muted-foreground">
-                      <p>1. Run the generated command where Codex is installed.</p>
-                      <p>2. If Codex is not logged in there, run `codex login` once.</p>
-                      <p>
-                        3. Keep the generated sync command running when you want
-                        live updates after the first pair.
-                      </p>
-                    </CardContent>
-                  </Card>
                 </div>
 
                 <Card className="min-w-0">
                   <CardHeader className="border-b border-border">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                      <div>
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div className="min-w-0">
                         <CardTitle>Your synced accounts</CardTitle>
                         <CardDescription>
                           Latest sync{' '}
@@ -448,6 +428,7 @@ export function DashboardPage() {
                         </CardDescription>
                       </div>
                       <Button
+                        className="shrink-0"
                         variant="outline"
                         onClick={() => void accountsQuery.refetch()}
                       >
