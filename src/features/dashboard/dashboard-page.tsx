@@ -1,25 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  Clock3,
-  Database,
-  FolderSymlink,
-  Layers3,
-  type LucideIcon,
-  RefreshCcw,
-  Server,
-} from 'lucide-react'
+import { AlertTriangle, RefreshCcw } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import {
   Table,
@@ -29,17 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import {
   buildSummary,
   dashboardAccountsQueryOptions,
   getModelBuckets,
   type DashboardAccountRow,
+  type DashboardSummary,
 } from '@/lib/dashboard'
 import {
   formatRelativeTimestamp,
@@ -52,467 +29,551 @@ export function DashboardPage() {
   const accountsQuery = useQuery(dashboardAccountsQueryOptions)
   const accounts = accountsQuery.data ?? []
   const summary = buildSummary(accounts)
+  const isLoading = accountsQuery.isPending && accounts.length === 0
+  const showEmpty = !isLoading && !accountsQuery.error && accounts.length === 0
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(255,218,158,0.55),_transparent_25%),radial-gradient(circle_at_80%_10%,_rgba(17,24,39,0.08),_transparent_22%),linear-gradient(180deg,_#fffaf1_0%,_#efe8d8_100%)] text-slate-950">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.9fr)]">
-          <Card className="overflow-hidden border-white/60 bg-white/80 shadow-[0_24px_70px_-28px_rgba(17,24,39,0.45)] backdrop-blur">
-            <CardHeader className="gap-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full bg-slate-900 px-3 py-1 text-[11px] tracking-[0.16em] uppercase text-amber-50">
-                  Codex usage deck
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className="rounded-full border-slate-300 bg-white/70 px-3 py-1 text-xs text-slate-700"
-                >
-                  Supabase-backed snapshots
-                </Badge>
-              </div>
-              <div className="max-w-3xl space-y-3">
-                <CardTitle className="font-heading text-4xl leading-tight tracking-[-0.05em] sm:text-5xl">
-                  One dashboard for every Codex account you care about.
-                </CardTitle>
-                <CardDescription className="max-w-2xl text-base leading-7 text-slate-600">
-                  The collector writes the latest known usage snapshot for each
-                  account into Supabase. When you switch accounts, older ones stay
-                  visible with their last sync time instead of disappearing.
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryStat
-                icon={Layers3}
-                label="Accounts tracked"
-                value={String(summary.accountsTracked)}
-                note="Every seen account stays on the board."
-              />
-              <SummaryStat
-                icon={Server}
-                label="Stale accounts"
-                value={String(summary.staleAccounts)}
-                note="Accounts not refreshed in the last 15 minutes."
-              />
-              <SummaryStat
-                icon={AlertTriangle}
-                label="Low remaining"
-                value={String(summary.lowBalanceCount)}
-                note="5-hour or weekly balance at or below 20%."
-              />
-              <SummaryStat
-                icon={Clock3}
-                label="Latest sync"
-                value={formatRelativeTimestamp(summary.mostRecentSync)}
-                note={
-                  summary.mostRecentSync
-                    ? formatTimestamp(summary.mostRecentSync)
-                    : 'No snapshots stored yet.'
-                }
-              />
-            </CardContent>
-          </Card>
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1380px] flex-col">
+        <header className="border-b border-border bg-background">
+          <div className="flex flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-end lg:justify-between lg:px-8">
+            <div className="space-y-1">
+              <h1 className="text-[1.75rem] font-semibold tracking-[-0.02em]">
+                Codex usage
+              </h1>
+              <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                Latest account snapshots stored in Supabase. Older accounts stay
+                visible after account switches so you can compare every tracked
+                home in one place.
+              </p>
+            </div>
 
-          <Card className="border-slate-900/10 bg-slate-950 text-slate-50 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.6)]">
-            <CardHeader>
-              <Badge className="w-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] tracking-[0.16em] uppercase text-emerald-200">
-                Automatic capture
-              </Badge>
-              <CardTitle className="font-heading text-2xl tracking-[-0.04em]">
-                Three-account workflow
-              </CardTitle>
-              <CardDescription className="text-sm leading-6 text-slate-300">
-                Use one watcher on your default `~/.codex` for passive discovery,
-                then promote the important accounts into dedicated slots that keep
-                polling in the background.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm text-slate-200">
-              <StepRow
-                title="1. Watch your default home"
-                body="The collector notices account changes and writes a fresh snapshot as soon as rate limits update."
-              />
-              <StepRow
-                title="2. Keep prized accounts warm"
-                body="Dedicated slots isolate separate CODEX_HOME directories, so all three accounts can refresh independently."
-              />
-              <StepRow
-                title="3. Read from one dashboard"
-                body="The UI only needs Supabase. It shows fresh rows when available and stale rows with last_updated when not."
-              />
-            </CardContent>
-          </Card>
-        </section>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-[180px] text-left text-sm sm:text-right">
+                <p className="font-medium text-foreground">
+                  {summary.mostRecentSync
+                    ? `Latest sync ${formatRelativeTimestamp(summary.mostRecentSync)}`
+                    : 'No snapshots yet'}
+                </p>
+                <p className="text-muted-foreground">
+                  {formatTimestamp(summary.mostRecentSync)}
+                </p>
+              </div>
 
-        <Tabs defaultValue="accounts" className="space-y-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <TabsList className="w-full rounded-full border border-slate-300/70 bg-white/80 sm:w-auto">
-              <TabsTrigger value="accounts" className="rounded-full px-5">
-                Accounts
-              </TabsTrigger>
-              <TabsTrigger value="setup" className="rounded-full px-5">
-                Collector setup
-              </TabsTrigger>
-            </TabsList>
-            <Button
-              variant="outline"
-              className="rounded-full bg-white/80"
-              onClick={() => void accountsQuery.refetch()}
-            >
-              <RefreshCcw className="mr-2 size-4" />
-              Refresh view
-            </Button>
+              <Button
+                variant="outline"
+                className="h-9 rounded-md border-border bg-card px-3 shadow-none transition-colors active:translate-y-0"
+                onClick={() => void accountsQuery.refetch()}
+              >
+                <RefreshCcw className="mr-2 size-4" />
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <div className="grid flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-8">
+          <div className="space-y-6">
+            <section className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="border-b border-border px-4 py-3 sm:px-5">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold">Accounts</h2>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+                      Ordered by latest snapshot. Details below show quota windows
+                      and any model-specific buckets captured from
+                      `rateLimitsByLimitId`.
+                    </p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Refetches every 30 seconds
+                  </p>
+                </div>
+              </div>
+
+              {accountsQuery.error ? (
+                <ErrorBanner message={accountsQuery.error.message} />
+              ) : null}
+
+              {isLoading ? <LoadingState /> : null}
+              {showEmpty ? <EmptyState /> : null}
+
+              {accounts.length > 0 ? (
+                <>
+                  <div className="md:hidden">
+                    <AccountSummaryList accounts={accounts} />
+                  </div>
+                  <div className="hidden md:block">
+                    <AccountTable accounts={accounts} />
+                  </div>
+                  <div className="border-t border-border">
+                    {accounts.map((account) => (
+                      <AccountSection key={account.id} account={account} />
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </section>
           </div>
 
-          <TabsContent value="accounts" className="space-y-5">
-            {accountsQuery.error ? (
-              <Card className="border-rose-200 bg-rose-50/90 text-rose-900">
-                <CardHeader>
-                  <CardTitle className="font-heading text-xl">
-                    Dashboard data is not ready yet
-                  </CardTitle>
-                  <CardDescription className="text-rose-800">
-                    {accountsQuery.error.message}
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            ) : null}
-
-            {accountsQuery.isPending && accounts.length === 0 ? (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <LoadingCard />
-                <LoadingCard />
-              </div>
-            ) : null}
-
-            {!accountsQuery.isPending && accounts.length === 0 ? (
-              <Card className="border-dashed border-slate-300 bg-white/75">
-                <CardHeader>
-                  <CardTitle className="font-heading text-2xl">
-                    No Codex snapshots yet
-                  </CardTitle>
-                  <CardDescription className="max-w-2xl text-base leading-7">
-                    Start the collector once your Supabase URL and keys are set.
-                    As soon as a source reports account usage, this page will fill
-                    in automatically and keep older accounts visible.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            ) : null}
-
-            <div className="grid gap-5 lg:grid-cols-2">
-              {accounts.map((account) => (
-                <AccountCard key={account.id} account={account} />
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="setup" className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-            <Card className="border-white/60 bg-white/80 shadow-[0_20px_50px_-30px_rgba(15,23,42,0.45)]">
-              <CardHeader>
-                <CardTitle className="font-heading text-2xl tracking-[-0.04em]">
-                  Files to keep around
-                </CardTitle>
-                <CardDescription className="text-base leading-7 text-slate-600">
-                  The repo already includes the pieces you need for an automatic
-                  background sync. Copy the example source file, set your Supabase
-                  keys, and run the collector continuously.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <SetupRow
-                  file=".env.example"
-                  detail="Copy this into .env.local for the app and .env.collector.local for the collector with your real keys."
-                />
-                <SetupRow
-                  file="collector.sources.example.json"
-                  detail="Copy to collector.sources.json and enable the three source slots you want to keep warm."
-                />
-                <SetupRow
-                  file="scripts/codex-collector.ts"
-                  detail="This script talks to Codex app-server, upserts the account row, and inserts immutable snapshots."
-                />
-                <SetupRow
-                  file="supabase/migrations"
-                  detail="The schema keeps the latest snapshot visible through the codex_dashboard_accounts view."
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="border-slate-900/10 bg-slate-950 text-slate-50">
-              <CardHeader>
-                <CardTitle className="font-heading text-2xl tracking-[-0.04em]">
-                  Suggested background loop
-                </CardTitle>
-                <CardDescription className="text-sm leading-6 text-slate-300">
-                  On macOS, use a `launchd` agent that runs `npm run collector` in
-                  this workspace. The collector itself keeps retrying if a Codex
-                  source is not ready yet.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm leading-7 text-slate-200">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 font-mono text-xs text-emerald-200">
-                  <p>cp collector.sources.example.json collector.sources.json</p>
-                  <p>cp .env.example .env.collector.local</p>
-                  <p>npm run collector</p>
-                </div>
-                <Separator className="bg-white/10" />
-                <p>
-                  If you only want passive discovery, enable the `default-home`
-                  source. If you want all three accounts to keep updating without
-                  manual switching, enable the dedicated slots too.
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+          <aside className="space-y-6">
+            <OverviewPanel summary={summary} />
+            <CollectorPanel />
+            <FilesPanel />
+          </aside>
+        </div>
       </div>
     </main>
   )
 }
 
-function SummaryStat({
-  icon: Icon,
+function OverviewPanel({ summary }: { summary: DashboardSummary }) {
+  const freshAccounts = Math.max(0, summary.accountsTracked - summary.staleAccounts)
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-base font-semibold">Overview</h2>
+      </div>
+      <dl className="divide-y divide-border">
+        <OverviewRow
+          label="Accounts tracked"
+          value={String(summary.accountsTracked)}
+          note="Any account that has written a snapshot stays listed."
+        />
+        <OverviewRow
+          label="Fresh now"
+          value={String(freshAccounts)}
+          note="Fresh means the latest snapshot is at most 15 minutes old."
+        />
+        <OverviewRow
+          label="Low remaining"
+          value={String(summary.lowBalanceCount)}
+          note="5-hour or weekly balance is at or below 20 percent."
+        />
+        <OverviewRow
+          label="Latest sync"
+          value={
+            summary.mostRecentSync
+              ? formatRelativeTimestamp(summary.mostRecentSync)
+              : 'None'
+          }
+          note={formatTimestamp(summary.mostRecentSync)}
+        />
+      </dl>
+    </section>
+  )
+}
+
+function OverviewRow({
   label,
   note,
   value,
 }: {
-  icon: LucideIcon
   label: string
   note: string
   value: string
 }) {
   return (
-    <div className="rounded-3xl border border-slate-200/70 bg-slate-50/70 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="rounded-2xl bg-white p-2 shadow-sm">
-          <Icon className="size-4 text-slate-700" />
-        </div>
-        <span className="text-2xl font-semibold tracking-[-0.04em]">{value}</span>
+    <div className="flex items-start justify-between gap-4 px-4 py-3">
+      <div className="space-y-1">
+        <dt className="text-sm font-medium text-foreground">{label}</dt>
+        <dd className="text-sm leading-5 text-muted-foreground">{note}</dd>
       </div>
-      <p className="text-sm font-medium text-slate-900">{label}</p>
-      <p className="mt-1 text-sm text-slate-600">{note}</p>
+      <div className="text-right text-base font-semibold text-foreground">
+        {value}
+      </div>
     </div>
   )
 }
 
-function AccountCard({ account }: { account: DashboardAccountRow }) {
+function CollectorPanel() {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-base font-semibold">Collector</h2>
+      </div>
+
+      <div className="space-y-4 px-4 py-4 text-sm leading-6">
+        <ol className="space-y-3">
+          <li>
+            <p className="font-medium text-foreground">Run local setup once.</p>
+            <p className="text-muted-foreground">
+              `npm run setup:local` writes the app and collector env files from
+              your local Supabase status.
+            </p>
+          </li>
+          <li>
+            <p className="font-medium text-foreground">
+              Keep passive discovery enabled.
+            </p>
+            <p className="text-muted-foreground">
+              The `default-home` source catches account switches without extra
+              manual work.
+            </p>
+          </li>
+          <li>
+            <p className="font-medium text-foreground">
+              Promote long-lived accounts into dedicated slots.
+            </p>
+            <p className="text-muted-foreground">
+              Separate `CODEX_HOME` directories keep all important accounts warm
+              in the background.
+            </p>
+          </li>
+        </ol>
+
+        <Separator />
+
+        <pre className="overflow-x-auto rounded-md border border-border bg-[#f7f3eb] p-3 text-xs leading-6 text-foreground">
+          <code>{`npm run setup:local
+npm run collector`}</code>
+        </pre>
+      </div>
+    </section>
+  )
+}
+
+function FilesPanel() {
+  const rows = [
+    {
+      file: '.env.local',
+      detail: 'App-side Supabase URL and anon key for the dashboard.',
+    },
+    {
+      file: '.env.collector.local',
+      detail: 'Collector-side service role credentials for snapshot writes.',
+    },
+    {
+      file: 'collector.sources.json',
+      detail: 'Enabled source slots, including passive discovery and dedicated homes.',
+    },
+    {
+      file: 'ops/com.codex-usage.collector.plist',
+      detail: 'LaunchAgent definition for keeping the collector alive on macOS.',
+    },
+  ]
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-base font-semibold">Files</h2>
+      </div>
+
+      <ul className="divide-y divide-border">
+        {rows.map((row) => (
+          <li key={row.file} className="space-y-1 px-4 py-3">
+            <p className="font-mono text-xs text-foreground">{row.file}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{row.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="border-b border-[#e1c7bf] bg-[#f7ebe7] px-4 py-3 text-sm text-[#7b4337] sm:px-5">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+        <div className="space-y-1">
+          <p className="font-medium">Dashboard data is not ready yet.</p>
+          <p>{message}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LoadingState() {
+  return (
+    <div className="space-y-4 px-4 py-4 sm:px-5">
+      <div className="h-10 animate-pulse rounded-sm bg-muted" />
+      <div className="h-28 animate-pulse rounded-sm bg-muted" />
+      <div className="h-28 animate-pulse rounded-sm bg-muted" />
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <div className="px-4 py-8 sm:px-5">
+      <h3 className="text-base font-semibold text-foreground">
+        No Codex snapshots yet
+      </h3>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+        Start the collector after your Supabase env vars are set. The account
+        table and detail sections will fill in automatically as soon as a source
+        reports usage.
+      </p>
+    </div>
+  )
+}
+
+function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
+  return (
+    <Table className="min-w-[780px]">
+      <TableHeader className="bg-[#f7f3eb]">
+        <TableRow className="hover:bg-[#f7f3eb]">
+          <TableHead className="px-4 sm:px-5">Account</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Plan</TableHead>
+          <TableHead>Snapshot</TableHead>
+          <TableHead>5-hour</TableHead>
+          <TableHead>Weekly</TableHead>
+          <TableHead className="pr-4 text-right sm:pr-5">Credits</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {accounts.map((account) => {
+          const fresh = isFreshTimestamp(account.last_snapshot_at)
+
+          return (
+            <TableRow key={account.id}>
+              <TableCell className="px-4 py-3 sm:px-5">
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">
+                    {account.label ?? account.account_key}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {account.email ?? account.account_key}
+                  </p>
+                </div>
+              </TableCell>
+              <TableCell>
+                <StatusTag fresh={fresh} />
+              </TableCell>
+              <TableCell>{account.plan_type ?? 'Unknown'}</TableCell>
+              <TableCell>
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">
+                    {formatRelativeTimestamp(account.last_snapshot_at)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatTimestamp(account.last_snapshot_at)}
+                  </p>
+                </div>
+              </TableCell>
+              <TableCell>{percentLabel(account.primary_remaining_percent)}</TableCell>
+              <TableCell>
+                {percentLabel(account.secondary_remaining_percent)}
+              </TableCell>
+              <TableCell className="pr-4 text-right sm:pr-5">
+                {formatCredits(account)}
+              </TableCell>
+            </TableRow>
+          )
+        })}
+      </TableBody>
+    </Table>
+  )
+}
+
+function AccountSummaryList({ accounts }: { accounts: DashboardAccountRow[] }) {
+  return (
+    <div className="divide-y divide-border">
+      {accounts.map((account) => {
+        const fresh = isFreshTimestamp(account.last_snapshot_at)
+
+        return (
+          <div key={account.id} className="space-y-3 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium text-foreground">
+                  {account.label ?? account.account_key}
+                </p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {account.email ?? account.account_key}
+                </p>
+              </div>
+              <StatusTag fresh={fresh} />
+            </div>
+
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <MetaField label="Plan" value={account.plan_type ?? 'Unknown'} />
+              <MetaField
+                label="Snapshot"
+                value={formatRelativeTimestamp(account.last_snapshot_at)}
+              />
+              <MetaField
+                label="5-hour"
+                value={percentLabel(account.primary_remaining_percent)}
+              />
+              <MetaField
+                label="Weekly"
+                value={percentLabel(account.secondary_remaining_percent)}
+              />
+            </dl>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function AccountSection({ account }: { account: DashboardAccountRow }) {
   const fresh = isFreshTimestamp(account.last_snapshot_at)
   const modelBuckets = getModelBuckets(account)
 
   return (
-    <Card className="overflow-hidden border-white/60 bg-white/85 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.55)] backdrop-blur">
-      <CardHeader className="gap-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="font-heading text-2xl tracking-[-0.04em]">
-                {account.label ?? account.account_key}
-              </CardTitle>
-              <Badge
-                className={
-                  fresh
-                    ? 'rounded-full bg-emerald-100 text-emerald-800'
-                    : 'rounded-full bg-amber-100 text-amber-900'
-                }
-              >
-                {fresh ? 'Fresh' : 'Stale'}
-              </Badge>
-              {account.plan_type ? (
-                <Badge variant="outline" className="rounded-full">
-                  {account.plan_type}
-                </Badge>
-              ) : null}
-            </div>
-            <CardDescription className="text-sm text-slate-600">
-              {account.email ?? 'No email reported yet'}
-            </CardDescription>
+    <section className="space-y-5 px-4 py-5 sm:px-5">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-foreground">
+              {account.label ?? account.account_key}
+            </h3>
+            <StatusTag fresh={fresh} />
           </div>
-
-          <div className="text-right text-sm text-slate-500">
-            <p className="font-medium text-slate-900">
-              {formatRelativeTimestamp(account.last_snapshot_at)}
-            </p>
-            <p>{formatTimestamp(account.last_snapshot_at)}</p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            {account.email ?? 'No email reported yet'}
+          </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <MiniMetric
-            label="5-hour"
-            value={percentLabel(account.primary_remaining_percent)}
-            tone={toneForRemaining(account.primary_remaining_percent)}
+        <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
+          <MetaField label="Plan" value={account.plan_type ?? 'Unknown'} />
+          <MetaField
+            label="Source"
+            value={account.source_label ?? account.source_key ?? 'Unknown'}
           />
-          <MiniMetric
-            label="Weekly"
-            value={percentLabel(account.secondary_remaining_percent)}
-            tone={toneForRemaining(account.secondary_remaining_percent)}
+          <MetaField
+            label="Snapshot age"
+            value={formatRelativeTimestamp(account.last_snapshot_at)}
           />
-          <MiniMetric
-            label="Credits"
-            value={
-              account.unlimited_credits
-                ? 'Unlimited'
-                : account.credits_balance?.toString() ?? '0'
-            }
-            tone="slate"
+          <MetaField
+            label="Snapshot time"
+            value={formatTimestamp(account.last_snapshot_at)}
           />
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-5">
-        <UsageBar
-          label={formatWindowLabel(account.primary_window_mins)}
-          remaining={account.primary_remaining_percent}
-          resetsAt={account.primary_resets_at}
-        />
-        <UsageBar
-          label={formatWindowLabel(account.secondary_window_mins)}
-          remaining={account.secondary_remaining_percent}
-          resetsAt={account.secondary_resets_at}
-        />
-
-        <Separator />
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-950">
-                Model-specific buckets
-              </h3>
-              <p className="text-sm text-slate-500">
-                Derived from the latest `rateLimitsByLimitId` payload.
-              </p>
-            </div>
-            <Badge variant="outline" className="rounded-full">
-              {modelBuckets.length} extra
-            </Badge>
-          </div>
-
-          {modelBuckets.length ? (
-            <div className="overflow-hidden rounded-2xl border border-slate-200/80">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Bucket</TableHead>
-                    <TableHead>5-hour</TableHead>
-                    <TableHead>Weekly</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {modelBuckets.map((bucket) => (
-                    <TableRow key={bucket.key}>
-                      <TableCell className="font-medium">
-                        <div className="flex flex-col">
-                          <span>{bucket.label}</span>
-                          <span className="text-xs text-slate-500">
-                            {bucket.planType ?? 'plan unknown'}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{percentLabel(bucket.primaryRemaining)}</TableCell>
-                      <TableCell>{percentLabel(bucket.secondaryRemaining)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
-              No extra model-specific limits have been captured for this account yet.
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-          <MetaPill icon={Database} text={account.source_label ?? account.source_key} />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div>
-                <MetaPill
-                  icon={FolderSymlink}
-                  text={account.codex_home ?? 'No CODEX_HOME tracked'}
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>{account.codex_home ?? 'Missing codex home'}</TooltipContent>
-          </Tooltip>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function LoadingCard() {
-  return (
-    <Card className="border-white/60 bg-white/75">
-      <CardContent className="space-y-4 p-6">
-        <div className="h-6 w-1/3 animate-pulse rounded-full bg-slate-200" />
-        <div className="h-16 animate-pulse rounded-3xl bg-slate-100" />
-        <div className="h-16 animate-pulse rounded-3xl bg-slate-100" />
-        <div className="h-32 animate-pulse rounded-3xl bg-slate-100" />
-      </CardContent>
-    </Card>
-  )
-}
-
-function SetupRow({ detail, file }: { detail: string; file: string }) {
-  return (
-    <div className="rounded-3xl border border-slate-200/80 bg-slate-50/70 p-4">
-      <div className="mb-2 flex items-center gap-2 font-mono text-sm text-slate-900">
-        <ArrowUpRight className="size-4" />
-        {file}
+          <MetaField label="Credits" value={formatCredits(account)} />
+          <MetaField
+            label="CODEX_HOME"
+            value={account.codex_home ?? 'Not tracked'}
+            monospace
+          />
+        </dl>
       </div>
-      <p className="text-sm leading-6 text-slate-600">{detail}</p>
+
+      <Separator />
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <section className="space-y-3">
+          <h4 className="text-sm font-semibold text-foreground">Quota windows</h4>
+          <UsageRow
+            label={formatWindowLabel(account.primary_window_mins)}
+            remaining={account.primary_remaining_percent}
+            resetsAt={account.primary_resets_at}
+          />
+          <UsageRow
+            label={formatWindowLabel(account.secondary_window_mins)}
+            remaining={account.secondary_remaining_percent}
+            resetsAt={account.secondary_resets_at}
+          />
+        </section>
+
+        <section className="space-y-3">
+          <h4 className="text-sm font-semibold text-foreground">
+            Model-specific buckets
+          </h4>
+
+          {modelBuckets.length > 0 ? (
+            <>
+              <div className="space-y-2 md:hidden">
+                {modelBuckets.map((bucket) => (
+                  <div
+                    key={bucket.key}
+                    className="rounded-md border border-border px-3 py-3"
+                  >
+                    <p className="font-medium text-foreground">{bucket.label}</p>
+                    <dl className="mt-2 grid grid-cols-3 gap-3 text-sm">
+                      <MetaField label="Plan" value={bucket.planType ?? 'Unknown'} />
+                      <MetaField
+                        label="5-hour"
+                        value={percentLabel(bucket.primaryRemaining)}
+                      />
+                      <MetaField
+                        label="Weekly"
+                        value={percentLabel(bucket.secondaryRemaining)}
+                      />
+                    </dl>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-border md:block">
+                <Table className="min-w-[420px]">
+                  <TableHeader className="bg-[#f7f3eb]">
+                    <TableRow className="hover:bg-[#f7f3eb]">
+                      <TableHead className="px-3">Bucket</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>5-hour</TableHead>
+                      <TableHead className="pr-3">Weekly</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {modelBuckets.map((bucket) => (
+                      <TableRow key={bucket.key}>
+                        <TableCell className="px-3 py-3 font-medium text-foreground">
+                          {bucket.label}
+                        </TableCell>
+                        <TableCell>{bucket.planType ?? 'Unknown'}</TableCell>
+                        <TableCell>{percentLabel(bucket.primaryRemaining)}</TableCell>
+                        <TableCell className="pr-3">
+                          {percentLabel(bucket.secondaryRemaining)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          ) : (
+            <p className="rounded-md border border-dashed border-border bg-[#f7f3eb] px-3 py-3 text-sm leading-6 text-muted-foreground">
+              No model-specific buckets recorded for this account.
+            </p>
+          )}
+        </section>
+      </div>
+    </section>
+  )
+}
+
+function MetaField({
+  label,
+  monospace = false,
+  value,
+}: {
+  label: string
+  monospace?: boolean
+  value: string
+}) {
+  return (
+    <div className="space-y-1">
+      <dt className="font-medium text-foreground">{label}</dt>
+      <dd
+        className={`text-muted-foreground ${monospace ? 'break-all font-mono text-xs' : ''}`}
+      >
+        {value}
+      </dd>
     </div>
   )
 }
 
-function StepRow({ body, title }: { body: string; title: string }) {
+function StatusTag({ fresh }: { fresh: boolean }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-      <p className="text-sm font-semibold text-white">{title}</p>
-      <p className="mt-1 text-sm leading-6 text-slate-300">{body}</p>
-    </div>
-  )
-}
-
-function MetaPill({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
-  return (
-    <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 font-mono">
-      <Icon className="size-3.5 shrink-0" />
-      <span className="truncate">{text}</span>
+    <span
+      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${
+        fresh
+          ? 'border-[#c8d5ca] bg-[#eef3ee] text-[#3f5c49]'
+          : 'border-[#ddcfb5] bg-[#f5f0e3] text-[#7c5f25]'
+      }`}
+    >
+      {fresh ? 'Fresh' : 'Stale'}
     </span>
   )
 }
 
-function MiniMetric({
-  label,
-  tone,
-  value,
-}: {
-  label: string
-  tone: 'emerald' | 'amber' | 'rose' | 'slate'
-  value: string
-}) {
-  const toneClass =
-    tone === 'emerald'
-      ? 'bg-emerald-50 text-emerald-900'
-      : tone === 'amber'
-        ? 'bg-amber-50 text-amber-900'
-        : tone === 'rose'
-          ? 'bg-rose-50 text-rose-900'
-          : 'bg-slate-100 text-slate-900'
-
-  return (
-    <div className={`rounded-3xl p-4 ${toneClass}`}>
-      <p className="text-xs font-semibold tracking-[0.16em] uppercase">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-[-0.05em]">{value}</p>
-    </div>
-  )
-}
-
-function UsageBar({
+function UsageRow({
   label,
   remaining,
   resetsAt,
@@ -523,53 +584,63 @@ function UsageBar({
 }) {
   const tone = toneForRemaining(remaining)
   const fillClass =
-    tone === 'emerald'
-      ? 'bg-emerald-500'
-      : tone === 'amber'
-        ? 'bg-amber-500'
-        : tone === 'rose'
-          ? 'bg-rose-500'
-          : 'bg-slate-500'
+    tone === 'good'
+      ? 'bg-[#56705d]'
+      : tone === 'warn'
+        ? 'bg-[#8b7341]'
+        : tone === 'bad'
+          ? 'bg-[#9a5a4b]'
+          : 'bg-[#8a8176]'
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">{label}</p>
-          <p className="text-sm text-slate-500">
-            Resets {resetsAt ? formatTimestamp(resetsAt) : 'when Codex reports it'}
-          </p>
-        </div>
-        <p className="text-lg font-semibold tracking-[-0.04em] text-slate-900">
-          {percentLabel(remaining)}
+    <div className="grid gap-3 rounded-md border border-border px-3 py-3 sm:grid-cols-[140px_minmax(0,1fr)_88px] sm:items-center">
+      <div>
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground">
+          Resets {resetsAt ? formatTimestamp(resetsAt) : 'when Codex reports it'}
         </p>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+      <div className="h-2 overflow-hidden rounded-sm bg-[#ded5c7]">
         <div
-          className={`h-full rounded-full transition-all ${fillClass}`}
+          className={`h-full transition-[width] duration-150 ease-out ${fillClass}`}
           style={{ width: `${remaining ?? 0}%` }}
         />
       </div>
+      <p className="text-sm font-medium text-foreground sm:text-right">
+        {percentLabel(remaining)}
+      </p>
     </div>
   )
 }
 
 function toneForRemaining(remaining: number | null) {
   if (remaining == null) {
-    return 'slate' as const
+    return 'unknown' as const
   }
 
   if (remaining <= 20) {
-    return 'rose' as const
+    return 'bad' as const
   }
 
   if (remaining <= 50) {
-    return 'amber' as const
+    return 'warn' as const
   }
 
-  return 'emerald' as const
+  return 'good' as const
 }
 
 function percentLabel(value: number | null) {
   return value == null ? 'N/A' : `${value}%`
+}
+
+function formatCredits(account: DashboardAccountRow) {
+  if (account.unlimited_credits) {
+    return 'Unlimited'
+  }
+
+  if (account.credits_balance == null) {
+    return '0'
+  }
+
+  return String(account.credits_balance)
 }
