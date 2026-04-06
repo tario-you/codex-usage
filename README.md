@@ -50,7 +50,7 @@ The Vite dev server now serves the local pairing and sync API routes under `/api
 Run this on any machine:
 
 ```bash
-npx codex-usage-dashboard@latest connect --site "https://your-site.vercel.app"
+npx codex-usage-dashboard@latest connect --site "https://codex-use-age.vercel.app"
 ```
 
 For local development in this repo, use:
@@ -87,7 +87,7 @@ If the same machine is already connected, rerun the same command to reopen the d
 The generated command looks like:
 
 ```bash
-npx codex-usage-dashboard@latest pair "https://your-site.vercel.app/api/pair/complete?token=..."
+npx codex-usage-dashboard@latest pair "https://codex-use-age.vercel.app/api/pair/complete?token=..."
 ```
 
 ## Live sync after pairing
@@ -106,6 +106,14 @@ The saved device token is read from the same Codex home that the CLI uses.
 - `npm run pair -- "<pair-url>"`: local version of the hosted pairing command
 - `npm run sync -- --watch`: local version of the hosted sync command
 - `npm run collector`: legacy single-operator collector script
+
+## Publishing
+
+1. Run `npm version patch` (or `minor` / `major`) before every new publish.
+2. Run `npm run release:check` to verify the tarball contents and confirm the version is still unpublished.
+3. Run `npm publish`.
+
+`npm publish` cannot overwrite an existing version on npm, so repeating a publish for the same version will fail with `E403`.
 
 ## Tario-specific Git workflow for Codex
 
