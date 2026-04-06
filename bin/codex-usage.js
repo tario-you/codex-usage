@@ -3,16 +3,20 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 
 const DEFAULT_POLL_MS = 60_000
-const CODEX_HELP_TIMEOUT_MS = 5_000
+const CODEX_HELP_TIMEOUT_MS = 15_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
 const NPX_COMMAND = 'npx codex-usage-dashboard@latest'
 
+const require = createRequire(import.meta.url)
+
 let codexAppServerSupportPromise = null
+let resolvedCodexExecutable = null
 
 class StdioCodexClient {
   constructor({ codexHome }) {
@@ -165,15 +169,20 @@ class StdioCodexClient {
 
   async spawnAppServer() {
     await ensureCodexAppServerSupport()
+    const codexExecutable = resolveCodexExecutable()
 
     return new Promise((resolve, reject) => {
-      const child = spawn('codex', ['app-server', '--listen', 'stdio://'], {
-        env: {
-          ...process.env,
-          ...(this.codexHome ? { CODEX_HOME: this.codexHome } : {}),
+      const child = spawn(
+        codexExecutable.command,
+        [...codexExecutable.argsPrefix, 'app-server', '--listen', 'stdio://'],
+        {
+          env: {
+            ...process.env,
+            ...(this.codexHome ? { CODEX_HOME: this.codexHome } : {}),
+          },
+          stdio: ['pipe', 'pipe', 'pipe'],
         },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      })
+      )
 
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', (chunk) => {
@@ -195,7 +204,7 @@ class StdioCodexClient {
         reject(
           new Error(
             error.code === 'ENOENT'
-              ? 'The `codex` command is not installed on this machine.'
+              ? 'Codex CLI is not available. Reinstall `codex-usage-dashboard` or install it globally with `npm install -g @openai/codex`.'
               : error.message,
           ),
         )
@@ -534,7 +543,7 @@ async function readSnapshot(client, failWhenLoggedOut) {
   if (!accountState.account) {
     if (failWhenLoggedOut) {
       throw new Error(
-        'No logged-in Codex account was found. Run `codex login` and try again.',
+        'No logged-in Codex account was found. Run `npx @openai/codex@latest login` (or `codex login` if installed globally) and try again.',
       )
     }
 
@@ -657,22 +666,58 @@ async function ensureCodexAppServerSupport() {
 }
 
 async function inspectCodexCliForAppServer() {
-  const [help, version] = await Promise.all([
-    runCommandCapture('codex', ['--help'], { timeoutMs: CODEX_HELP_TIMEOUT_MS }),
-    runCommandCapture('codex', ['--version'], {
-      timeoutMs: CODEX_HELP_TIMEOUT_MS,
-    }),
-  ])
+  const codexExecutable = resolveCodexExecutable()
+  const help = await runCommandCapture(
+    codexExecutable.command,
+    [...codexExecutable.argsPrefix, '--help'],
+    { timeoutMs: CODEX_HELP_TIMEOUT_MS },
+  )
 
   const helpText = `${help.stdout}\n${help.stderr}`
   if (help.code === 0 && /\bapp-server\b/.test(helpText)) {
     return
   }
 
+  const version = await runCommandCapture(
+    codexExecutable.command,
+    [...codexExecutable.argsPrefix, '--version'],
+    { timeoutMs: CODEX_HELP_TIMEOUT_MS },
+  )
   const versionText = normalizeCodexVersion(version.stdout || version.stderr)
   throw new Error(
-    `Installed Codex CLI ${versionText} does not support \`codex app-server\`. Update it with \`npm install -g @openai/codex\` and rerun this command.`,
+    `Resolved Codex CLI ${versionText} (${codexExecutable.label}) does not support \`codex app-server\`. Reinstall \`codex-usage-dashboard\` or update Codex with \`npm install -g @openai/codex\`, then rerun this command.`,
   )
+}
+
+function resolveCodexExecutable() {
+  if (resolvedCodexExecutable) {
+    return resolvedCodexExecutable
+  }
+
+  const bundledBinPath = resolveBundledCodexBin()
+  if (bundledBinPath) {
+    resolvedCodexExecutable = {
+      argsPrefix: [bundledBinPath],
+      command: process.execPath,
+      label: 'bundled @openai/codex',
+    }
+    return resolvedCodexExecutable
+  }
+
+  resolvedCodexExecutable = {
+    argsPrefix: [],
+    command: 'codex',
+    label: 'global codex',
+  }
+  return resolvedCodexExecutable
+}
+
+function resolveBundledCodexBin() {
+  try {
+    return require.resolve('@openai/codex/bin/codex.js')
+  } catch {
+    return null
+  }
 }
 
 function runCommandCapture(command, args, { timeoutMs }) {

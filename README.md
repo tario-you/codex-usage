@@ -7,7 +7,7 @@ Multi-user Codex usage tracking with a Vercel-hosted dashboard, Supabase Auth, a
 - Vite + TanStack Router + React Query
 - Supabase Auth + Postgres
 - Vercel Functions for pairing and sync ingest
-- Local Codex access through `codex app-server`
+- Local Codex access through a bundled `@openai/codex` `app-server`
 
 ## What changed
 
@@ -47,16 +47,18 @@ The Vite dev server now serves the local pairing and sync API routes under `/api
 
 ## Direct connect flow
 
-Run this on any machine that already has Codex installed:
+Run this on any machine:
 
 ```bash
 npx codex-usage-dashboard@latest connect --site "https://your-site.vercel.app"
 ```
 
-The machine also needs a Codex CLI build that exposes `codex app-server`. If `codex --help` does not list `app-server`, update Codex first:
+The package now brings a compatible `@openai/codex` CLI dependency with it, so `connect`, `pair`, and `sync` do not require a separate global Codex install.
+
+If the machine has never logged into Codex before, authenticate once with:
 
 ```bash
-npm install -g @openai/codex
+npx @openai/codex@latest login
 ```
 
 That command:
@@ -74,7 +76,7 @@ If the same machine is already connected, rerun the same command to reopen the d
 
 1. Sign in on the website.
 2. Click `Create pairing command`.
-3. Run the generated command on the machine that already has Codex installed.
+3. Run the generated command on the machine you want to pair.
 
 The generated command looks like:
 

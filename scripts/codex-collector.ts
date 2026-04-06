@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -20,11 +21,16 @@ import {
 
 const rootDir = process.cwd()
 const once = process.argv.includes('--once')
-const CODEX_HELP_TIMEOUT_MS = 5_000
+const CODEX_HELP_TIMEOUT_MS = 15_000
 const ONE_SHOT_CONNECT_ATTEMPTS = 15
 const ONE_SHOT_CONNECT_DELAY_MS = 1_000
 
+const require = createRequire(import.meta.url)
+
 let codexAppServerSupportPromise: Promise<void> | null = null
+let resolvedCodexExecutable:
+  | { argsPrefix: string[]; command: string; label: string }
+  | null = null
 
 for (const fileName of ['.env.collector.local', '.env.local', '.env']) {
   const envPath = path.resolve(rootDir, fileName)
@@ -338,14 +344,15 @@ class CodexSourceMonitor {
     }
 
     await ensureCodexAppServerSupport()
+    const codexExecutable = resolveCodexExecutable()
 
     const codexHome = this.source.codexHome
       ? expandHomeDirectory(this.source.codexHome)
       : undefined
 
     const child = spawn(
-      'codex',
-      ['app-server', '--listen', this.wsUrl],
+      codexExecutable.command,
+      [...codexExecutable.argsPrefix, 'app-server', '--listen', this.wsUrl],
       {
         cwd: rootDir,
         env: {
@@ -486,20 +493,58 @@ async function ensureCodexAppServerSupport() {
 }
 
 async function inspectCodexCliForAppServer() {
-  const [help, version] = await Promise.all([
-    runCommandCapture('codex', ['--help'], CODEX_HELP_TIMEOUT_MS),
-    runCommandCapture('codex', ['--version'], CODEX_HELP_TIMEOUT_MS),
-  ])
+  const codexExecutable = resolveCodexExecutable()
+  const help = await runCommandCapture(
+    codexExecutable.command,
+    [...codexExecutable.argsPrefix, '--help'],
+    CODEX_HELP_TIMEOUT_MS,
+  )
 
   const helpText = `${help.stdout}\n${help.stderr}`
   if (help.code === 0 && /\bapp-server\b/.test(helpText)) {
     return
   }
 
+  const version = await runCommandCapture(
+    codexExecutable.command,
+    [...codexExecutable.argsPrefix, '--version'],
+    CODEX_HELP_TIMEOUT_MS,
+  )
   const versionText = normalizeCodexVersion(version.stdout || version.stderr)
   throw new Error(
-    `Installed Codex CLI ${versionText} does not support \`codex app-server\`. Update it with \`npm install -g @openai/codex\` and rerun the collector.`,
+    `Resolved Codex CLI ${versionText} (${codexExecutable.label}) does not support \`codex app-server\`. Reinstall \`codex-usage-dashboard\` or update Codex with \`npm install -g @openai/codex\`, then rerun the collector.`,
   )
+}
+
+function resolveCodexExecutable() {
+  if (resolvedCodexExecutable) {
+    return resolvedCodexExecutable
+  }
+
+  const bundledBinPath = resolveBundledCodexBin()
+  if (bundledBinPath) {
+    resolvedCodexExecutable = {
+      argsPrefix: [bundledBinPath],
+      command: process.execPath,
+      label: 'bundled @openai/codex',
+    }
+    return resolvedCodexExecutable
+  }
+
+  resolvedCodexExecutable = {
+    argsPrefix: [],
+    command: 'codex',
+    label: 'global codex',
+  }
+  return resolvedCodexExecutable
+}
+
+function resolveBundledCodexBin() {
+  try {
+    return require.resolve('@openai/codex/bin/codex.js')
+  } catch {
+    return null
+  }
 }
 
 function runCommandCapture(command: string, args: string[], timeoutMs: number) {
