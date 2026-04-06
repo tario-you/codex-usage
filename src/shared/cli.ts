@@ -2,6 +2,11 @@ export const NPM_PACKAGE_NAME = 'codex-usage-dashboard'
 export const NPX_COMMAND = `npx ${NPM_PACKAGE_NAME}@latest`
 export const DASHBOARD_CONNECTED_QUERY_KEY = 'connected'
 
+interface DashboardAuthUrlOptions {
+  tokenHash: string
+  verificationType: string
+}
+
 export function buildConnectCommand(siteUrl: string) {
   return `${NPX_COMMAND} connect --site "${normalizeSiteOrigin(siteUrl)}"`
 }
@@ -17,6 +22,16 @@ export function buildSyncCommand() {
 export function buildConnectedDashboardUrl(origin: string) {
   const url = new URL('/', origin)
   url.searchParams.set(DASHBOARD_CONNECTED_QUERY_KEY, '1')
+  return url.toString()
+}
+
+export function buildConnectedDashboardAuthUrl(
+  origin: string,
+  options: DashboardAuthUrlOptions,
+) {
+  const url = new URL(buildConnectedDashboardUrl(origin))
+  url.searchParams.set('token_hash', options.tokenHash)
+  url.searchParams.set('type', options.verificationType)
   return url.toString()
 }
 

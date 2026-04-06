@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { buildConnectedDashboardUrl } from '../../src/shared/cli.js'
+import { buildConnectedDashboardAuthUrl } from '../../src/shared/cli.js'
 import { errorResponse, jsonResponse } from '../_lib/http.js'
 import { hashToken } from '../_lib/security.js'
 import { serviceRoleSupabase } from '../_lib/supabase.js'
@@ -41,17 +41,21 @@ export async function POST(request: Request) {
       await serviceRoleSupabase.auth.admin.generateLink({
         type: 'magiclink',
         email: userData.user.email,
-        options: {
-          redirectTo: buildConnectedDashboardUrl(url.origin),
-        },
       })
 
-    if (linkError || !linkData.properties?.action_link) {
+    if (
+      linkError ||
+      !linkData.properties?.hashed_token ||
+      !linkData.properties?.verification_type
+    ) {
       throw linkError ?? new Error('Unable to create a dashboard login link.')
     }
 
     return jsonResponse({
-      dashboardUrl: linkData.properties.action_link,
+      dashboardUrl: buildConnectedDashboardAuthUrl(url.origin, {
+        tokenHash: linkData.properties.hashed_token,
+        verificationType: linkData.properties.verification_type,
+      }),
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

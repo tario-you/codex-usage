@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentProps } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
   AlertTriangle,
   Copy,
-  ExternalLink,
   LogOut,
   RefreshCcw,
   TerminalSquare,
@@ -49,7 +48,11 @@ interface PairingCommandState {
 }
 
 export function DashboardPage() {
-  const { isLoading: authIsLoading, session } = useAuthSession()
+  const {
+    isLoading: authIsLoading,
+    redirectError: authRedirectError,
+    session,
+  } = useAuthSession()
   const [loginError, setLoginError] = useState<string | null>(null)
   const [isStartingGoogleLogin, setIsStartingGoogleLogin] = useState(false)
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false)
@@ -259,18 +262,31 @@ export function DashboardPage() {
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-[1240px] flex-col">
         <header className="border-b border-border bg-card">
-          <div className="flex flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-4 px-4 py-5 sm:items-center sm:px-6 lg:px-8">
+            <div className="min-w-0">
               <h1 className="text-[1.7rem] font-semibold tracking-[-0.02em]">
                 Codex usage
               </h1>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-              <ThemeToggle className="w-full sm:w-auto" />
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+              {!authIsLoading && !session ? (
+                <Button
+                  disabled={isStartingGoogleLogin}
+                  onClick={() => void handleGoogleSignIn()}
+                  type="button"
+                >
+                  <GoogleIcon className="mr-2 size-4" />
+                  {isStartingGoogleLogin
+                    ? 'Redirecting to Google...'
+                    : 'Continue with Google'}
+                </Button>
+              ) : null}
+
+              <ThemeToggle className="shrink-0" />
 
               {session ? (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-end gap-3">
                   <div className="text-right text-sm">
                     <p className="font-medium text-foreground">
                       {sessionLabel}
@@ -317,7 +333,7 @@ export function DashboardPage() {
                           onClick={() => void handleGoogleSignIn()}
                           type="button"
                         >
-                          <ExternalLink className="mr-2 size-4" />
+                          <GoogleIcon className="mr-2 size-4" />
                           {isStartingGoogleLogin
                             ? 'Redirecting to Google...'
                             : 'Link Google'}
@@ -463,7 +479,11 @@ export function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div className="mx-auto grid max-w-[960px] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="mx-auto max-w-[720px] space-y-4">
+              {loginError ? (
+                <InlineMessage tone="error">{loginError}</InlineMessage>
+              ) : null}
+
               <Card>
                 <CardHeader>
                   <CardTitle>Connect from terminal</CardTitle>
@@ -474,6 +494,10 @@ export function DashboardPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {authRedirectError ? (
+                    <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+                  ) : null}
+
                   <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
                     {connectCommand}
                   </div>
@@ -498,44 +522,39 @@ export function DashboardPage() {
                   ) : null}
                 </CardContent>
               </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Continue with Google</CardTitle>
-                  <CardDescription>
-                    Google still works through Supabase Auth. Use it if you want
-                    to start in the browser and generate pairing commands from
-                    the site.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Button
-                    disabled={isStartingGoogleLogin}
-                    onClick={() => void handleGoogleSignIn()}
-                    type="button"
-                  >
-                    <ExternalLink className="mr-2 size-4" />
-                    {isStartingGoogleLogin
-                      ? 'Redirecting to Google...'
-                      : 'Continue with Google'}
-                  </Button>
-
-                  {loginError ? (
-                    <InlineMessage tone="error">{loginError}</InlineMessage>
-                  ) : null}
-
-                  <div className="space-y-3 text-sm text-muted-foreground">
-                    <p>1. Continue with Google here.</p>
-                    <p>2. Generate the pairing command.</p>
-                    <p>3. Run it where Codex is already installed.</p>
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           )}
         </div>
       </div>
     </main>
+  )
+}
+
+function GoogleIcon(props: ComponentProps<'svg'>) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 18 18"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path
+        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.56 2.68-3.86 2.68-6.62Z"
+        fill="#4285F4"
+      />
+      <path
+        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.33-1.58-5.04-3.7H.96v2.34A9 9 0 0 0 9 18Z"
+        fill="#34A853"
+      />
+      <path
+        d="M3.96 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.2.28-1.72V4.94H.96A9 9 0 0 0 0 9c0 1.46.35 2.84.96 4.06l3-2.34Z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M9 3.58c1.32 0 2.5.46 3.44 1.36l2.58-2.58C13.47.92 11.43 0 9 0A9 9 0 0 0 .96 4.94l3 2.34C4.67 5.16 6.66 3.58 9 3.58Z"
+        fill="#EA4335"
+      />
+    </svg>
   )
 }
 

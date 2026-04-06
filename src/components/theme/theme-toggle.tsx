@@ -41,15 +41,16 @@ export function ThemeToggle({ className }: { className?: string }) {
     >
       {themeOptions.map(({ icon: Icon, label, value }) => (
         <Button
+          aria-label={label}
           aria-pressed={theme === value}
-          className="h-8 justify-center rounded-md px-3 text-xs"
+          className="h-8 justify-center rounded-md px-3"
           key={value}
           onClick={() => setTheme(value)}
+          title={label}
           type="button"
           variant={theme === value ? 'secondary' : 'ghost'}
         >
           <Icon className="size-3.5" />
-          <span>{label}</span>
         </Button>
       ))}
     </div>

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import type { Json } from '../../src/lib/database.types.js'
-import { buildConnectedDashboardUrl } from '../../src/shared/cli.js'
+import { buildConnectedDashboardAuthUrl } from '../../src/shared/cli.js'
 import type {
   CodexAccountReadResponse,
   CodexRateLimitsResponse,
@@ -44,7 +44,6 @@ export async function POST(request: Request) {
     const label = body.device?.label?.trim() || machineName || 'Local Codex'
     const guestEmail = `guest+${createOpaqueToken(12)}@${GUEST_EMAIL_DOMAIN}`
     const guestPassword = createOpaqueToken(24)
-    const redirectTo = buildConnectedDashboardUrl(url.origin)
 
     const { data: linkData, error: linkError } =
       await serviceRoleSupabase.auth.admin.generateLink({
@@ -57,11 +56,15 @@ export async function POST(request: Request) {
             source: 'cli-connect',
             machine_name: machineName,
           },
-          redirectTo,
         },
       })
 
-    if (linkError || !linkData.user || !linkData.properties?.action_link) {
+    if (
+      linkError ||
+      !linkData.user ||
+      !linkData.properties?.hashed_token ||
+      !linkData.properties?.verification_type
+    ) {
       throw linkError ?? new Error('Unable to create a dashboard login link.')
     }
 
@@ -103,7 +106,10 @@ export async function POST(request: Request) {
     })
 
     return jsonResponse({
-      dashboardUrl: linkData.properties.action_link,
+      dashboardUrl: buildConnectedDashboardAuthUrl(url.origin, {
+        tokenHash: linkData.properties.hashed_token,
+        verificationType: linkData.properties.verification_type,
+      }),
       deviceId: device.id,
       deviceToken,
       pollMs: CONNECT_POLL_MS,
