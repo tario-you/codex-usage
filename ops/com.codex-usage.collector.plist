@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+  <!-- Replace __REPO_ROOT__ with the absolute path to your local checkout. -->
+  <!-- Example: /Users/yourname/path/to/codex-usage -->
   <dict>
     <key>Label</key>
     <string>com.codex-usage.collector</string>
@@ -12,7 +14,7 @@
     <array>
       <string>/bin/zsh</string>
       <string>-lc</string>
-      <string>cd __REPO_ROOT__ &amp;&amp; npm run collector</string>
+      <string>cd "__REPO_ROOT__" &amp;&amp; npm run collector</string>
     </array>
 
     <key>RunAtLoad</key>

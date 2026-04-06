@@ -10,11 +10,15 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.env
+.env.*
+!.env.example
 *.local
 .collector*.log
 collector.sources.json
 supabase/.branches/
 supabase/.temp/
+.vercel/
 
 # Editor directories and files
 .vscode/*
