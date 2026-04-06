@@ -210,10 +210,6 @@ export function DashboardPage() {
               <h1 className="text-[1.7rem] font-semibold tracking-[-0.02em]">
                 Codex usage
               </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Pair a local Codex session from this site, then keep the usage
-                data scoped to the signed-in account.
-              </p>
             </div>
 
             {session ? (
