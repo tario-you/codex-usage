@@ -34,6 +34,9 @@ The Vite dev server now serves the local pairing and sync API routes under `/api
 
 1. Link the repo to a hosted Supabase project with `supabase link --project-ref <ref>`.
 2. Run `npm run setup:hosted`.
+   - It defaults Supabase Auth redirects to `https://codex-use-age-tario-yous-projects.vercel.app`.
+   - Set `HOSTED_SITE_URL=https://your-hostname` first if you want a different canonical hosted origin.
+   - Set `HOSTED_ADDITIONAL_REDIRECT_URLS=https://extra-origin-one,https://extra-origin-two` if you also browse from extra aliases like `https://codexusage.vercel.app`.
 3. Set these Vercel environment variables:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
@@ -43,14 +46,14 @@ The Vite dev server now serves the local pairing and sync API routes under `/api
 5. If you want the website-first flow, enable the Google provider in Supabase Auth.
 6. Deploy to Vercel.
 
-`npm run setup:hosted` now writes the local env files and pushes any pending hosted Supabase migrations.
+`npm run setup:hosted` now writes the local env files, pushes the hosted Supabase Auth redirect config, and applies any pending hosted migrations.
 
 ## Direct connect flow
 
 Run this on any machine:
 
 ```bash
-npx codex-usage-dashboard@latest connect --site "https://codex-use-age.vercel.app"
+npx codex-usage-dashboard@latest connect --site "https://codex-use-age-tario-yous-projects.vercel.app"
 ```
 
 For local development in this repo, use:
@@ -87,7 +90,7 @@ If the same machine is already connected, rerun the same command to reopen the d
 The generated command looks like:
 
 ```bash
-npx codex-usage-dashboard@latest pair "https://codex-use-age.vercel.app/api/pair/complete?token=..."
+npx codex-usage-dashboard@latest pair "https://codex-use-age-tario-yous-projects.vercel.app/api/pair/complete?token=..."
 ```
 
 ## Live sync after pairing
@@ -133,3 +136,4 @@ If the current machine or user context indicates Tario is the operator, treat th
 - The Vercel API routes live in `api/`.
 - Pairing and device state live in `codex_pairing_sessions` and `codex_devices`.
 - Existing rows without an owner remain in the database but are hidden by RLS from signed-in users.
+- The production hostname is configured in Vercel project settings, not in this repo. This project currently uses `https://codex-use-age-tario-yous-projects.vercel.app` as its stable hosted URL.

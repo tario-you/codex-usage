@@ -359,7 +359,7 @@ async function runConnectCommand(args) {
 
         if (!siteOrigin) {
           throw new Error(
-            `This device was unlinked from the dashboard. Rerun \`${NPX_COMMAND} connect --site "https://codex-use-age.vercel.app"\` to create a new connection.`,
+            `This device was unlinked from the dashboard. Rerun \`${NPX_COMMAND} connect --site "<dashboard-url>"\` to create a new connection.`,
           )
         }
 

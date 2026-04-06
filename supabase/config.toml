@@ -151,6 +151,8 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
+# Local development stays on localhost. `npm run setup:hosted` temporarily rewrites this block,
+# runs `supabase config push`, and restores the local defaults afterwards.
 site_url = "http://localhost:5173"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [

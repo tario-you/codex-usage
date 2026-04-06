@@ -12,8 +12,17 @@ const collectorConfigExamplePath = path.join(
   rootDir,
   'collector.sources.example.json',
 )
+const supabaseConfigPath = path.join(rootDir, 'supabase', 'config.toml')
 const projectRefPath = path.join(rootDir, 'supabase', '.temp', 'project-ref')
 const supabaseBin = resolveSupabaseBin()
+const defaultHostedSiteUrl =
+  'https://codex-use-age-tario-yous-projects.vercel.app'
+const localAuthRedirectUrls = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  'https://127.0.0.1:3000',
+]
 
 type SupabaseApiKey = {
   api_key?: string
@@ -145,6 +154,120 @@ async function writeEnvFiles(projectRef: string) {
   console.log(`wrote ${collectorEnvPath}`)
 }
 
+function resolveHostedAuthRedirects() {
+  const siteUrl = normalizeOrigin(
+    process.env.HOSTED_SITE_URL?.trim() || defaultHostedSiteUrl,
+    'HOSTED_SITE_URL',
+  )
+  const extraRedirectUrls = (process.env.HOSTED_ADDITIONAL_REDIRECT_URLS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) =>
+      normalizeOrigin(value, 'HOSTED_ADDITIONAL_REDIRECT_URLS'),
+    )
+
+  return {
+    siteUrl,
+    redirectUrls: Array.from(
+      new Set([...localAuthRedirectUrls, siteUrl, ...extraRedirectUrls]),
+    ),
+  }
+}
+
+function normalizeOrigin(value: string, envName: string) {
+  try {
+    return new URL(value).origin
+  } catch {
+    throw new Error(`Invalid URL for ${envName}: ${value}`)
+  }
+}
+
+function replaceHostedAuthConfig(
+  source: string,
+  siteUrl: string,
+  redirectUrls: string[],
+) {
+  const lines = source.split('\n')
+  const authStartIndex = lines.findIndex((line) => line.trim() === '[auth]')
+
+  if (authStartIndex === -1) {
+    throw new Error('Unable to locate the [auth] section in supabase/config.toml.')
+  }
+
+  let authEndIndex = lines.length
+  for (let index = authStartIndex + 1; index < lines.length; index += 1) {
+    if (/^\[[^\]]+\]$/.test(lines[index].trim())) {
+      authEndIndex = index
+      break
+    }
+  }
+
+  const findAuthLine = (pattern: RegExp) => {
+    for (let index = authStartIndex + 1; index < authEndIndex; index += 1) {
+      if (pattern.test(lines[index])) {
+        return index
+      }
+    }
+
+    return -1
+  }
+
+  const siteUrlLineIndex = findAuthLine(/^\s*site_url = /)
+  const redirectUrlsStartIndex = findAuthLine(/^\s*additional_redirect_urls = \[/)
+
+  if (siteUrlLineIndex === -1 || redirectUrlsStartIndex === -1) {
+    throw new Error(
+      'Unable to locate Supabase auth redirect settings in supabase/config.toml.',
+    )
+  }
+
+  let redirectUrlsEndIndex = -1
+  for (let index = redirectUrlsStartIndex + 1; index < authEndIndex; index += 1) {
+    if (lines[index].trim() === ']') {
+      redirectUrlsEndIndex = index
+      break
+    }
+  }
+
+  if (redirectUrlsEndIndex === -1) {
+    throw new Error(
+      'Unable to locate the end of additional_redirect_urls in supabase/config.toml.',
+    )
+  }
+
+  lines[siteUrlLineIndex] = `site_url = "${siteUrl}"`
+  lines.splice(
+    redirectUrlsStartIndex,
+    redirectUrlsEndIndex - redirectUrlsStartIndex + 1,
+    'additional_redirect_urls = [',
+    ...redirectUrls.map((url) => `  "${url}",`),
+    ']',
+  )
+
+  return lines.join('\n')
+}
+
+async function pushHostedAuthConfig() {
+  const { siteUrl, redirectUrls } = resolveHostedAuthRedirects()
+  const originalConfig = await readFile(supabaseConfigPath, 'utf8')
+  const hostedConfig = replaceHostedAuthConfig(
+    originalConfig,
+    siteUrl,
+    redirectUrls,
+  )
+
+  await writeFile(supabaseConfigPath, hostedConfig, 'utf8')
+
+  try {
+    console.log(`pushing hosted auth config for ${siteUrl}`)
+    console.log(`allowing auth redirects for: ${redirectUrls.join(', ')}`)
+    runSupabaseInteractive(['config', 'push', '--yes'])
+  } finally {
+    await writeFile(supabaseConfigPath, originalConfig, 'utf8')
+  }
+}
+
 async function main() {
   console.log(`using Supabase CLI at ${supabaseBin}`)
   const projectRef = await resolveProjectRef()
@@ -152,6 +275,7 @@ async function main() {
 
   await ensureCollectorConfig()
   await writeEnvFiles(projectRef)
+  await pushHostedAuthConfig()
   console.log('applying pending hosted migrations...')
   runSupabaseInteractive(['db', 'push'])
 
