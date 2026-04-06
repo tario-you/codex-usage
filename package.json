@@ -1,7 +1,7 @@
 {
   "name": "codex-usage-dashboard",
   "private": false,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "files": [
     "README.md",
     "bin"
