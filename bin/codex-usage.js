@@ -8,14 +8,19 @@ import path from 'node:path'
 import process from 'node:process'
 
 const DEFAULT_POLL_MS = 60_000
+const CODEX_HELP_TIMEOUT_MS = 5_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
 const NPX_COMMAND = 'npx codex-usage-dashboard@latest'
+
+let codexAppServerSupportPromise = null
 
 class StdioCodexClient {
   constructor({ codexHome }) {
     this.codexHome = codexHome
     this.child = null
     this.buffer = ''
+    this.isClosing = false
+    this.lastStderrMessage = ''
     this.pending = new Map()
     this.requestId = 0
     this.notificationHandler = null
@@ -26,17 +31,9 @@ class StdioCodexClient {
       return
     }
 
+    this.buffer = ''
+    this.lastStderrMessage = ''
     this.child = await this.spawnAppServer()
-    this.child.stdout.setEncoding('utf8')
-    this.child.stdout.on('data', (chunk) => {
-      this.consumeStdout(chunk)
-    })
-    this.child.stderr.on('data', (chunk) => {
-      const message = chunk.toString().trim()
-      if (message) {
-        console.error(`[codex] ${message}`)
-      }
-    })
 
     await this.request('initialize', {
       capabilities: {},
@@ -54,13 +51,12 @@ class StdioCodexClient {
       return
     }
 
-    this.child.kill('SIGTERM')
+    const child = this.child
     this.child = null
+    this.isClosing = true
+    child.kill('SIGTERM')
 
-    for (const pending of this.pending.values()) {
-      pending.reject(new Error('Codex app-server closed.'))
-    }
-    this.pending.clear()
+    this.rejectPending(new Error('Codex app-server closed.'))
   }
 
   onNotification(handler) {
@@ -73,17 +69,25 @@ class StdioCodexClient {
     }
 
     const id = ++this.requestId
-    this.child.stdin.write(
-      `${JSON.stringify({
-        id,
-        jsonrpc: '2.0',
-        method,
-        ...(params ? { params } : {}),
-      })}\n`,
-    )
-
     return new Promise((resolve, reject) => {
       this.pending.set(id, { reject, resolve })
+
+      this.child.stdin.write(
+        `${JSON.stringify({
+          id,
+          jsonrpc: '2.0',
+          method,
+          ...(params ? { params } : {}),
+        })}\n`,
+        (error) => {
+          if (!error) {
+            return
+          }
+
+          this.pending.delete(id)
+          reject(error)
+        },
+      )
     })
   }
 
@@ -151,7 +155,17 @@ class StdioCodexClient {
     }
   }
 
-  spawnAppServer() {
+  rejectPending(error) {
+    for (const pending of this.pending.values()) {
+      pending.reject(error)
+    }
+
+    this.pending.clear()
+  }
+
+  async spawnAppServer() {
+    await ensureCodexAppServerSupport()
+
     return new Promise((resolve, reject) => {
       const child = spawn('codex', ['app-server', '--listen', 'stdio://'], {
         env: {
@@ -159,6 +173,22 @@ class StdioCodexClient {
           ...(this.codexHome ? { CODEX_HOME: this.codexHome } : {}),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
+      })
+
+      child.stdout.setEncoding('utf8')
+      child.stdout.on('data', (chunk) => {
+        this.consumeStdout(chunk)
+      })
+
+      child.stderr.on('data', (chunk) => {
+        const message = chunk.toString().trim()
+        if (!message) {
+          return
+        }
+
+        const lines = message.split(/\r?\n/)
+        this.lastStderrMessage = lines[lines.length - 1] ?? message
+        console.error(`[codex] ${message}`)
       })
 
       child.once('error', (error) => {
@@ -171,12 +201,27 @@ class StdioCodexClient {
         )
       })
 
+      child.once('exit', (code, signal) => {
+        if (this.child === child) {
+          this.child = null
+        }
+
+        const expectedShutdown = this.isClosing
+        this.isClosing = false
+
+        if (expectedShutdown) {
+          return
+        }
+
+        const error = buildCodexAppServerExitError(
+          code,
+          signal,
+          this.lastStderrMessage,
+        )
+        this.rejectPending(error)
+      })
+
       child.once('spawn', () => {
-        child.on('exit', (code) => {
-          if (code !== 0 && code !== null) {
-            console.error(`[codex] app-server exited with code ${code}`)
-          }
-        })
         resolve(child)
       })
     })
@@ -596,6 +641,125 @@ function openInBrowser(url) {
       resolve()
     })
   })
+}
+
+async function ensureCodexAppServerSupport() {
+  if (!codexAppServerSupportPromise) {
+    codexAppServerSupportPromise = inspectCodexCliForAppServer().catch(
+      (error) => {
+        codexAppServerSupportPromise = null
+        throw error
+      },
+    )
+  }
+
+  await codexAppServerSupportPromise
+}
+
+async function inspectCodexCliForAppServer() {
+  const [help, version] = await Promise.all([
+    runCommandCapture('codex', ['--help'], { timeoutMs: CODEX_HELP_TIMEOUT_MS }),
+    runCommandCapture('codex', ['--version'], {
+      timeoutMs: CODEX_HELP_TIMEOUT_MS,
+    }),
+  ])
+
+  const helpText = `${help.stdout}\n${help.stderr}`
+  if (help.code === 0 && /\bapp-server\b/.test(helpText)) {
+    return
+  }
+
+  const versionText = normalizeCodexVersion(version.stdout || version.stderr)
+  throw new Error(
+    `Installed Codex CLI ${versionText} does not support \`codex app-server\`. Update it with \`npm install -g @openai/codex\` and rerun this command.`,
+  )
+}
+
+function runCommandCapture(command, args, { timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+
+    const child = spawn(command, args, {
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      child.kill('SIGTERM')
+      reject(
+        new Error(
+          `Timed out while probing \`${command} ${args.join(' ')}\`.`,
+        ),
+      )
+    }, timeoutMs)
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+
+    child.once('error', (error) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      clearTimeout(timeout)
+      reject(
+        new Error(
+          error.code === 'ENOENT'
+            ? 'The `codex` command is not installed on this machine.'
+            : error.message,
+        ),
+      )
+    })
+
+    child.once('close', (code, signal) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      clearTimeout(timeout)
+      resolve({
+        code,
+        signal,
+        stderr: stderr.trim(),
+        stdout: stdout.trim(),
+      })
+    })
+  })
+}
+
+function normalizeCodexVersion(versionText) {
+  const normalized = versionText.trim().replace(/^codex-cli\s+/i, '')
+  return normalized || 'unknown'
+}
+
+function buildCodexAppServerExitError(code, signal, stderrMessage) {
+  const exitDetail =
+    typeof code === 'number'
+      ? `exit code ${code}`
+      : signal
+        ? `signal ${signal}`
+        : 'no exit code'
+
+  const message = [`Codex app-server exited unexpectedly (${exitDetail}).`]
+  if (stderrMessage) {
+    message.push(stderrMessage)
+  }
+
+  return new Error(message.join(' '))
 }
 
 async function writeConfig(codexHome, config) {

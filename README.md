@@ -53,6 +53,12 @@ Run this on any machine that already has Codex installed:
 npx codex-usage-dashboard@latest connect --site "https://your-site.vercel.app"
 ```
 
+The machine also needs a Codex CLI build that exposes `codex app-server`. If `codex --help` does not list `app-server`, update Codex first:
+
+```bash
+npm install -g @openai/codex
+```
+
 That command:
 
 - starts a local `codex app-server`

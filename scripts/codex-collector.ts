@@ -20,8 +20,11 @@ import {
 
 const rootDir = process.cwd()
 const once = process.argv.includes('--once')
+const CODEX_HELP_TIMEOUT_MS = 5_000
 const ONE_SHOT_CONNECT_ATTEMPTS = 15
 const ONE_SHOT_CONNECT_DELAY_MS = 1_000
+
+let codexAppServerSupportPromise: Promise<void> | null = null
 
 for (const fileName of ['.env.collector.local', '.env.local', '.env']) {
   const envPath = path.resolve(rootDir, fileName)
@@ -116,7 +119,7 @@ class CodexSourceMonitor {
 
   async start() {
     if (this.source.autoStart) {
-      this.spawnAppServer()
+      await this.spawnAppServer()
     }
 
     if (once) {
@@ -329,10 +332,12 @@ class CodexSourceMonitor {
     })
   }
 
-  private spawnAppServer() {
+  private async spawnAppServer() {
     if (this.child) {
       return
     }
+
+    await ensureCodexAppServerSupport()
 
     const codexHome = this.source.codexHome
       ? expandHomeDirectory(this.source.codexHome)
@@ -352,6 +357,11 @@ class CodexSourceMonitor {
     )
 
     this.child = child
+
+    child.on('error', (error) => {
+      this.log(`failed to start app-server: ${stringifyError(error)}`)
+      this.child = null
+    })
 
     child.stdout?.on('data', (chunk) => {
       const line = chunk.toString().trim()
@@ -460,6 +470,112 @@ function expandHomeDirectory(value: string) {
   }
 
   return path.join(os.homedir(), value.slice(2))
+}
+
+async function ensureCodexAppServerSupport() {
+  if (!codexAppServerSupportPromise) {
+    codexAppServerSupportPromise = inspectCodexCliForAppServer().catch(
+      (error) => {
+        codexAppServerSupportPromise = null
+        throw error
+      },
+    )
+  }
+
+  await codexAppServerSupportPromise
+}
+
+async function inspectCodexCliForAppServer() {
+  const [help, version] = await Promise.all([
+    runCommandCapture('codex', ['--help'], CODEX_HELP_TIMEOUT_MS),
+    runCommandCapture('codex', ['--version'], CODEX_HELP_TIMEOUT_MS),
+  ])
+
+  const helpText = `${help.stdout}\n${help.stderr}`
+  if (help.code === 0 && /\bapp-server\b/.test(helpText)) {
+    return
+  }
+
+  const versionText = normalizeCodexVersion(version.stdout || version.stderr)
+  throw new Error(
+    `Installed Codex CLI ${versionText} does not support \`codex app-server\`. Update it with \`npm install -g @openai/codex\` and rerun the collector.`,
+  )
+}
+
+function runCommandCapture(command: string, args: string[], timeoutMs: number) {
+  return new Promise<{
+    code: number | null
+    signal: NodeJS.Signals | null
+    stderr: string
+    stdout: string
+  }>((resolve, reject) => {
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+
+    const child = spawn(command, args, {
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      child.kill('SIGTERM')
+      reject(
+        new Error(
+          `Timed out while probing \`${command} ${args.join(' ')}\`.`,
+        ),
+      )
+    }, timeoutMs)
+
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+
+    child.once('error', (error) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      clearTimeout(timeout)
+      reject(
+        new Error(
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? 'The `codex` command is not installed on this machine.'
+            : stringifyError(error),
+        ),
+      )
+    })
+
+    child.once('close', (code, signal) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      clearTimeout(timeout)
+      resolve({
+        code,
+        signal,
+        stderr: stderr.trim(),
+        stdout: stdout.trim(),
+      })
+    })
+  })
+}
+
+function normalizeCodexVersion(versionText: string) {
+  const normalized = versionText.trim().replace(/^codex-cli\s+/i, '')
+  return normalized || 'unknown'
 }
 
 function stringifyError(error: unknown) {
