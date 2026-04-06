@@ -492,6 +492,19 @@ function EmptyState() {
   )
 }
 
+function getAccountIdentityLines(account: DashboardAccountRow) {
+  const primary = account.label ?? account.email ?? account.account_key
+  const secondary = account.email
+    ? account.email !== primary
+      ? account.email
+      : null
+    : account.account_key !== primary
+      ? account.account_key
+      : null
+
+  return { primary, secondary }
+}
+
 function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
   return (
     <Table className="min-w-[760px]">
@@ -506,16 +519,18 @@ function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
       </TableHeader>
       <TableBody>
         {accounts.map((account) => {
+          const identity = getAccountIdentityLines(account)
+
           return (
             <TableRow key={account.id}>
               <TableCell className="px-4 py-3 sm:px-5">
                 <div className="space-y-1">
-                  <p className="font-medium text-foreground">
-                    {account.label ?? account.account_key}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {account.email ?? account.account_key}
-                  </p>
+                  <p className="font-medium text-foreground">{identity.primary}</p>
+                  {identity.secondary ? (
+                    <p className="text-sm text-muted-foreground">
+                      {identity.secondary}
+                    </p>
+                  ) : null}
                 </div>
               </TableCell>
               <TableCell>
@@ -554,15 +569,17 @@ function AccountSummaryList({ accounts }: { accounts: DashboardAccountRow[] }) {
   return (
     <div className="divide-y divide-border">
       {accounts.map((account) => {
+        const identity = getAccountIdentityLines(account)
+
         return (
           <div key={account.id} className="space-y-3 px-4 py-3">
             <div className="min-w-0">
-              <p className="font-medium text-foreground">
-                {account.label ?? account.account_key}
-              </p>
-              <p className="truncate text-sm text-muted-foreground">
-                {account.email ?? account.account_key}
-              </p>
+              <p className="font-medium text-foreground">{identity.primary}</p>
+              {identity.secondary ? (
+                <p className="truncate text-sm text-muted-foreground">
+                  {identity.secondary}
+                </p>
+              ) : null}
             </div>
 
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
