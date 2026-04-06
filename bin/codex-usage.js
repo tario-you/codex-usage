@@ -325,73 +325,71 @@ async function runConnectCommand(args) {
   const codexHome = resolveCodexHome(args.options['codex-home'])
   const existingConfig = await readConfig(codexHome)
   const client = new StdioCodexClient({ codexHome })
+  const siteOriginFromArgs = resolveSiteOrigin(args.options.site)
 
   try {
     await client.connect()
 
     if (existingConfig) {
-      const dashboardUrl = await resolveExistingDashboardUrl(existingConfig, args)
+      try {
+        const dashboardUrl = await resolveExistingDashboardUrl(existingConfig, args)
+        let dashboardOpenState = null
 
-      if (dashboardUrl) {
-        await openDashboard(dashboardUrl)
+        if (dashboardUrl) {
+          dashboardOpenState = await openDashboard(dashboardUrl)
+        }
+
+        await syncOnce(client, existingConfig, args)
+        logDashboardOpenState(dashboardOpenState)
+
+        if (args.options.watch) {
+          await runWatchLoop(client, existingConfig, args)
+        }
+
+        return
+      } catch (error) {
+        if (!isRevokedDeviceError(error)) {
+          throw error
+        }
+
+        const siteOrigin =
+          siteOriginFromArgs ??
+          existingConfig.dashboardOrigin ??
+          deriveOriginFromUrl(existingConfig.syncUrl)
+
+        if (!siteOrigin) {
+          throw new Error(
+            `This device was unlinked from the dashboard. Rerun \`${NPX_COMMAND} connect --site "https://codex-use-age.vercel.app"\` to create a new connection.`,
+          )
+        }
+
+        console.log(
+          'This device was unlinked from the dashboard. Creating a new connection...',
+        )
+
+        const refreshedConfig = await startConnectFlow(
+          client,
+          args,
+          codexHome,
+          siteOrigin,
+        )
+
+        if (args.options.watch) {
+          await runWatchLoop(client, refreshedConfig, args)
+        }
+
+        return
       }
-
-      await syncOnce(client, existingConfig, args)
-      console.log('Dashboard opened.')
-
-      if (args.options.watch) {
-        await runWatchLoop(client, existingConfig, args)
-      }
-
-      return
     }
 
-    const siteOrigin = resolveSiteOrigin(args.options.site)
+    const siteOrigin = siteOriginFromArgs
     if (!siteOrigin) {
       throw new Error(
         'Pass --site <url> the first time you run connect, or set CODEX_USAGE_SITE_URL.',
       )
     }
 
-    const snapshot = await readSnapshot(client, true)
-    const device = buildDevicePayload(args, codexHome)
-    const response = await fetch(new URL('/api/connect/start', siteOrigin), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        accountState: snapshot.accountState,
-        device,
-        rateLimits: snapshot.rateLimits,
-      }),
-    })
-
-    const payload = await parseResponseBody(response)
-    if (!response.ok) {
-      throw new Error(
-        buildHttpErrorMessage(response, payload, 'Unable to connect this machine.'),
-      )
-    }
-
-    const config = {
-      authMode: 'guest-link',
-      codexHome,
-      dashboardOrigin: siteOrigin,
-      deviceId: payload.data.deviceId,
-      deviceToken: payload.data.deviceToken,
-      label: device.label,
-      pollMs: payload.data.pollMs ?? DEFAULT_POLL_MS,
-      syncUrl: payload.data.syncUrl,
-    }
-
-    await writeConfig(codexHome, config)
-    await openDashboard(payload.data.dashboardUrl)
-    console.log('Dashboard opened.')
-    console.log(`Config saved to ${resolveConfigPath(codexHome)}`)
-    console.log(
-      `Next: rerun \`${NPX_COMMAND} connect --site "${siteOrigin}"\` to reopen this dashboard, or \`${NPX_COMMAND} sync --watch\` for live updates only.`,
-    )
+    const config = await startConnectFlow(client, args, codexHome, siteOrigin)
 
     if (args.options.watch) {
       await runWatchLoop(client, config, args)
@@ -399,6 +397,50 @@ async function runConnectCommand(args) {
   } finally {
     await client.close()
   }
+}
+
+async function startConnectFlow(client, args, codexHome, siteOrigin) {
+  const snapshot = await readSnapshot(client, true)
+  const device = buildDevicePayload(args, codexHome)
+  const response = await fetch(new URL('/api/connect/start', siteOrigin), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      accountState: snapshot.accountState,
+      device,
+      rateLimits: snapshot.rateLimits,
+    }),
+  })
+
+  const payload = await parseResponseBody(response)
+  if (!response.ok) {
+    throw new Error(
+      buildHttpErrorMessage(response, payload, 'Unable to connect this machine.'),
+    )
+  }
+
+  const config = {
+    authMode: 'guest-link',
+    codexHome,
+    dashboardOrigin: siteOrigin,
+    deviceId: payload.data.deviceId,
+    deviceToken: payload.data.deviceToken,
+    label: device.label,
+    pollMs: payload.data.pollMs ?? DEFAULT_POLL_MS,
+    syncUrl: payload.data.syncUrl,
+  }
+
+  await writeConfig(codexHome, config)
+  const dashboardOpenState = await openDashboard(payload.data.dashboardUrl)
+  logDashboardOpenState(dashboardOpenState)
+  console.log(`Config saved to ${resolveConfigPath(codexHome)}`)
+  console.log(
+    `Next: rerun \`${NPX_COMMAND} connect --site "${siteOrigin}"\` to reopen this dashboard, or \`${NPX_COMMAND} sync --watch\` for live updates only.`,
+  )
+
+  return config
 }
 
 async function runSyncCommand(args) {
@@ -575,8 +617,21 @@ function buildDevicePayload(args, codexHome, fallbackLabel) {
 async function openDashboard(url) {
   try {
     await openInBrowser(url)
+    return 'browser'
   } catch {
     console.log(`Open this URL in your browser: ${url}`)
+    return 'manual'
+  }
+}
+
+function logDashboardOpenState(state) {
+  if (state === 'browser') {
+    console.log('Dashboard URL sent to your browser.')
+    return
+  }
+
+  if (state === 'manual') {
+    console.log('Dashboard URL ready.')
   }
 }
 
@@ -618,6 +673,18 @@ function resolveSiteOrigin(configuredValue) {
   }
 
   return new URL(value).origin
+}
+
+function deriveOriginFromUrl(value) {
+  if (typeof value !== 'string' || !value) {
+    return null
+  }
+
+  try {
+    return new URL(value).origin
+  } catch {
+    return null
+  }
 }
 
 function resolveCodexHome(configuredValue) {
@@ -826,7 +893,52 @@ async function readConfig(codexHome) {
     return null
   }
 
-  return JSON.parse(await readFile(configPath, 'utf8'))
+  const rawConfig = JSON.parse(await readFile(configPath, 'utf8'))
+  const normalizedConfig = normalizeConfig(rawConfig)
+
+  if (JSON.stringify(normalizedConfig) !== JSON.stringify(rawConfig)) {
+    await writeConfig(codexHome, normalizedConfig)
+  }
+
+  return normalizedConfig
+}
+
+function normalizeConfig(config) {
+  if (!config || typeof config !== 'object') {
+    return config
+  }
+
+  const normalizedConfig = { ...config }
+
+  if (
+    !normalizedConfig.dashboardOrigin &&
+    typeof normalizedConfig.syncUrl === 'string'
+  ) {
+    try {
+      normalizedConfig.dashboardOrigin = new URL(
+        normalizedConfig.syncUrl,
+      ).origin
+    } catch {
+      // Leave the saved origin untouched when the sync URL is malformed.
+    }
+  }
+
+  if (looksLikeLegacyGuestLinkConfig(config)) {
+    normalizedConfig.authMode = 'guest-link'
+  }
+
+  return normalizedConfig
+}
+
+function looksLikeLegacyGuestLinkConfig(config) {
+  return (
+    !config.authMode &&
+    !config.dashboardOrigin &&
+    typeof config.deviceToken === 'string' &&
+    config.deviceToken.length > 0 &&
+    typeof config.syncUrl === 'string' &&
+    config.syncUrl.length > 0
+  )
 }
 
 async function parseResponseBody(response) {
@@ -874,6 +986,13 @@ function buildHttpErrorMessage(response, payload, fallbackMessage) {
   }
 
   return appendHttpContext(message, vercelError, vercelId)
+}
+
+function isRevokedDeviceError(error) {
+  return (
+    error instanceof Error &&
+    error.message.includes('This device is no longer authorized.')
+  )
 }
 
 function appendHttpContext(message, vercelError, vercelId) {
