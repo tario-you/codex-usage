@@ -1,0 +1,29 @@
+[
+  {
+    "sourceKey": "default-home",
+    "label": "Default Codex Home",
+    "port": 49444,
+    "codexHome": "~/.codex",
+    "autoStart": true,
+    "pollMs": 60000,
+    "enabled": true
+  },
+  {
+    "sourceKey": "slot-work",
+    "label": "Work Slot",
+    "port": 49445,
+    "codexHome": "~/.codex-work",
+    "autoStart": true,
+    "pollMs": 90000,
+    "enabled": false
+  },
+  {
+    "sourceKey": "slot-personal",
+    "label": "Personal Slot",
+    "port": 49446,
+    "codexHome": "~/.codex-personal",
+    "autoStart": true,
+    "pollMs": 90000,
+    "enabled": false
+  }
+]

@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "collector": "tsx scripts/codex-collector.ts",
+    "collector:once": "tsx scripts/codex-collector.ts --once"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
@@ -19,6 +22,7 @@
     "@tanstack/router-devtools": "^1.166.11",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.4.1",
     "lucide-react": "^1.7.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",

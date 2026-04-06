@@ -1,73 +1,62 @@
-# React + TypeScript + Vite
+# Codex Usage Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+One dashboard for up to three separate Codex accounts, backed by Supabase snapshots.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- TanStack Router + React Query
+- shadcn/ui + Tailwind CSS v4
+- Supabase Postgres for account rows and immutable usage snapshots
+- A local collector that talks to `codex app-server`
 
-## React Compiler
+## What the repo includes
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `src/`: dashboard UI that reads the latest account view from Supabase
+- `scripts/codex-collector.ts`: the local background collector
+- `supabase/migrations/`: schema for accounts, snapshots, and the `codex_dashboard_accounts` view
+- `collector.sources.example.json`: three source slots you can enable
+- `ops/com.codex-usage.collector.plist`: a launchd agent for macOS background execution
 
-## Expanding the ESLint configuration
+## Local setup
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. Start Docker Desktop. The local Supabase stack needs Docker.
+2. Run `supabase start`.
+3. Run `supabase db reset`.
+4. Run `supabase status` and copy the local URL, anon key, and service role key.
+5. Copy `.env.example` to `.env.local` for the app and `.env.collector.local` for the collector.
+6. Copy `collector.sources.example.json` to `collector.sources.json`.
+7. Run `npm run dev`.
+8. In another terminal, run `npm run collector`.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Background collector
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+The collector supports two patterns:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- `default-home`: watches your normal `~/.codex` so a new login gets discovered automatically
+- dedicated slots: keep extra `CODEX_HOME` directories alive in the background so multiple accounts keep refreshing at once
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Each source can either:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- connect to an existing `codex app-server` WebSocket
+- spawn its own `codex app-server --listen ws://127.0.0.1:<port>`
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Snapshots are written to Supabase on:
+
+- startup
+- `account/updated`
+- `account/login/completed`
+- `account/rateLimits/updated`
+- a periodic poll interval
+
+## macOS launchd
+
+To keep the collector running in the background:
+
+1. Copy `ops/com.codex-usage.collector.plist` to `~/Library/LaunchAgents/`.
+2. Run `launchctl load -w ~/Library/LaunchAgents/com.codex-usage.collector.plist`.
+3. Check `.collector.log` and `.collector.error.log` in the repo if something fails.
+
+## Notes
+
+- The dashboard intentionally keeps old accounts visible with `last updated` instead of removing them.
+- This repo was initialized with Supabase CLI, but the local stack will not start until Docker is running.

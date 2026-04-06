@@ -1,0 +1,1 @@
+-- Intentionally empty. The collector populates runtime data.
