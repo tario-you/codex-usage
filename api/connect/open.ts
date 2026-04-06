@@ -1,9 +1,9 @@
 import { z } from 'zod'
 
-import { buildConnectedDashboardUrl } from '../../src/shared/cli'
-import { errorResponse, jsonResponse } from '../_lib/http'
-import { hashToken } from '../_lib/security'
-import { serviceRoleSupabase } from '../_lib/supabase'
+import { buildConnectedDashboardUrl } from '../../src/shared/cli.js'
+import { errorResponse, jsonResponse } from '../_lib/http.js'
+import { hashToken } from '../_lib/security.js'
+import { serviceRoleSupabase } from '../_lib/supabase.js'
 
 const connectOpenBodySchema = z.object({
   deviceToken: z.string().min(1),

@@ -1,11 +1,19 @@
 import { z } from 'zod'
 
-import type { Json } from '../src/lib/database.types'
-import { accountStateSchema, deviceMetadataSchema, rateLimitsSchema } from './_lib/schemas'
-import { errorResponse, jsonResponse } from './_lib/http'
-import { hashToken } from './_lib/security'
-import { serviceRoleSupabase } from './_lib/supabase'
-import { persistSnapshotForOwner } from './_lib/persistence'
+import type { Json } from '../src/lib/database.types.js'
+import type {
+  CodexAccountReadResponse,
+  CodexRateLimitsResponse,
+} from '../src/shared/codex.js'
+import {
+  accountStateSchema,
+  deviceMetadataSchema,
+  rateLimitsSchema,
+} from './_lib/schemas.js'
+import { errorResponse, jsonResponse } from './_lib/http.js'
+import { hashToken } from './_lib/security.js'
+import { serviceRoleSupabase } from './_lib/supabase.js'
+import { persistSnapshotForOwner } from './_lib/persistence.js'
 
 const syncBodySchema = z.object({
   accountState: accountStateSchema,
@@ -18,8 +26,10 @@ export async function POST(request: Request) {
   try {
     const rawBody = await request.json().catch(() => null)
     const body = syncBodySchema.parse(rawBody)
+    const accountState = body.accountState as CodexAccountReadResponse
+    const rateLimits = body.rateLimits as CodexRateLimitsResponse
 
-    if (!body.accountState.account) {
+    if (!accountState.account) {
       return errorResponse(
         'Codex is not logged in on this machine yet. Run `codex login` first.',
         409,
@@ -60,7 +70,7 @@ export async function POST(request: Request) {
       .eq('id', device.id)
 
     await persistSnapshotForOwner({
-      accountState: body.accountState,
+      accountState,
       device: {
         codexHome: body.device?.codexHome ?? device.codex_home,
         deviceId: device.id,
@@ -70,7 +80,7 @@ export async function POST(request: Request) {
         metadata: nextMetadata,
       },
       ownerUserId: device.owner_user_id,
-      rateLimits: body.rateLimits,
+      rateLimits,
     })
 
     return jsonResponse({

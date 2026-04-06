@@ -1,4 +1,4 @@
-import { serviceRoleSupabase } from './supabase'
+import { serviceRoleSupabase } from './supabase.js'
 
 export async function requireUser(request: Request) {
   const authorization = request.headers.get('authorization')

@@ -290,20 +290,20 @@ async function runPairCommand(args) {
       }),
     })
 
-    const payload = await parseJsonResponse(response)
+    const payload = await parseResponseBody(response)
     if (!response.ok) {
-      throw new Error(payload.error ?? 'Pairing failed.')
+      throw new Error(buildHttpErrorMessage(response, payload, 'Pairing failed.'))
     }
 
     const config = {
       authMode: 'website-paired',
       codexHome,
-      deviceId: payload.deviceId,
-      deviceToken: payload.deviceToken,
+      deviceId: payload.data.deviceId,
+      deviceToken: payload.data.deviceToken,
       dashboardOrigin: new URL(pairUrl).origin,
       label: device.label,
-      pollMs: payload.pollMs ?? DEFAULT_POLL_MS,
-      syncUrl: payload.syncUrl,
+      pollMs: payload.data.pollMs ?? DEFAULT_POLL_MS,
+      syncUrl: payload.data.syncUrl,
     }
 
     await writeConfig(codexHome, config)
@@ -367,24 +367,26 @@ async function runConnectCommand(args) {
       }),
     })
 
-    const payload = await parseJsonResponse(response)
+    const payload = await parseResponseBody(response)
     if (!response.ok) {
-      throw new Error(payload.error ?? 'Unable to connect this machine.')
+      throw new Error(
+        buildHttpErrorMessage(response, payload, 'Unable to connect this machine.'),
+      )
     }
 
     const config = {
       authMode: 'guest-link',
       codexHome,
       dashboardOrigin: siteOrigin,
-      deviceId: payload.deviceId,
-      deviceToken: payload.deviceToken,
+      deviceId: payload.data.deviceId,
+      deviceToken: payload.data.deviceToken,
       label: device.label,
-      pollMs: payload.pollMs ?? DEFAULT_POLL_MS,
-      syncUrl: payload.syncUrl,
+      pollMs: payload.data.pollMs ?? DEFAULT_POLL_MS,
+      syncUrl: payload.data.syncUrl,
     }
 
     await writeConfig(codexHome, config)
-    await openDashboard(payload.dashboardUrl)
+    await openDashboard(payload.data.dashboardUrl)
     console.log('Dashboard opened.')
     console.log(`Config saved to ${resolveConfigPath(codexHome)}`)
     console.log(
@@ -501,9 +503,9 @@ async function syncOnce(client, config, args) {
     }),
   })
 
-  const payload = await parseJsonResponse(response)
+  const payload = await parseResponseBody(response)
   if (!response.ok) {
-    throw new Error(payload.error ?? 'Sync failed.')
+    throw new Error(buildHttpErrorMessage(response, payload, 'Sync failed.'))
   }
 }
 
@@ -519,12 +521,14 @@ async function resolveExistingDashboardUrl(config, args) {
       }),
     })
 
-    const payload = await parseJsonResponse(response)
+    const payload = await parseResponseBody(response)
     if (!response.ok) {
-      throw new Error(payload.error ?? 'Unable to open the dashboard.')
+      throw new Error(
+        buildHttpErrorMessage(response, payload, 'Unable to open the dashboard.'),
+      )
     }
 
-    return payload.dashboardUrl ?? null
+    return payload.data.dashboardUrl ?? null
   }
 
   const siteOrigin =
@@ -825,13 +829,81 @@ async function readConfig(codexHome) {
   return JSON.parse(await readFile(configPath, 'utf8'))
 }
 
-async function parseJsonResponse(response) {
-  const payload = await response.json().catch(() => null)
-  if (!payload || typeof payload !== 'object') {
-    return {}
+async function parseResponseBody(response) {
+  const text = (await response.text().catch(() => '')).trim()
+  if (!text) {
+    return { data: {}, text: '' }
   }
 
-  return payload
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object') {
+      return { data: parsed, text }
+    }
+  } catch {
+    // Fall back to the raw text when the response body is not JSON.
+  }
+
+  return { data: {}, text }
+}
+
+function buildHttpErrorMessage(response, payload, fallbackMessage) {
+  const bodyError =
+    typeof payload.data?.error === 'string' && payload.data.error.trim()
+      ? payload.data.error.trim()
+      : null
+  const plainText =
+    payload.text && !looksLikeHtml(payload.text)
+      ? payload.text.replace(/\s+/g, ' ').trim()
+      : ''
+  const statusLabel = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+  const vercelError = response.headers.get('x-vercel-error')
+  const vercelId = response.headers.get('x-vercel-id')
+
+  const detail = bodyError ?? truncateText(plainText, 240)
+  let message = detail
+    ? `${fallbackMessage} ${detail}`
+    : `${fallbackMessage} HTTP ${statusLabel}.`
+
+  if (!detail) {
+    return appendHttpContext(message, vercelError, vercelId)
+  }
+
+  if (!bodyError) {
+    message = `${message} (HTTP ${statusLabel})`
+  }
+
+  return appendHttpContext(message, vercelError, vercelId)
+}
+
+function appendHttpContext(message, vercelError, vercelId) {
+  const context = []
+
+  if (vercelError) {
+    context.push(`Vercel error: ${vercelError}`)
+  }
+
+  if (vercelId) {
+    context.push(`request id: ${vercelId}`)
+  }
+
+  if (!context.length) {
+    return message
+  }
+
+  return `${message} [${context.join('; ')}]`
+}
+
+function looksLikeHtml(text) {
+  return /^<!doctype html>|^<html[\s>]/i.test(text)
+}
+
+function truncateText(text, maxLength) {
+  if (text.length <= maxLength) {
+    return text
+  }
+
+  return `${text.slice(0, maxLength - 1)}…`
 }
 
 function waitForTermination(cleanup) {

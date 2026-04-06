@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
-import { errorResponse } from './_lib/http'
+import { errorResponse } from './_lib/http.js'
 
 const CLI_FILE_URL = new URL('../bin/codex-usage.js', import.meta.url)
 

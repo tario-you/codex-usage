@@ -1,8 +1,8 @@
-import { requireUser } from '../_lib/auth'
-import { buildPairCommand, buildSyncCommand } from '../../src/shared/cli'
-import { errorResponse, jsonResponse } from '../_lib/http'
-import { createOpaqueToken, hashToken } from '../_lib/security'
-import { serviceRoleSupabase } from '../_lib/supabase'
+import { requireUser } from '../_lib/auth.js'
+import { buildPairCommand, buildSyncCommand } from '../../src/shared/cli.js'
+import { errorResponse, jsonResponse } from '../_lib/http.js'
+import { createOpaqueToken, hashToken } from '../_lib/security.js'
+import { serviceRoleSupabase } from '../_lib/supabase.js'
 
 const PAIRING_TTL_MS = 15 * 60 * 1000
 

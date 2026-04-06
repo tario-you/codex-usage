@@ -1,11 +1,11 @@
-import type { Database, Json } from '../../src/lib/database.types'
+import type { Database, Json } from '../../src/lib/database.types.js'
 import {
   parseCreditsBalance,
   unixSecondsToIso,
   type CodexAccountReadResponse,
   type CodexRateLimitsResponse,
-} from '../../src/shared/codex'
-import { serviceRoleSupabase } from './supabase'
+} from '../../src/shared/codex.js'
+import { serviceRoleSupabase } from './supabase.js'
 
 interface DeviceContext {
   codexHome: string | null
