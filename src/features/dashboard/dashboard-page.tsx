@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
   AlertTriangle,
+  Check,
   Copy,
+  Link2Off,
   LogOut,
   RefreshCcw,
   TerminalSquare,
@@ -26,6 +28,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useAuthSession } from '@/lib/auth'
 import {
   buildSummary,
@@ -56,13 +63,16 @@ export function DashboardPage() {
   const [loginError, setLoginError] = useState<string | null>(null)
   const [isStartingGoogleLogin, setIsStartingGoogleLogin] = useState(false)
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false)
-  const [terminalCopyNotice, setTerminalCopyNotice] = useState<string | null>(null)
+  const [terminalCopyError, setTerminalCopyError] = useState<string | null>(null)
+  const [isTerminalCommandCopied, setIsTerminalCommandCopied] = useState(false)
   const [pairingCommand, setPairingCommand] = useState<PairingCommandState | null>(
     null,
   )
   const [pairingError, setPairingError] = useState<string | null>(null)
   const [copyNotice, setCopyNotice] = useState<string | null>(null)
   const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
+  const [unlinkError, setUnlinkError] = useState<string | null>(null)
+  const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null)
 
   const accountsQuery = useQuery({
     ...dashboardAccountsQueryOptions(session?.user.id ?? 'guest'),
@@ -85,7 +95,7 @@ export function DashboardPage() {
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
   const hasPairingDetails = Boolean(pairingError || pairingCommand)
   const hasAccountsDetails = Boolean(
-    accountsQuery.error || isLoadingAccounts || accounts.length > 0,
+    accountsQuery.error || unlinkError || isLoadingAccounts || accounts.length > 0,
   )
 
   useEffect(() => {
@@ -100,6 +110,18 @@ export function DashboardPage() {
     url.searchParams.delete(DASHBOARD_CONNECTED_QUERY_KEY)
     window.history.replaceState({}, '', url.toString())
   }, [])
+
+  useEffect(() => {
+    if (!isTerminalCommandCopied) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsTerminalCommandCopied(false)
+    }, 1500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isTerminalCommandCopied])
 
   async function handleGoogleSignIn() {
     setLoginError(null)
@@ -165,7 +187,8 @@ export function DashboardPage() {
     setPairingError(null)
     setCopyNotice(null)
     setConnectedNotice(null)
-    setTerminalCopyNotice(null)
+    setTerminalCopyError(null)
+    setIsTerminalCommandCopied(false)
 
     if (!supabase) {
       return
@@ -234,9 +257,60 @@ export function DashboardPage() {
   async function handleCopyTerminalCommand() {
     try {
       await navigator.clipboard.writeText(connectCommand)
-      setTerminalCopyNotice('Command copied.')
+      setTerminalCopyError(null)
+      setIsTerminalCommandCopied(true)
     } catch {
-      setTerminalCopyNotice('Copy failed. Select the command manually.')
+      setIsTerminalCommandCopied(false)
+      setTerminalCopyError('Copy failed. Select the command manually.')
+    }
+  }
+
+  async function handleUnlinkAccount(account: DashboardAccountRow) {
+    if (!session?.access_token) {
+      setUnlinkError('Your session is no longer valid. Sign in again.')
+      return
+    }
+
+    const identity = getAccountIdentityLines(account)
+    const confirmed = window.confirm(`Unlink ${identity.primary}?`)
+    if (!confirmed) {
+      return
+    }
+
+    setUnlinkError(null)
+    setUnlinkingAccountId(account.id)
+
+    try {
+      const response = await fetch('/api/accounts/unlink', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          accountId: account.id,
+        }),
+      })
+
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; ok?: boolean }
+        | null
+
+      if (!response.ok) {
+        throw new Error(
+          payload && 'error' in payload && payload.error
+            ? payload.error
+            : 'Unable to unlink this account.',
+        )
+      }
+
+      await accountsQuery.refetch()
+    } catch (error) {
+      setUnlinkError(
+        error instanceof Error ? error.message : 'Unable to unlink this account.',
+      )
+    } finally {
+      setUnlinkingAccountId(null)
     }
   }
 
@@ -300,9 +374,14 @@ export function DashboardPage() {
                       {summary.accountsTracked === 1 ? ' account' : ' accounts'}
                     </p>
                   </div>
-                  <Button variant="outline" onClick={() => void handleSignOut()}>
-                    <LogOut className="mr-2 size-4" />
-                    Sign out
+                  <Button
+                    aria-label="Sign out"
+                    onClick={() => void handleSignOut()}
+                    size="icon"
+                    title="Sign out"
+                    variant="outline"
+                  >
+                    <LogOut className="size-4" />
                   </Button>
                 </div>
               ) : null}
@@ -451,6 +530,11 @@ export function DashboardPage() {
                       {accountsQuery.error ? (
                         <ErrorBanner message={accountsQuery.error.message} />
                       ) : null}
+                      {unlinkError ? (
+                        <div className="px-4 pt-4 sm:px-5">
+                          <InlineMessage tone="error">{unlinkError}</InlineMessage>
+                        </div>
+                      ) : null}
                       {isLoadingAccounts ? <LoadingRows /> : null}
                       {!isLoadingAccounts && accounts.length === 0 ? (
                         <EmptyState />
@@ -458,10 +542,22 @@ export function DashboardPage() {
                       {accounts.length > 0 ? (
                         <>
                           <div className="md:hidden">
-                            <AccountSummaryList accounts={accounts} />
+                            <AccountSummaryList
+                              accounts={accounts}
+                              onUnlinkAccount={(account) =>
+                                void handleUnlinkAccount(account)
+                              }
+                              unlinkingAccountId={unlinkingAccountId}
+                            />
                           </div>
                           <div className="hidden md:block">
-                            <AccountTable accounts={accounts} />
+                            <AccountTable
+                              accounts={accounts}
+                              onUnlinkAccount={(account) =>
+                                void handleUnlinkAccount(account)
+                              }
+                              unlinkingAccountId={unlinkingAccountId}
+                            />
                           </div>
                         </>
                       ) : null}
@@ -476,44 +572,42 @@ export function DashboardPage() {
                 <InlineMessage tone="error">{loginError}</InlineMessage>
               ) : null}
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Connect from terminal</CardTitle>
-                  <CardDescription>
-                    Run one command on the machine that already has Codex. It
-                    opens this dashboard in the browser and does not require
-                    Google first.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {authRedirectError ? (
-                    <InlineMessage tone="error">{authRedirectError}</InlineMessage>
-                  ) : null}
+              <section className="space-y-4">
+                <h2 className="text-2xl font-semibold tracking-[-0.02em]">
+                  Connect from terminal
+                </h2>
 
-                  <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                    {connectCommand}
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-muted-foreground">
-                      Rerun the same command later to reopen the dashboard on
-                      the same machine.
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleCopyTerminalCommand()}
-                      type="button"
-                    >
-                      <Copy className="mr-2 size-3.5" />
-                      Copy
-                    </Button>
-                  </div>
+                {authRedirectError ? (
+                  <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+                ) : null}
 
-                  {terminalCopyNotice ? (
-                    <InlineMessage tone="default">{terminalCopyNotice}</InlineMessage>
-                  ) : null}
-                </CardContent>
-              </Card>
+                <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
+                  <Button
+                    aria-label={
+                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
+                    }
+                    className="absolute top-2 right-2"
+                    onClick={() => void handleCopyTerminalCommand()}
+                    size="icon-sm"
+                    title={
+                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
+                    }
+                    type="button"
+                    variant="ghost"
+                  >
+                    {isTerminalCommandCopied ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </Button>
+                  {connectCommand}
+                </div>
+
+                {terminalCopyError ? (
+                  <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
+                ) : null}
+              </section>
             </div>
           )}
         </div>
@@ -623,21 +717,33 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
   return { primary, secondary }
 }
 
-function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
+function AccountTable({
+  accounts,
+  onUnlinkAccount,
+  unlinkingAccountId,
+}: {
+  accounts: DashboardAccountRow[]
+  onUnlinkAccount: (account: DashboardAccountRow) => void
+  unlinkingAccountId: string | null
+}) {
   return (
-    <Table className="min-w-[760px]">
+    <Table className="min-w-[808px]">
       <TableHeader className="bg-muted/70">
         <TableRow className="hover:bg-muted/70">
           <TableHead className="px-4 sm:px-5">Account</TableHead>
           <TableHead>Snapshot</TableHead>
           <TableHead>5-hour</TableHead>
           <TableHead>Weekly</TableHead>
-          <TableHead className="pr-4 sm:pr-5">Weekly reset</TableHead>
+          <TableHead>Weekly reset</TableHead>
+          <TableHead className="w-12 px-4 sm:px-5">
+            <span className="sr-only">Unlink</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {accounts.map((account) => {
           const identity = getAccountIdentityLines(account)
+          const isUnlinking = unlinkingAccountId === account.id
 
           return (
             <TableRow key={account.id}>
@@ -665,7 +771,7 @@ function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
               <TableCell>
                 {percentLabel(account.secondary_remaining_percent)}
               </TableCell>
-              <TableCell className="pr-4 sm:pr-5">
+              <TableCell>
                 <div className="space-y-1">
                   <p className="font-medium text-foreground">
                     {formatTimestamp(account.secondary_resets_at)}
@@ -675,6 +781,13 @@ function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
                   </p>
                 </div>
               </TableCell>
+              <TableCell className="px-4 text-right sm:px-5">
+                <UnlinkAccountButton
+                  disabled={Boolean(unlinkingAccountId)}
+                  isUnlinking={isUnlinking}
+                  onClick={() => onUnlinkAccount(account)}
+                />
+              </TableCell>
             </TableRow>
           )
         })}
@@ -683,21 +796,37 @@ function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
   )
 }
 
-function AccountSummaryList({ accounts }: { accounts: DashboardAccountRow[] }) {
+function AccountSummaryList({
+  accounts,
+  onUnlinkAccount,
+  unlinkingAccountId,
+}: {
+  accounts: DashboardAccountRow[]
+  onUnlinkAccount: (account: DashboardAccountRow) => void
+  unlinkingAccountId: string | null
+}) {
   return (
     <div className="divide-y divide-border">
       {accounts.map((account) => {
         const identity = getAccountIdentityLines(account)
+        const isUnlinking = unlinkingAccountId === account.id
 
         return (
           <div key={account.id} className="space-y-3 px-4 py-3">
-            <div className="min-w-0">
-              <p className="font-medium text-foreground">{identity.primary}</p>
-              {identity.secondary ? (
-                <p className="truncate text-sm text-muted-foreground">
-                  {identity.secondary}
-                </p>
-              ) : null}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium text-foreground">{identity.primary}</p>
+                {identity.secondary ? (
+                  <p className="truncate text-sm text-muted-foreground">
+                    {identity.secondary}
+                  </p>
+                ) : null}
+              </div>
+              <UnlinkAccountButton
+                disabled={Boolean(unlinkingAccountId)}
+                isUnlinking={isUnlinking}
+                onClick={() => onUnlinkAccount(account)}
+              />
             </div>
 
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -726,6 +855,38 @@ function AccountSummaryList({ accounts }: { accounts: DashboardAccountRow[] }) {
         )
       })}
     </div>
+  )
+}
+
+function UnlinkAccountButton({
+  disabled,
+  isUnlinking,
+  onClick,
+}: {
+  disabled: boolean
+  isUnlinking: boolean
+  onClick: () => void
+}) {
+  const label = isUnlinking ? 'Unlinking account' : 'Unlink account'
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-label={label}
+          className="text-muted-foreground hover:text-destructive"
+          disabled={disabled}
+          onClick={onClick}
+          size="icon-sm"
+          title={label}
+          type="button"
+          variant="ghost"
+        >
+          <Link2Off className="size-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
