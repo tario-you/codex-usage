@@ -53,6 +53,12 @@ Run this on any machine:
 npx codex-usage-dashboard@latest connect --site "https://your-site.vercel.app"
 ```
 
+For local development in this repo, use:
+
+```bash
+npm run connect -- --site "http://localhost:5173"
+```
+
 The package now brings a compatible `@openai/codex` CLI dependency with it, so `connect`, `pair`, and `sync` do not require a separate global Codex install.
 
 If the machine has never logged into Codex before, authenticate once with:
