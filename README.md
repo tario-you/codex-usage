@@ -52,7 +52,7 @@ The Vite dev server now serves the local pairing and sync API routes under `/api
 The generated command looks like:
 
 ```bash
-npx codex-usage pair "https://your-site.vercel.app/api/pair/complete?token=..."
+curl -fsSL "https://your-site.vercel.app/api/cli" | node - pair "https://your-site.vercel.app/api/pair/complete?token=..."
 ```
 
 That command:
@@ -68,15 +68,15 @@ That command:
 To keep syncing from that machine:
 
 ```bash
-npx codex-usage sync --watch
+curl -fsSL "https://your-site.vercel.app/api/cli" | node - sync --watch
 ```
 
 The saved device token is read from the same Codex home that the CLI uses.
 
 ## Dev scripts
 
-- `npm run pair -- "<pair-url>"`: local version of the published pairing command
-- `npm run sync -- --watch`: local version of the watch command
+- `npm run pair -- "<pair-url>"`: local version of the hosted pairing command
+- `npm run sync -- --watch`: local version of the hosted sync command
 - `npm run collector`: legacy single-operator collector script
 
 ## Notes

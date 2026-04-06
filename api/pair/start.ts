@@ -11,6 +11,7 @@ export async function POST(request: Request) {
     const pairToken = createOpaqueToken()
     const expiresAt = new Date(Date.now() + PAIRING_TTL_MS).toISOString()
     const origin = new URL(request.url).origin
+    const cliUrl = `${origin}/api/cli`
     const pairUrl = `${origin}/api/pair/complete?token=${encodeURIComponent(pairToken)}`
 
     const { error } = await serviceRoleSupabase
@@ -27,9 +28,10 @@ export async function POST(request: Request) {
     }
 
     return jsonResponse({
-      command: `npx codex-usage pair "${pairUrl}"`,
+      command: `curl -fsSL "${cliUrl}" | node - pair "${pairUrl}"`,
       expiresAt,
       pairUrl,
+      syncCommand: `curl -fsSL "${cliUrl}" | node - sync --watch`,
     })
   } catch (error) {
     const message =

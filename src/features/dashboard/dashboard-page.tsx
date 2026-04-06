@@ -39,6 +39,7 @@ interface PairingCommandState {
   command: string
   expiresAt: string
   pairUrl: string
+  syncCommand: string
 }
 
 export function DashboardPage() {
@@ -291,6 +292,14 @@ export function DashboardPage() {
                             {copyNotice}
                           </p>
                         ) : null}
+                        <div className="space-y-2 border-t border-border pt-3">
+                          <label className="block text-sm font-medium text-foreground">
+                            Keep this running for live updates
+                          </label>
+                          <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                            {pairingCommand.syncCommand}
+                          </div>
+                        </div>
                       </div>
                     ) : null}
                   </CardContent>
@@ -309,8 +318,8 @@ export function DashboardPage() {
                     <p>1. Run the generated command where Codex is installed.</p>
                     <p>2. If Codex is not logged in there, run `codex login` once.</p>
                     <p>
-                      3. Keep `npx codex-usage sync --watch` running when you want
-                      live updates after the first pair.
+                      3. Keep the generated sync command running when you want live
+                      updates after the first pair.
                     </p>
                   </CardContent>
                 </Card>

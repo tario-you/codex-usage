@@ -246,9 +246,12 @@ async function runPairCommand(args) {
 
     await writeConfig(codexHome, config)
 
+    const cliUrl = new URL('/api/cli', pairUrl).toString()
     console.log('Pairing complete.')
     console.log(`Config saved to ${resolveConfigPath(codexHome)}`)
-    console.log('Next: run `npx codex-usage sync --watch` on this machine for live updates.')
+    console.log(
+      `Next: run \`curl -fsSL "${cliUrl}" | node - sync --watch\` on this machine for live updates.`,
+    )
 
     if (args.options.watch) {
       await runWatchLoop(client, config, args)

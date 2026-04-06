@@ -17,6 +17,12 @@ for (const fileName of ['.env.collector.local', '.env.local', '.env']) {
 type RouteHandler = (request: Request) => Promise<Response>
 
 const devRouteHandlers: Record<string, Partial<Record<string, RouteHandler>>> = {
+  '/api/cli': {
+    GET: async () => {
+      const module = await import('./api/cli')
+      return module.GET()
+    },
+  },
   '/api/pair/complete': {
     POST: async (request) => {
       const module = await import('./api/pair/complete')
