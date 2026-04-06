@@ -10,6 +10,7 @@ import {
   TerminalSquare,
 } from 'lucide-react'
 
+import { ThemeToggle } from '@/components/theme/theme-toggle'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -236,7 +237,7 @@ export function DashboardPage() {
     return (
       <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[720px]">
-          <Card className="border border-[#e1c7bf] bg-[#f7ebe7]">
+          <Card className="border-destructive/30 bg-destructive/10">
             <CardHeader>
               <CardTitle>Supabase env vars are missing</CardTitle>
               <CardDescription>
@@ -244,7 +245,7 @@ export function DashboardPage() {
                 Codex.
               </CardDescription>
             </CardHeader>
-            <CardContent className="text-sm text-[#7b4337]">
+            <CardContent className="text-destructive text-sm">
               {clientEnvError ??
                 'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'}
             </CardContent>
@@ -265,23 +266,27 @@ export function DashboardPage() {
               </h1>
             </div>
 
-            {session ? (
-              <div className="flex items-center gap-3">
-                <div className="text-right text-sm">
-                  <p className="font-medium text-foreground">
-                    {sessionLabel}
-                  </p>
-                  <p className="text-muted-foreground">
-                    {summary.accountsTracked} tracked
-                    {summary.accountsTracked === 1 ? ' account' : ' accounts'}
-                  </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+              <ThemeToggle className="w-full sm:w-auto" />
+
+              {session ? (
+                <div className="flex items-center gap-3">
+                  <div className="text-right text-sm">
+                    <p className="font-medium text-foreground">
+                      {sessionLabel}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {summary.accountsTracked} tracked
+                      {summary.accountsTracked === 1 ? ' account' : ' accounts'}
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={() => void handleSignOut()}>
+                    <LogOut className="mr-2 size-4" />
+                    Sign out
+                  </Button>
                 </div>
-                <Button variant="outline" onClick={() => void handleSignOut()}>
-                  <LogOut className="mr-2 size-4" />
-                  Sign out
-                </Button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </header>
 
@@ -536,7 +541,7 @@ export function DashboardPage() {
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="border-b border-[#e1c7bf] bg-[#f7ebe7] px-4 py-3 text-sm text-[#7b4337] sm:px-5">
+    <div className="border-destructive/30 bg-destructive/10 text-destructive border-b px-4 py-3 text-sm sm:px-5">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" />
         <div className="space-y-1">
@@ -559,7 +564,7 @@ function InlineMessage({
 }) {
   const toneClassName =
     tone === 'error'
-      ? 'border-[#e1c7bf] bg-[#f7ebe7] text-[#7b4337]'
+      ? 'border-destructive/30 bg-destructive/10 text-destructive'
       : 'border-border bg-muted text-foreground'
 
   return (
@@ -620,8 +625,8 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
 function AccountTable({ accounts }: { accounts: DashboardAccountRow[] }) {
   return (
     <Table className="min-w-[760px]">
-      <TableHeader className="bg-[#f7f3eb]">
-        <TableRow className="hover:bg-[#f7f3eb]">
+      <TableHeader className="bg-muted/70">
+        <TableRow className="hover:bg-muted/70">
           <TableHead className="px-4 sm:px-5">Account</TableHead>
           <TableHead>Snapshot</TableHead>
           <TableHead>5-hour</TableHead>
