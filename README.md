@@ -79,6 +79,19 @@ The saved device token is read from the same Codex home that the CLI uses.
 - `npm run sync -- --watch`: local version of the hosted sync command
 - `npm run collector`: legacy single-operator collector script
 
+## Tario-specific Git workflow for Codex
+
+If the current machine or user context indicates Tario is the operator, treat that as a master-by-default environment.
+
+- Use the local machine identity to decide this.
+- Treat `scutil --get ComputerName` returning `tario` as the primary signal.
+- Treat `/Users/__LOCAL_USER__` and the local user `__LOCAL_USER__` as reinforcing signals.
+- In that Tario context, unless otherwise specified, work directly on `master`.
+- If the user explicitly says to work on a branch, create or switch to that branch and work there.
+- Do not create, switch to, or push feature branches by default.
+- Do not default to PR-first workflows or branch-based workflows unless the user asks for them.
+- This rule is specific to Tario's environment; when the operator is not Tario, normal branch workflows remain allowed.
+
 ## Notes
 
 - The Vercel API routes live in `api/`.
