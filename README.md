@@ -1,83 +1,86 @@
 # Codex Usage Dashboard
 
-One dashboard for up to three separate Codex accounts, backed by Supabase snapshots.
+Multi-user Codex usage tracking with a Vercel-hosted dashboard, Supabase Auth, and a one-line CLI pairing flow.
 
 ## Stack
 
-- TanStack Router + React Query
-- shadcn/ui + Tailwind CSS v4
-- Supabase Postgres for account rows and immutable usage snapshots
-- A local collector that talks to `codex app-server`
+- Vite + TanStack Router + React Query
+- Supabase Auth + Postgres
+- Vercel Functions for pairing and sync ingest
+- Local Codex access through `codex app-server`
 
-## What the repo includes
+## What changed
 
-- `src/`: dashboard UI that reads the latest account view from Supabase
-- `scripts/codex-collector.ts`: the local background collector
-- `supabase/migrations/`: schema for accounts, snapshots, and the `codex_dashboard_accounts` view
-- `collector.sources.example.json`: three source slots you can enable
-- `ops/com.codex-usage.collector.plist`: a launchd agent for macOS background execution
+This repo no longer treats the dashboard as a public read-only board.
+
+- Users sign in on the website first.
+- The website creates a short-lived pairing command.
+- The local machine runs one CLI command against its existing Codex install.
+- Vercel receives sync payloads and writes them to Supabase with the service-role key.
+- Row-level security keeps each signed-in user scoped to their own accounts and snapshots.
+
+## Local setup
+
+1. Start Docker Desktop.
+2. Run `npm install`.
+3. Run `npm run setup:local`.
+4. Run `supabase db reset`.
+5. Run `npm run dev`.
+6. Open `http://localhost:5173`.
+
+The Vite dev server now serves the local pairing and sync API routes under `/api/*`.
 
 ## Hosted setup
 
 1. Link the repo to a hosted Supabase project with `supabase link --project-ref <ref>`.
-2. Run `supabase db push --linked`.
-3. Run `npm run setup:hosted`.
-4. Run `npm run dev`.
-5. In another terminal, run `npm run collector`.
+2. Run `npm run setup:hosted`.
+3. Set these Vercel environment variables:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+4. Deploy to Vercel.
 
-`npm run setup:hosted` will:
+`npm run setup:hosted` now writes the local env files and pushes any pending hosted Supabase migrations.
 
-- read the linked project ref from `supabase/.temp/project-ref`
-- fetch the hosted anon and service role keys from Supabase
-- write `.env.local` for the app
-- write `.env.collector.local` for the collector
-- create `collector.sources.json` from the example if you have not already customized it
+## Pairing flow
 
-## Local setup
+1. Sign in on the website.
+2. Click `Create pairing command`.
+3. Run the generated command on the machine that already has Codex installed.
 
-1. Start Docker Desktop. The local Supabase stack needs Docker.
-2. Run `npm run setup:local`.
-3. Run `supabase db reset`.
-4. Run `npm run dev`.
-5. In another terminal, run `npm run collector`.
+The generated command looks like:
 
-`npm run setup:local` will:
+```bash
+npx codex-usage pair "https://your-site.vercel.app/api/pair/complete?token=..."
+```
 
-- start the local Supabase stack if it is not already running
-- read the live local API URL, anon key, and service role key from `supabase status -o env`
-- write `.env.local` for the app
-- write `.env.collector.local` for the collector
-- create `collector.sources.json` from the example if you have not already customized it
+That command:
 
-## Background collector
+- starts a local `codex app-server`
+- reads the current Codex account and rate limits
+- exchanges the pairing token for a device token
+- stores the device token under `CODEX_HOME` in `codex-usage-sync.json`
+- pushes the first snapshot to the dashboard
 
-The collector supports two patterns:
+## Live sync after pairing
 
-- `default-home`: watches your normal `~/.codex` so a new login gets discovered automatically
-- dedicated slots: keep extra `CODEX_HOME` directories alive in the background so multiple accounts keep refreshing at once
+To keep syncing from that machine:
 
-Each source can either:
+```bash
+npx codex-usage sync --watch
+```
 
-- connect to an existing `codex app-server` WebSocket
-- spawn its own `codex app-server --listen ws://127.0.0.1:<port>`
+The saved device token is read from the same Codex home that the CLI uses.
 
-Snapshots are written to Supabase on:
+## Dev scripts
 
-- startup
-- `account/updated`
-- `account/login/completed`
-- `account/rateLimits/updated`
-- a periodic poll interval
-
-## macOS launchd
-
-To keep the collector running in the background:
-
-1. Copy `ops/com.codex-usage.collector.plist` to `~/Library/LaunchAgents/`.
-2. Run `launchctl load -w ~/Library/LaunchAgents/com.codex-usage.collector.plist`.
-3. Check `.collector.log` and `.collector.error.log` in the repo if something fails.
+- `npm run pair -- "<pair-url>"`: local version of the published pairing command
+- `npm run sync -- --watch`: local version of the watch command
+- `npm run collector`: legacy single-operator collector script
 
 ## Notes
 
-- The dashboard intentionally keeps old accounts visible with `last updated` instead of removing them.
-- This repo was initialized with Supabase CLI, but the local stack will not start until Docker is running.
+- The Vercel API routes live in `api/`.
+- Pairing and device state live in `codex_pairing_sessions` and `codex_devices`.
+- Existing rows without an owner remain in the database but are hidden by RLS from signed-in users.

@@ -29,6 +29,13 @@ function runSupabase(args: string[]) {
   })
 }
 
+function runSupabaseInteractive(args: string[]) {
+  execFileSync(supabaseBin, args, {
+    cwd: rootDir,
+    stdio: 'inherit',
+  })
+}
+
 function resolveSupabaseBin() {
   const configuredBin = process.env.SUPABASE_BIN?.trim()
   if (configuredBin) {
@@ -145,6 +152,8 @@ async function main() {
 
   await ensureCollectorConfig()
   await writeEnvFiles(projectRef)
+  console.log('applying pending hosted migrations...')
+  runSupabaseInteractive(['db', 'push'])
 
   console.log('')
   console.log('hosted setup complete')

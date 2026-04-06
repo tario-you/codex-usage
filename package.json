@@ -3,12 +3,17 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "bin": {
+    "codex-usage": "./bin/codex-usage.js"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",
+    "pair": "node ./bin/codex-usage.js pair",
+    "sync": "node ./bin/codex-usage.js sync",
     "setup:hosted": "tsx scripts/setup-hosted.ts",
     "setup:local": "tsx scripts/setup-local.ts",
     "collector": "tsx scripts/codex-collector.ts",

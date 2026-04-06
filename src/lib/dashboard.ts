@@ -31,11 +31,13 @@ export interface DashboardSummary {
   staleAccounts: number
 }
 
-export const dashboardAccountsQueryOptions = queryOptions({
-  queryKey: ['dashboard-accounts'],
-  queryFn: fetchDashboardAccounts,
-  refetchInterval: 30_000,
-})
+export function dashboardAccountsQueryOptions(userId: string) {
+  return queryOptions({
+    queryKey: ['dashboard-accounts', userId],
+    queryFn: fetchDashboardAccounts,
+    refetchInterval: 30_000,
+  })
+}
 
 async function fetchDashboardAccounts() {
   if (!supabase) {

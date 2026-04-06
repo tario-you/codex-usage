@@ -12,6 +12,7 @@ export interface Database {
       codex_accounts: {
         Row: {
           id: string
+          owner_user_id: string | null
           account_key: string
           email: string | null
           plan_type: string | null
@@ -27,6 +28,7 @@ export interface Database {
         }
         Insert: {
           id?: string
+          owner_user_id?: string | null
           account_key: string
           email?: string | null
           plan_type?: string | null
@@ -42,6 +44,7 @@ export interface Database {
         }
         Update: {
           id?: string
+          owner_user_id?: string | null
           account_key?: string
           email?: string | null
           plan_type?: string | null
@@ -55,7 +58,125 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: 'codex_accounts_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      codex_devices: {
+        Row: {
+          id: string
+          owner_user_id: string
+          pairing_session_id: string | null
+          device_key: string
+          device_token_hash: string
+          label: string
+          machine_name: string | null
+          codex_home: string | null
+          metadata: Json
+          last_seen_at: string
+          revoked_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          pairing_session_id?: string | null
+          device_key: string
+          device_token_hash: string
+          label: string
+          machine_name?: string | null
+          codex_home?: string | null
+          metadata?: Json
+          last_seen_at?: string
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          pairing_session_id?: string | null
+          device_key?: string
+          device_token_hash?: string
+          label?: string
+          machine_name?: string | null
+          codex_home?: string | null
+          metadata?: Json
+          last_seen_at?: string
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_devices_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_devices_pairing_session_id_fkey'
+            columns: ['pairing_session_id']
+            isOneToOne: false
+            referencedRelation: 'codex_pairing_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      codex_pairing_sessions: {
+        Row: {
+          id: string
+          owner_user_id: string
+          pair_token_hash: string
+          pair_token_preview: string
+          status: string
+          expires_at: string
+          paired_at: string | null
+          last_seen_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          pair_token_hash: string
+          pair_token_preview: string
+          status?: string
+          expires_at: string
+          paired_at?: string | null
+          last_seen_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          pair_token_hash?: string
+          pair_token_preview?: string
+          status?: string
+          expires_at?: string
+          paired_at?: string | null
+          last_seen_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_pairing_sessions_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
       }
       codex_usage_snapshots: {
         Row: {
@@ -153,6 +274,26 @@ export interface Database {
         Relationships: []
       }
     }
+    Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
+  }
+  auth: {
+    Tables: {
+      users: {
+        Row: {
+          id: string
+        }
+        Insert: {
+          id: string
+        }
+        Update: {
+          id?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: Record<string, never>
     Functions: Record<string, never>
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>

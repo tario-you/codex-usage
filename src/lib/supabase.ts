@@ -9,8 +9,8 @@ export const supabase = clientEnv
       clientEnv.VITE_SUPABASE_ANON_KEY,
       {
         auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+          autoRefreshToken: true,
+          persistSession: true,
         },
       },
     )
