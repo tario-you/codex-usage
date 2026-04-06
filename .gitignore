@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .collector*.log
 collector.sources.json
+supabase/.branches/
 
 # Editor directories and files
 .vscode/*

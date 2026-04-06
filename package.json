@@ -9,6 +9,7 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",
+    "setup:local": "tsx scripts/setup-local.ts",
     "collector": "tsx scripts/codex-collector.ts",
     "collector:once": "tsx scripts/codex-collector.ts --once"
   },

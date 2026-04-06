@@ -20,6 +20,8 @@ import {
 
 const rootDir = process.cwd()
 const once = process.argv.includes('--once')
+const ONE_SHOT_CONNECT_ATTEMPTS = 15
+const ONE_SHOT_CONNECT_DELAY_MS = 1_000
 
 for (const fileName of ['.env.collector.local', '.env.local', '.env']) {
   const envPath = path.resolve(rootDir, fileName)
@@ -118,6 +120,7 @@ class CodexSourceMonitor {
     }
 
     if (once) {
+      await this.connectOnce()
       await this.runCycle()
       await this.stop()
       return
@@ -157,6 +160,19 @@ class CodexSourceMonitor {
   }
 
   private async connectAndWatch() {
+    await this.connect()
+    await this.runCycle()
+
+    this.pollInterval = setInterval(() => {
+      void this.runCycle()
+    }, this.source.pollMs)
+
+    await new Promise<void>((resolve) => {
+      this.socket?.addEventListener('close', () => resolve(), { once: true })
+    })
+  }
+
+  private async connect() {
     this.log(`connecting to ${this.wsUrl}`)
     this.socket = await this.openSocket()
     this.socket.addEventListener('message', (event) => {
@@ -171,16 +187,33 @@ class CodexSourceMonitor {
       capabilities: {},
       clientInfo: { name: 'codex-usage-collector', version: '0.1.0' },
     })
+  }
 
-    await this.runCycle()
+  private async connectOnce() {
+    let lastError: unknown = null
 
-    this.pollInterval = setInterval(() => {
-      void this.runCycle()
-    }, this.source.pollMs)
+    for (
+      let attempt = 1;
+      attempt <= ONE_SHOT_CONNECT_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        await this.connect()
+        return
+      } catch (error) {
+        lastError = error
+        if (attempt === ONE_SHOT_CONNECT_ATTEMPTS) {
+          break
+        }
 
-    await new Promise<void>((resolve) => {
-      this.socket?.addEventListener('close', () => resolve(), { once: true })
-    })
+        this.log(
+          `waiting for app-server (${attempt}/${ONE_SHOT_CONNECT_ATTEMPTS})`,
+        )
+        await delay(ONE_SHOT_CONNECT_DELAY_MS)
+      }
+    }
+
+    throw lastError ?? new Error(`Unable to connect to ${this.wsUrl}`)
   }
 
   private async runCycle() {

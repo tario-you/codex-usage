@@ -20,13 +20,18 @@ One dashboard for up to three separate Codex accounts, backed by Supabase snapsh
 ## Local setup
 
 1. Start Docker Desktop. The local Supabase stack needs Docker.
-2. Run `supabase start`.
+2. Run `npm run setup:local`.
 3. Run `supabase db reset`.
-4. Run `supabase status` and copy the local URL, anon key, and service role key.
-5. Copy `.env.example` to `.env.local` for the app and `.env.collector.local` for the collector.
-6. Copy `collector.sources.example.json` to `collector.sources.json`.
-7. Run `npm run dev`.
-8. In another terminal, run `npm run collector`.
+4. Run `npm run dev`.
+5. In another terminal, run `npm run collector`.
+
+`npm run setup:local` will:
+
+- start the local Supabase stack if it is not already running
+- read the live local API URL, anon key, and service role key from `supabase status -o env`
+- write `.env.local` for the app
+- write `.env.collector.local` for the collector
+- create `collector.sources.json` from the example if you have not already customized it
 
 ## Background collector
 
