@@ -1,6 +1,10 @@
 import { z } from 'zod'
 
-import { hasGoogleIdentity, requireUser } from '../_lib/auth.js'
+import {
+  hasGoogleIdentity,
+  InvalidSessionError,
+  requireUser,
+} from '../_lib/auth.js'
 import { errorResponse, jsonResponse } from '../_lib/http.js'
 import { hashToken } from '../_lib/security.js'
 import { serviceRoleSupabase } from '../_lib/supabase.js'
@@ -19,8 +23,6 @@ export async function POST(request: Request) {
     const rawBody = await request.json().catch(() => null)
     const body = acceptInviteBodySchema.parse(rawBody)
     const tokenHash = hashToken(body.inviteToken)
-    const nowIso = new Date().toISOString()
-
     const invite = await getInviteByTokenHash(tokenHash)
     if (!invite) {
       return errorResponse('This invite link is invalid.', 404)
@@ -43,6 +45,14 @@ export async function POST(request: Request) {
       return errorResponse('This invite link has expired.', 410)
     }
 
+    if (invite.status === 'expired') {
+      return errorResponse('This invite link has expired.', 410)
+    }
+
+    if (invite.status === 'revoked') {
+      return errorResponse('This invite link is no longer available.', 409)
+    }
+
     if (invite.status === 'accepted' && invite.accepted_by_user_id === user.id) {
       await upsertShare({
         inviteId: invite.id,
@@ -60,43 +70,10 @@ export async function POST(request: Request) {
       return errorResponse('This invite link is no longer available.', 409)
     }
 
-    const claimResult = await serviceRoleSupabase
-      .from('codex_dashboard_share_invites')
-      .update({
-        accepted_at: nowIso,
-        accepted_by_user_id: user.id,
-        status: 'accepted',
-      })
-      .eq('id', invite.id)
-      .eq('status', 'pending')
-      .is('accepted_by_user_id', null)
-      .select('id')
-      .maybeSingle()
-
-    if (claimResult.error) {
-      throw claimResult.error
-    }
-
-    if (!claimResult.data) {
-      const latestInvite = await getInviteByTokenHash(tokenHash)
-      if (
-        latestInvite?.status === 'accepted' &&
-        latestInvite.accepted_by_user_id === user.id
-      ) {
-        await upsertShare({
-          inviteId: latestInvite.id,
-          ownerUserId: latestInvite.owner_user_id,
-          viewerUserId: user.id,
-        })
-
-        return jsonResponse({
-          alreadyAccepted: true,
-          ok: true,
-        })
-      }
-
-      return errorResponse('This invite link has already been claimed.', 409)
-    }
+    const existingShare = await getExistingShare({
+      ownerUserId: invite.owner_user_id,
+      viewerUserId: user.id,
+    })
 
     await upsertShare({
       inviteId: invite.id,
@@ -104,7 +81,10 @@ export async function POST(request: Request) {
       viewerUserId: user.id,
     })
 
-    return jsonResponse({ ok: true })
+    return jsonResponse({
+      alreadyAccepted: Boolean(existingShare && !existingShare.revoked_at),
+      ok: true,
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return errorResponse(error.issues.map((issue) => issue.message).join('; '))
@@ -112,7 +92,7 @@ export async function POST(request: Request) {
 
     const message =
       error instanceof Error ? error.message : 'Unable to accept the invite.'
-    const status = message.includes('Authorization') ? 401 : 400
+    const status = error instanceof InvalidSessionError ? 401 : 400
     return errorResponse(message, status)
   }
 }
@@ -122,6 +102,27 @@ async function getInviteByTokenHash(tokenHash: string) {
     .from('codex_dashboard_share_invites')
     .select('*')
     .eq('invite_token_hash', tokenHash)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+async function getExistingShare({
+  ownerUserId,
+  viewerUserId,
+}: {
+  ownerUserId: string
+  viewerUserId: string
+}) {
+  const { data, error } = await serviceRoleSupabase
+    .from('codex_dashboard_shares')
+    .select('id, revoked_at')
+    .eq('owner_user_id', ownerUserId)
+    .eq('viewer_user_id', viewerUserId)
     .maybeSingle()
 
   if (error) {

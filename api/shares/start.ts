@@ -1,4 +1,4 @@
-import { requireUser } from '../_lib/auth.js'
+import { InvalidSessionError, requireUser } from '../_lib/auth.js'
 import { getPreferredDashboardOrigin } from '../../src/shared/site.js'
 import { errorResponse, jsonResponse } from '../_lib/http.js'
 import { createOpaqueToken, hashToken } from '../_lib/security.js'
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unable to create an invite link.'
-    const status = message.includes('Authorization') ? 401 : 400
+    const status = error instanceof InvalidSessionError ? 401 : 400
     return errorResponse(message, status)
   }
 }

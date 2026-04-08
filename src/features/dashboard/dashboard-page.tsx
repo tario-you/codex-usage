@@ -33,7 +33,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useAuthSession } from '@/lib/auth'
+import { INVALID_SESSION_MESSAGE, useAuthSession } from '@/lib/auth'
 import {
   buildSummary,
   dashboardAccountsQueryOptions,
@@ -109,7 +109,8 @@ export function DashboardPage() {
   const [invitePreviewError, setInvitePreviewError] = useState<string | null>(null)
   const [inviteNotice, setInviteNotice] = useState<string | null>(null)
   const [pairingCopyNotice, setPairingCopyNotice] = useState<string | null>(null)
-  const [inviteCopyNotice, setInviteCopyNotice] = useState<string | null>(null)
+  const [inviteCopyError, setInviteCopyError] = useState<string | null>(null)
+  const [isInviteLinkCopied, setIsInviteLinkCopied] = useState(false)
   const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null)
@@ -183,6 +184,18 @@ export function DashboardPage() {
   }, [isTerminalCommandCopied])
 
   useEffect(() => {
+    if (!isInviteLinkCopied) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsInviteLinkCopied(false)
+    }, 1500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isInviteLinkCopied])
+
+  useEffect(() => {
     if (!inviteOriginRedirectUrl) {
       return
     }
@@ -199,9 +212,13 @@ export function DashboardPage() {
       return
     }
 
+    if (!session?.access_token) {
+      setHasAttemptedInviteAccept(false)
+      return
+    }
+
     if (
       inviteOriginRedirectUrl ||
-      !session?.access_token ||
       !hasGoogleSession ||
       hasAttemptedInviteAccept
     ) {
@@ -336,10 +353,11 @@ export function DashboardPage() {
     setInviteNotice(null)
     setShareInvite(null)
     setPairingCopyNotice(null)
-    setInviteCopyNotice(null)
+    setInviteCopyError(null)
     setConnectedNotice(null)
     setTerminalCopyError(null)
     setIsTerminalCommandCopied(false)
+    setIsInviteLinkCopied(false)
     clearPendingInviteToken()
 
     if (!supabase) {
@@ -350,6 +368,17 @@ export function DashboardPage() {
     if (error) {
       setLoginError(error.message)
     }
+  }
+
+  async function handleInvalidSession(message = INVALID_SESSION_MESSAGE) {
+    setHasAttemptedInviteAccept(false)
+
+    if (!supabase) {
+      return message
+    }
+
+    await supabase.auth.signOut({ scope: 'local' })
+    return message
   }
 
   async function handleStartPairing() {
@@ -375,6 +404,16 @@ export function DashboardPage() {
         | null
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            await handleInvalidSession(
+              payload && 'error' in payload && payload.error
+                ? payload.error
+                : INVALID_SESSION_MESSAGE,
+            ),
+          )
+        }
+
         throw new Error(
           payload && 'error' in payload && payload.error
             ? payload.error
@@ -416,6 +455,16 @@ export function DashboardPage() {
         | null
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            await handleInvalidSession(
+              payload && 'error' in payload && payload.error
+                ? payload.error
+                : INVALID_SESSION_MESSAGE,
+            ),
+          )
+        }
+
         throw new Error(
           payload && 'error' in payload && payload.error
             ? payload.error
@@ -424,7 +473,8 @@ export function DashboardPage() {
       }
 
       setShareInvite(payload as ShareInviteState)
-      setInviteCopyNotice(null)
+      setInviteCopyError(null)
+      setIsInviteLinkCopied(false)
     } catch (error) {
       setInviteCreateError(
         error instanceof Error ? error.message : 'Unable to create the invite.',
@@ -464,6 +514,16 @@ export function DashboardPage() {
         | null
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            await handleInvalidSession(
+              payload && 'error' in payload && payload.error
+                ? payload.error
+                : INVALID_SESSION_MESSAGE,
+            ),
+          )
+        }
+
         throw new Error(
           payload && 'error' in payload && payload.error
             ? payload.error
@@ -517,9 +577,11 @@ export function DashboardPage() {
 
     try {
       await navigator.clipboard.writeText(shareInvite.inviteUrl)
-      setInviteCopyNotice('Invite link copied.')
+      setInviteCopyError(null)
+      setIsInviteLinkCopied(true)
     } catch {
-      setInviteCopyNotice('Copy failed. Select the invite link manually.')
+      setIsInviteLinkCopied(false)
+      setInviteCopyError('Copy failed. Select the invite link manually.')
     }
   }
 
@@ -571,6 +633,16 @@ export function DashboardPage() {
         | null
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            await handleInvalidSession(
+              payload && 'error' in payload && payload.error
+                ? payload.error
+                : INVALID_SESSION_MESSAGE,
+            ),
+          )
+        }
+
         throw new Error(
           payload && 'error' in payload && payload.error
             ? payload.error
@@ -903,11 +975,11 @@ export function DashboardPage() {
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="space-y-1">
-                          <CardTitle>Invite viewer</CardTitle>
+                          <CardTitle>Invite viewers</CardTitle>
                           <CardDescription>
-                            Create a single-use link. The first person who opens
-                            it and signs in with Google gets access to your
-                            dashboard accounts.
+                            Create a reusable link. Anyone who opens it before
+                            it expires and signs in with Google gets access to
+                            your dashboard accounts.
                           </CardDescription>
                         </div>
                         <Button
@@ -927,28 +999,43 @@ export function DashboardPage() {
 
                         {shareInvite ? (
                           <div className="space-y-3">
-                            <label className="block text-sm font-medium text-foreground">
-                              Share this link
-                            </label>
-                            <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                              {shareInvite.inviteUrl}
-                            </div>
                             <div className="flex items-center justify-between gap-3">
+                              <label className="block text-sm font-medium text-foreground">
+                                Share this link
+                              </label>
                               <p className="text-xs text-muted-foreground">
                                 Expires {formatTimestamp(shareInvite.expiresAt)}
                               </p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void handleCopyInviteLink()}
-                              >
-                                <Copy className="mr-2 size-3.5" />
-                                Copy
-                              </Button>
                             </div>
-                            {inviteCopyNotice ? (
+                            <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
+                              <Button
+                                aria-label={
+                                  isInviteLinkCopied
+                                    ? 'Invite link copied'
+                                    : 'Copy invite link'
+                                }
+                                className="absolute top-2 right-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
+                                onClick={() => void handleCopyInviteLink()}
+                                size="icon-sm"
+                                title={
+                                  isInviteLinkCopied
+                                    ? 'Invite link copied'
+                                    : 'Copy invite link'
+                                }
+                                type="button"
+                                variant="ghost"
+                              >
+                                {isInviteLinkCopied ? (
+                                  <Check className="size-3.5" />
+                                ) : (
+                                  <Copy className="size-3.5" />
+                                )}
+                              </Button>
+                              {shareInvite.inviteUrl}
+                            </div>
+                            {inviteCopyError ? (
                               <p className="text-xs text-muted-foreground">
-                                {inviteCopyNotice}
+                                {inviteCopyError}
                               </p>
                             ) : null}
                           </div>

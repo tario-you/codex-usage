@@ -21,6 +21,9 @@ const emailOtpTypes = new Set<EmailOtpType>([
   'signup',
 ])
 
+export const INVALID_SESSION_MESSAGE =
+  'Your session is no longer valid. Sign in again.'
+
 export function useAuthSession() {
   const [isLoading, setIsLoading] = useState(Boolean(supabase))
   const [redirectError, setRedirectError] = useState<string | null>(null)
@@ -72,12 +75,40 @@ async function hydrateAuthState() {
     }
   }
 
-  const error = await resolveSessionFromRedirect()
+  const redirectError = await resolveSessionFromRedirect()
   const { data } = await supabase.auth.getSession()
+  const validatedSession = await validateSession(data.session ?? null)
 
   return {
-    error,
-    session: data.session ?? null,
+    error: redirectError ?? validatedSession.error,
+    session: validatedSession.session,
+  }
+}
+
+async function validateSession(session: Session | null) {
+  if (!supabase || !session) {
+    return {
+      error: null,
+      session,
+    }
+  }
+
+  const { data, error } = await supabase.auth.getUser(session.access_token)
+  if (error || !data.user) {
+    await supabase.auth.signOut({ scope: 'local' })
+
+    return {
+      error: INVALID_SESSION_MESSAGE,
+      session: null,
+    }
+  }
+
+  return {
+    error: null,
+    session: {
+      ...session,
+      user: data.user,
+    },
   }
 }
 
