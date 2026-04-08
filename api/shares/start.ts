@@ -1,4 +1,5 @@
 import { requireUser } from '../_lib/auth.js'
+import { getPreferredDashboardOrigin } from '../../src/shared/site.js'
 import { errorResponse, jsonResponse } from '../_lib/http.js'
 import { createOpaqueToken, hashToken } from '../_lib/security.js'
 import { serviceRoleSupabase } from '../_lib/supabase.js'
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
     const user = await requireUser(request)
     const inviteToken = createOpaqueToken()
     const expiresAt = new Date(Date.now() + SHARE_INVITE_TTL_MS).toISOString()
-    const origin = new URL(request.url).origin
+    const origin = getPreferredDashboardOrigin(new URL(request.url).origin)
     const inviteUrl = new URL('/', origin)
 
     inviteUrl.searchParams.set('invite', inviteToken)

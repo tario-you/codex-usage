@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { buildConnectedDashboardAuthUrl } from '../../src/shared/cli.js'
+import { getPreferredDashboardOrigin } from '../../src/shared/site.js'
 import { errorResponse, jsonResponse } from '../_lib/http.js'
 import { hashToken } from '../_lib/security.js'
 import { serviceRoleSupabase } from '../_lib/supabase.js'
@@ -12,6 +13,7 @@ const connectOpenBodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const url = new URL(request.url)
+    const dashboardOrigin = getPreferredDashboardOrigin(url.origin)
     const rawBody = await request.json().catch(() => null)
     const body = connectOpenBodySchema.parse(rawBody)
 
@@ -52,7 +54,7 @@ export async function POST(request: Request) {
     }
 
     return jsonResponse({
-      dashboardUrl: buildConnectedDashboardAuthUrl(url.origin, {
+      dashboardUrl: buildConnectedDashboardAuthUrl(dashboardOrigin, {
         tokenHash: linkData.properties.hashed_token,
         verificationType: linkData.properties.verification_type,
       }),

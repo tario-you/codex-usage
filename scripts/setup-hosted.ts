@@ -15,9 +15,10 @@ const collectorConfigExamplePath = path.join(
 const supabaseConfigPath = path.join(rootDir, 'supabase', 'config.toml')
 const projectRefPath = path.join(rootDir, 'supabase', '.temp', 'project-ref')
 const supabaseBin = resolveSupabaseBin()
-const defaultHostedSiteUrl =
-  'https://codex-use-age-tario-yous-projects.vercel.app'
-const defaultHostedAdditionalRedirectUrls = ['https://codexusage.vercel.app']
+const defaultHostedSiteUrl = 'https://codexusage.vercel.app'
+const defaultHostedAdditionalRedirectUrls = [
+  'https://codex-use-age-tario-yous-projects.vercel.app',
+]
 const localAuthRedirectUrls = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',

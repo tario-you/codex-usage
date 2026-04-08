@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import type { Json } from '../../src/lib/database.types.js'
 import { buildConnectedDashboardAuthUrl } from '../../src/shared/cli.js'
+import { getPreferredDashboardOrigin } from '../../src/shared/site.js'
 import type {
   CodexAccountReadResponse,
   CodexRateLimitsResponse,
@@ -28,6 +29,7 @@ const connectStartBodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const url = new URL(request.url)
+    const dashboardOrigin = getPreferredDashboardOrigin(url.origin)
     const rawBody = await request.json().catch(() => null)
     const body = connectStartBodySchema.parse(rawBody)
     const accountState = body.accountState as CodexAccountReadResponse
@@ -106,14 +108,14 @@ export async function POST(request: Request) {
     })
 
     return jsonResponse({
-      dashboardUrl: buildConnectedDashboardAuthUrl(url.origin, {
+      dashboardUrl: buildConnectedDashboardAuthUrl(dashboardOrigin, {
         tokenHash: linkData.properties.hashed_token,
         verificationType: linkData.properties.verification_type,
       }),
       deviceId: device.id,
       deviceToken,
       pollMs: CONNECT_POLL_MS,
-      syncUrl: `${url.origin}/api/sync`,
+      syncUrl: `${dashboardOrigin}/api/sync`,
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

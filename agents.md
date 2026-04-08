@@ -6,11 +6,12 @@ If you are OpenAI Codex, for all UI changes, you must read `Uncodixfy/Uncodixfy.
 If that file does not exist yet, pull `https://github.com/cyxzdev/Uncodixfy`.
 
 ## Hosted Site Default
-- If you need the hosted dashboard URL and the user has not explicitly given a different one in the current thread, use `https://codex-use-age-tario-yous-projects.vercel.app`.
+- If you need the hosted dashboard URL and the user has not explicitly given a different one in the current thread, use `https://codexusage.vercel.app`.
 - Use that exact URL for command examples, default `--site` values, and hosted dashboard references unless the user overrides it.
 - Do not assume `https://codex-use-age.vercel.app` belongs to this project. That hostname is not managed by the linked `codex-use-age` Vercel project and may point somewhere else entirely.
 - Vercel-hosted domain attachment is configured in Vercel project settings, not in this repo. `.vercel/project.json` only links the local repo to the Vercel project; it does not define which `*.vercel.app` hostnames are attached.
-- The stable project-owned hostname is `https://codex-use-age-tario-yous-projects.vercel.app`. It is attached at the Vercel project level, so future production deployments should continue updating it automatically.
+- The canonical hosted hostname is `https://codexusage.vercel.app`.
+- The stable project-owned hostname is `https://codex-use-age-tario-yous-projects.vercel.app`. Keep it attached as a fallback redirect target, not as the primary hosted URL.
 - If the hosted site ever looks stale again, verify the actual project-level domains and production aliases in Vercel before assuming the latest deployment is broken.
 
 ## Commit Guidelines

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps } from 'react'
+import { useEffect, useEffectEvent, useState, type ComponentProps } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
@@ -48,6 +48,11 @@ import {
   DASHBOARD_CONNECTED_QUERY_KEY,
 } from '@/shared/cli'
 import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
+import {
+  buildDashboardAuthReturnUrl,
+  getPreferredDashboardHref,
+  getPreferredDashboardOrigin,
+} from '@/shared/site'
 
 interface PairingCommandState {
   command: string
@@ -71,6 +76,8 @@ interface InvitePreviewState {
   status: 'accepted' | 'expired' | 'pending' | 'revoked'
 }
 
+const PENDING_INVITE_TOKEN_STORAGE_KEY = 'codex-usage.pending-invite-token'
+
 export function DashboardPage() {
   const {
     isLoading: authIsLoading,
@@ -78,7 +85,7 @@ export function DashboardPage() {
     session,
   } = useAuthSession()
   const [inviteToken, setInviteToken] = useState<string | null>(() =>
-    getInviteTokenFromLocation(),
+    getInitialInviteToken(),
   )
   const [loginError, setLoginError] = useState<string | null>(null)
   const [isStartingGoogleLogin, setIsStartingGoogleLogin] = useState(false)
@@ -119,7 +126,11 @@ export function DashboardPage() {
   const connectCommand =
     typeof window === 'undefined'
       ? ''
-      : buildConnectCommand(window.location.origin)
+      : buildConnectCommand(getPreferredDashboardOrigin(window.location.origin))
+  const inviteOriginRedirectUrl =
+    typeof window === 'undefined' || !inviteToken
+      ? null
+      : getInviteOriginRedirectUrl(window.location.href)
   const hasGoogleSession = hasSessionProvider(session, 'google')
   const googleIdentityEmail = getProviderEmail(session, 'google')
   const isGuestSession = getIsGuestSession(session)
@@ -137,6 +148,9 @@ export function DashboardPage() {
   const hasAccountsDetails = Boolean(
     accountsQuery.error || unlinkError || isLoadingAccounts || accounts.length > 0,
   )
+  const acceptInviteOnAuth = useEffectEvent(() => {
+    void handleAcceptInvite()
+  })
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -164,6 +178,14 @@ export function DashboardPage() {
   }, [isTerminalCommandCopied])
 
   useEffect(() => {
+    if (!inviteOriginRedirectUrl) {
+      return
+    }
+
+    window.location.replace(inviteOriginRedirectUrl)
+  }, [inviteOriginRedirectUrl])
+
+  useEffect(() => {
     if (!inviteToken) {
       setHasAttemptedInviteAccept(false)
       setInviteAcceptError(null)
@@ -172,21 +194,27 @@ export function DashboardPage() {
       return
     }
 
-    if (!session?.access_token || !hasGoogleSession || hasAttemptedInviteAccept) {
+    if (
+      inviteOriginRedirectUrl ||
+      !session?.access_token ||
+      !hasGoogleSession ||
+      hasAttemptedInviteAccept
+    ) {
       return
     }
 
     setHasAttemptedInviteAccept(true)
-    void handleAcceptInvite()
+    acceptInviteOnAuth()
   }, [
     hasGoogleSession,
     hasAttemptedInviteAccept,
     inviteToken,
+    inviteOriginRedirectUrl,
     session?.access_token,
   ])
 
   useEffect(() => {
-    if (!inviteToken) {
+    if (!inviteToken || inviteOriginRedirectUrl) {
       return
     }
 
@@ -228,7 +256,7 @@ export function DashboardPage() {
     return () => {
       cancelled = true
     }
-  }, [inviteToken])
+  }, [inviteOriginRedirectUrl, inviteToken])
 
   async function handleGoogleSignIn() {
     setLoginError(null)
@@ -243,8 +271,14 @@ export function DashboardPage() {
 
     setIsStartingGoogleLogin(true)
 
+    if (inviteToken) {
+      persistPendingInviteToken(inviteToken)
+    } else {
+      clearPendingInviteToken()
+    }
+
     const authOptions = {
-      redirectTo: window.location.href,
+      redirectTo: buildDashboardAuthReturnUrl(window.location.origin),
       skipBrowserRedirect: true,
     }
 
@@ -301,6 +335,7 @@ export function DashboardPage() {
     setConnectedNotice(null)
     setTerminalCopyError(null)
     setIsTerminalCommandCopied(false)
+    clearPendingInviteToken()
 
     if (!supabase) {
       return
@@ -431,6 +466,7 @@ export function DashboardPage() {
         )
       }
 
+      clearPendingInviteToken()
       clearInviteTokenFromLocation()
       setInviteToken(null)
       setInviteNotice(
@@ -667,12 +703,14 @@ export function DashboardPage() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <Button
-                          disabled={isStartingGoogleLogin}
+                          disabled={Boolean(inviteOriginRedirectUrl) || isStartingGoogleLogin}
                           onClick={() => void handleGoogleSignIn()}
                           type="button"
                         >
                           <GoogleIcon className="mr-2 size-4" />
-                          {isStartingGoogleLogin
+                          {inviteOriginRedirectUrl
+                            ? 'Opening shared link...'
+                            : isStartingGoogleLogin
                             ? 'Redirecting to Google...'
                             : inviteToken
                               ? 'Continue with Google'
@@ -973,6 +1011,10 @@ export function DashboardPage() {
                         </p>
                       </div>
                     </div>
+                  ) : inviteOriginRedirectUrl ? (
+                    <InlineMessage tone="default">
+                      Opening the invite on codexusage.vercel.app...
+                    </InlineMessage>
                   ) : !invitePreviewError ? (
                     <InlineMessage tone="default">
                       Loading invite details...
@@ -989,6 +1031,7 @@ export function DashboardPage() {
                   ) : null}
                   <Button
                     disabled={
+                      Boolean(inviteOriginRedirectUrl) ||
                       authIsLoading ||
                       isStartingGoogleLogin ||
                       invitePreview?.status === 'accepted' ||
@@ -999,7 +1042,9 @@ export function DashboardPage() {
                     type="button"
                   >
                     <GoogleIcon className="mr-2 size-4" />
-                    {authIsLoading
+                    {inviteOriginRedirectUrl
+                      ? 'Opening shared link...'
+                      : authIsLoading
                       ? 'Checking sign-in...'
                       : isStartingGoogleLogin
                         ? 'Redirecting to Google...'
@@ -1550,6 +1595,72 @@ function getInviteTokenFromLocation() {
 
   const inviteToken = new URL(window.location.href).searchParams.get('invite')
   return inviteToken?.trim() ? inviteToken : null
+}
+
+function getInitialInviteToken() {
+  return getInviteTokenFromLocation() ?? getPendingInviteTokenFromAuthRedirect()
+}
+
+function getInviteOriginRedirectUrl(currentHref: string) {
+  const nextHref = getPreferredDashboardHref(currentHref)
+  return nextHref === currentHref ? null : nextHref
+}
+
+function getPendingInviteTokenFromAuthRedirect() {
+  if (typeof window === 'undefined' || !hasAuthRedirectParams(window.location.href)) {
+    return null
+  }
+
+  return getPendingInviteToken()
+}
+
+function getPendingInviteToken() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const inviteToken = window.sessionStorage.getItem(
+      PENDING_INVITE_TOKEN_STORAGE_KEY,
+    )
+    return inviteToken?.trim() ? inviteToken : null
+  } catch {
+    return null
+  }
+}
+
+function persistPendingInviteToken(inviteToken: string) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, inviteToken)
+  } catch {
+    // Ignore storage write failures and fall back to the bare auth redirect.
+  }
+}
+
+function clearPendingInviteToken() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.sessionStorage.removeItem(PENDING_INVITE_TOKEN_STORAGE_KEY)
+  } catch {
+    // Ignore storage clear failures.
+  }
+}
+
+function hasAuthRedirectParams(currentHref: string) {
+  const url = new URL(currentHref)
+
+  return (
+    url.searchParams.has('code') ||
+    url.searchParams.has('token_hash') ||
+    url.searchParams.has('type')
+  )
 }
 
 function clearInviteTokenFromLocation() {
