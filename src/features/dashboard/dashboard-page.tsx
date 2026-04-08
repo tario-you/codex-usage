@@ -108,7 +108,12 @@ export function DashboardPage() {
   const [invitePreview, setInvitePreview] = useState<InvitePreviewState | null>(null)
   const [invitePreviewError, setInvitePreviewError] = useState<string | null>(null)
   const [inviteNotice, setInviteNotice] = useState<string | null>(null)
-  const [pairingCopyNotice, setPairingCopyNotice] = useState<string | null>(null)
+  const [pairingCopyError, setPairingCopyError] = useState<string | null>(null)
+  const [isPairingCommandCopied, setIsPairingCommandCopied] = useState(false)
+  const [syncCommandCopyError, setSyncCommandCopyError] = useState<string | null>(
+    null,
+  )
+  const [isSyncCommandCopied, setIsSyncCommandCopied] = useState(false)
   const [inviteCopyError, setInviteCopyError] = useState<string | null>(null)
   const [isInviteLinkCopied, setIsInviteLinkCopied] = useState(false)
   const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
@@ -194,6 +199,30 @@ export function DashboardPage() {
 
     return () => window.clearTimeout(timeoutId)
   }, [isInviteLinkCopied])
+
+  useEffect(() => {
+    if (!isPairingCommandCopied) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsPairingCommandCopied(false)
+    }, 1500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isPairingCommandCopied])
+
+  useEffect(() => {
+    if (!isSyncCommandCopied) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsSyncCommandCopied(false)
+    }, 1500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isSyncCommandCopied])
 
   useEffect(() => {
     if (!inviteOriginRedirectUrl) {
@@ -352,7 +381,10 @@ export function DashboardPage() {
     setInviteAcceptError(null)
     setInviteNotice(null)
     setShareInvite(null)
-    setPairingCopyNotice(null)
+    setPairingCopyError(null)
+    setIsPairingCommandCopied(false)
+    setSyncCommandCopyError(null)
+    setIsSyncCommandCopied(false)
     setInviteCopyError(null)
     setConnectedNotice(null)
     setTerminalCopyError(null)
@@ -422,7 +454,10 @@ export function DashboardPage() {
       }
 
       setPairingCommand(payload as PairingCommandState)
-      setPairingCopyNotice(null)
+      setPairingCopyError(null)
+      setIsPairingCommandCopied(false)
+      setSyncCommandCopyError(null)
+      setIsSyncCommandCopied(false)
     } catch (error) {
       setPairingError(
         error instanceof Error ? error.message : 'Unable to create pairing.',
@@ -564,9 +599,26 @@ export function DashboardPage() {
 
     try {
       await navigator.clipboard.writeText(pairingCommand.command)
-      setPairingCopyNotice('Command copied.')
+      setPairingCopyError(null)
+      setIsPairingCommandCopied(true)
     } catch {
-      setPairingCopyNotice('Copy failed. Select the command manually.')
+      setIsPairingCommandCopied(false)
+      setPairingCopyError('Copy failed. Select the command manually.')
+    }
+  }
+
+  async function handleCopySyncCommand() {
+    if (!pairingCommand) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(pairingCommand.syncCommand)
+      setSyncCommandCopyError(null)
+      setIsSyncCommandCopied(true)
+    } catch {
+      setIsSyncCommandCopied(false)
+      setSyncCommandCopyError('Copy failed. Select the command manually.')
     }
   }
 
@@ -1070,37 +1122,80 @@ export function DashboardPage() {
 
                         {pairingCommand ? (
                           <div className="space-y-3">
-                            <label className="block text-sm font-medium text-foreground">
-                              Run this on the local machine
-                            </label>
-                            <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                              {pairingCommand.command}
-                            </div>
                             <div className="flex items-center justify-between gap-3">
+                              <label className="block text-sm font-medium text-foreground">
+                                Run this on the local machine
+                              </label>
                               <p className="text-xs text-muted-foreground">
                                 Expires {formatTimestamp(pairingCommand.expiresAt)}
                               </p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void handleCopyCommand()}
-                              >
-                                <Copy className="mr-2 size-3.5" />
-                                Copy
-                              </Button>
                             </div>
-                            {pairingCopyNotice ? (
+                            <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
+                              <Button
+                                aria-label={
+                                  isPairingCommandCopied
+                                    ? 'Command copied'
+                                    : 'Copy command'
+                                }
+                                className="absolute top-2 right-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
+                                onClick={() => void handleCopyCommand()}
+                                size="icon-sm"
+                                title={
+                                  isPairingCommandCopied
+                                    ? 'Command copied'
+                                    : 'Copy command'
+                                }
+                                type="button"
+                                variant="ghost"
+                              >
+                                {isPairingCommandCopied ? (
+                                  <Check className="size-3.5" />
+                                ) : (
+                                  <Copy className="size-3.5" />
+                                )}
+                              </Button>
+                              {pairingCommand.command}
+                            </div>
+                            {pairingCopyError ? (
                               <p className="text-xs text-muted-foreground">
-                                {pairingCopyNotice}
+                                {pairingCopyError}
                               </p>
                             ) : null}
                             <div className="space-y-2 border-t border-border pt-3">
                               <label className="block text-sm font-medium text-foreground">
                                 Keep this running for live updates
                               </label>
-                              <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                              <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
+                                <Button
+                                  aria-label={
+                                    isSyncCommandCopied
+                                      ? 'Command copied'
+                                      : 'Copy command'
+                                  }
+                                  className="absolute top-2 right-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
+                                  onClick={() => void handleCopySyncCommand()}
+                                  size="icon-sm"
+                                  title={
+                                    isSyncCommandCopied
+                                      ? 'Command copied'
+                                      : 'Copy command'
+                                  }
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  {isSyncCommandCopied ? (
+                                    <Check className="size-3.5" />
+                                  ) : (
+                                    <Copy className="size-3.5" />
+                                  )}
+                                </Button>
                                 {pairingCommand.syncCommand}
                               </div>
+                              {syncCommandCopyError ? (
+                                <p className="text-xs text-muted-foreground">
+                                  {syncCommandCopyError}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
                         ) : null}
