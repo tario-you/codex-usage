@@ -2,17 +2,18 @@
 
 Date: 2026-04-08
 
-Status: fixed in hosted Supabase config, fixed in code, follow-up query race fixed in code, universal-link follow-up fixed in code, deployed to production for the earlier host/race fixes
+Status: fixed in hosted Supabase config, fixed in code, follow-up query race fixed in code, universal-link follow-up fixed in code, stale-session follow-up fixed in code, deployed to production
 
 ## Summary
 
-Three user-visible failures were coupled across the same invite flow over time:
+Four user-visible failures were coupled across the same invite flow over time:
 
 1. Clicking `Continue with Google` on the hosted dashboard returned to `https://codex-use-age-tario-yous-projects.vercel.app/#` instead of `https://codexusage.vercel.app/`.
 2. Invite links appeared to do nothing. New invite rows were created, but invite acceptance never created any rows in `codex_dashboard_shares`, so invitees saw zero inherited accounts.
 3. Even after those fixes, invite links were still single-claim. The first successful viewer effectively consumed the link, which is the opposite of a universal invite link.
+4. After destructive test-user cleanup, the browser could still look signed in with a dead Supabase session. Invite acceptance then failed server-side while the client stayed stuck in a half-authenticated state.
 
-The earlier break was not in the share-recursion SQL. It happened earlier in the flow: Supabase OAuth redirect handling and host selection. The later universal-link bug was different: it was encoded directly into the invite schema, the accept handler, and the dashboard copy.
+The earlier break was not in the share-recursion SQL. It happened earlier in the flow: Supabase OAuth redirect handling and host selection. The later universal-link bug was different: it was encoded directly into the invite schema, the accept handler, and the dashboard copy. The last follow-up was different again: local browser auth state and server-validated auth state had drifted apart.
 
 ## Audited Sources
 
@@ -20,6 +21,10 @@ Official docs:
 
 - Supabase Redirect URLs docs: <https://supabase.com/docs/guides/auth/redirect-urls>
 - Supabase troubleshooting note for wrong `redirectTo` behavior: <https://supabase.com/docs/guides/troubleshooting/why-am-i-being-redirected-to-the-wrong-url-when-using-auth-redirectto-option-_vqIeO>
+- Supabase JS `getSession()` reference: <https://supabase.com/docs/reference/javascript/auth-getsession>
+- Supabase JS `getUser()` reference: <https://supabase.com/docs/reference/javascript/auth-getuser>
+- Supabase Auth sign-out scopes guide: <https://supabase.com/docs/guides/auth/signout>
+- Supabase JS `signOut()` reference: <https://supabase.com/docs/reference/javascript/auth-signout>
 - MDN `sessionStorage` docs: <https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage>
 - TanStack Query guide for disabling and pausing queries: <https://tanstack.com/query/v5/docs/framework/react/guides/disabling-queries>
 - TanStack Query `QueryClient` reference: <https://tanstack.com/query/v5/docs/reference/QueryClient>
@@ -33,9 +38,13 @@ Repo and production evidence:
 - [api/shares/start.ts](/Users/tarioyou/codex-usage/api/shares/start.ts)
 - [api/shares/accept.ts](/Users/tarioyou/codex-usage/api/shares/accept.ts)
 - [api/shares/preview.ts](/Users/tarioyou/codex-usage/api/shares/preview.ts)
+- [api/_lib/auth.ts](/Users/tarioyou/codex-usage/api/_lib/auth.ts)
+- [api/accounts/unlink.ts](/Users/tarioyou/codex-usage/api/accounts/unlink.ts)
+- [src/lib/auth.ts](/Users/tarioyou/codex-usage/src/lib/auth.ts)
 - [supabase/migrations/20260408103000_add_dashboard_share_invites.sql](/Users/tarioyou/codex-usage/supabase/migrations/20260408103000_add_dashboard_share_invites.sql#L1)
 - `git show b934153` audited on 2026-04-08: original invite launch encoded single-use semantics in schema, API, and UI
 - `git show eee7d4f` audited on 2026-04-08: first-visit race fix was correct, but it intentionally left the single-claim invite state machine unchanged
+- `git show d900b3a` audited on 2026-04-08: stale-session fix added server-auth validation on hydrate, local session cleanup, and explicit `401` handling for invalid sessions
 - Current `HEAD` audit on 2026-04-08:
   - [api/shares/accept.ts](/Users/tarioyou/codex-usage/api/shares/accept.ts#L16) now keeps pending invites reusable and issues access per viewer via `codex_dashboard_shares`
   - [src/features/dashboard/dashboard-page.tsx](/Users/tarioyou/codex-usage/src/features/dashboard/dashboard-page.tsx#L972) now describes the link as reusable
@@ -45,6 +54,8 @@ Repo and production evidence:
   `dpl_Dvwy7NetpRxN1nZQCk8c67fCX6na`
 - Follow-up production deployment audited on 2026-04-08:
   `dpl_EwAR1XHywkMMdYTRwWTC2KCznvBz`
+- Stale-session production deployment audited on 2026-04-08:
+  `dpl_72jcNnyKRPP3MxddEPyHEY9JPMwJ`
 - Hosted Supabase config push audited on 2026-04-08:
   remote `site_url` changed from `https://codex-use-age-tario-yous-projects.vercel.app` to `https://codexusage.vercel.app`
 - Hosted database audit on 2026-04-08:
@@ -52,6 +63,9 @@ Repo and production evidence:
 - Live browser network audits on 2026-04-08 via Chrome DevTools:
   - before the follow-up fix, dashboard reads could complete against pre-share state
   - after the follow-up fix, the first dashboard reads happened only after `/api/shares/accept` returned `200`
+  - stale-session repro used persisted key `sb-ccgghgxfocdmelclrpef-auth-token` with deleted user id `5b8d4573-9f8b-48cd-b026-7da28323fe4a`
+  - `GET /auth/v1/user` returned `403` for that persisted session
+  - after `d900b3a`, the client cleared the local session, removed the stale storage entry, and returned to `Continue with Google` plus `Your session is no longer valid. Sign in again.`
 
 ## What We Observed
 
@@ -86,11 +100,12 @@ That distinction mattered. It proved:
 
 ## Root Cause
 
-There were three distinct failures across the same invite flow over time:
+There were four distinct failures across the same invite flow over time:
 
 1. Hosted OAuth could return to the wrong host and drop the invite token.
 2. Even after that was fixed, dashboard queries could start before invite redemption had finished.
 3. Even after both of those were fixed, the invite itself was still modeled as something one viewer could claim, not as a reusable capability multiple viewers could redeem.
+4. Even after those were fixed, the browser could still trust a dead local Supabase session longer than the server did.
 
 ## Root Cause, Layer 1: Hosted OAuth Redirect Contract
 
@@ -182,6 +197,31 @@ That rule was also unnecessary. Actual dashboard access is already enforced in [
 
 So the correct per-viewer source of truth was already in the schema. We were just using the wrong table as the state machine.
 
+## Root Cause, Layer 4: The Client Trusted A Persisted Session The Server Had Already Rejected
+
+This last follow-up was exposed by test-account cleanup. A browser tab still had a persisted Supabase session for a deleted auth user, so the app looked signed in locally even though the Auth server no longer recognized that session.
+
+Supabase's own JS docs are explicit about the difference:
+
+- `getSession()` reads from the attached storage and is a low-level convenience API
+- `getUser()` performs a network request to Auth and returns an authentic user object suitable for authorization decisions
+
+Before `d900b3a`, the browser hydration path in [src/lib/auth.ts](/Users/tarioyou/codex-usage/src/lib/auth.ts) only called `supabase.auth.getSession()`. That meant:
+
+1. the client restored whatever was in local storage
+2. the header UI believed the user was signed in
+3. protected APIs called [api/_lib/auth.ts](/Users/tarioyou/codex-usage/api/_lib/auth.ts), which correctly validated the bearer token against Supabase Auth with `serviceRoleSupabase.auth.getUser(accessToken)`
+4. the server rejected the dead session
+5. the client surfaced a generic action failure instead of treating it as an auth reset
+
+That produced the broken state from the screenshot:
+
+- Google sign-in looked complete
+- `/api/shares/accept` failed
+- the app stayed in an invite-in-progress screen instead of returning to a clean signed-out state
+
+The original implementation also blurred the error type. Protected routes often converted invalid-session errors into generic `400` responses, which made this look like “invite acceptance is still broken” instead of “the browser is holding a zombie auth session.”
+
 ## Why Previous Fixes Did Not Actually Fix It
 
 ### `68d2f0c` (`fix: keep shared invites on the project host`)
@@ -262,6 +302,19 @@ Why it still did not solve the universal-link complaint:
 - the dashboard copy still described the link as single-use
 
 So `eee7d4f` solved “first invite visit renders empty” and left “this link should work for multiple people” untouched.
+
+### Why the stale-session bug still survived after the invite-flow fixes
+
+The invite fixes before `d900b3a` all assumed the browser session was real if `getSession()` returned one.
+
+Why that assumption broke:
+
+- destructive test-user cleanup can invalidate or remove the auth user while a browser tab still has old local storage
+- the client used the stored session optimistically
+- the server validated the same token pessimistically and rejected it
+- protected endpoints returned generic request failures often enough that the auth mismatch was easy to misread
+
+So earlier fixes correctly repaired host selection, invite ordering, and link reusability, but they still left one auth-state trust boundary unresolved.
 
 ## What Actually Worked
 
@@ -359,12 +412,63 @@ This is the part that actually makes the link universal. The invite token stays 
 
 This matters because the old copy was not just misleading text. It was describing the exact backend contract we had accidentally kept.
 
+### 11. Validate hydrated browser sessions with Supabase Auth before trusting them
+
+[src/lib/auth.ts](/Users/tarioyou/codex-usage/src/lib/auth.ts) now:
+
+- still resolves redirect/session handoff first
+- reads the persisted session
+- immediately validates that session with `supabase.auth.getUser(session.access_token)`
+- treats any failure as an invalid session, not as a usable signed-in state
+
+This is the change that stopped the UI from trusting a dead local token just because it was still cached in browser storage.
+
+### 12. Clear zombie local auth state instead of leaving the UI half signed in
+
+When validation fails, [src/lib/auth.ts](/Users/tarioyou/codex-usage/src/lib/auth.ts) now calls:
+
+- `supabase.auth.signOut({ scope: 'local' })`
+
+Per Supabase's sign-out docs, local scope removes the session from the current browser context without trying to sign the user out everywhere else.
+
+This matters because the bad state was local. The right recovery is to throw away the dead browser session and force a clean sign-in.
+
+### 13. Return explicit `401` auth failures from protected dashboard endpoints
+
+These protected handlers now distinguish invalid auth from normal bad requests:
+
+- [api/_lib/auth.ts](/Users/tarioyou/codex-usage/api/_lib/auth.ts)
+- [api/accounts/unlink.ts](/Users/tarioyou/codex-usage/api/accounts/unlink.ts)
+- [api/pair/start.ts](/Users/tarioyou/codex-usage/api/pair/start.ts)
+- [api/shares/start.ts](/Users/tarioyou/codex-usage/api/shares/start.ts)
+- [api/shares/accept.ts](/Users/tarioyou/codex-usage/api/shares/accept.ts)
+
+That changed the debugging signal from “some request failed” to “this browser session is invalid.”
+
+### 14. Collapse invalid-session action failures back to a clean sign-in state
+
+[src/features/dashboard/dashboard-page.tsx](/Users/tarioyou/codex-usage/src/features/dashboard/dashboard-page.tsx) now treats `401` responses from protected actions as a local auth reset:
+
+- sign out locally
+- clear the stale session from the browser
+- reset invite retry state
+- show `Your session is no longer valid. Sign in again.`
+
+This prevents the UI from getting stuck in the misleading “signed in, but nothing works” middle state.
+
 ## What Did Not Work In The Universal-Link Follow-Up
 
 - Changing the UI copy alone would not have fixed anything. The restriction was server-side in `/api/shares/accept`.
 - Reusing invite `status = 'accepted'` as “someone has used this link at least once” would still be wrong, because [api/shares/preview.ts](/Users/tarioyou/codex-usage/api/shares/preview.ts#L37) surfaces that status to the client and [src/features/dashboard/dashboard-page.tsx](/Users/tarioyou/codex-usage/src/features/dashboard/dashboard-page.tsx#L846) disables the Google CTA when status is `accepted`.
 - Treating `accepted_by_user_id` as the access source of truth was the architectural mistake. Access belongs in `codex_dashboard_shares`, not on the invite token row.
 - We did not backfill old already-accepted invite rows into reusable ones. Legacy links already marked `accepted` still behave as consumed links and should be regenerated.
+
+## What Did Not Work In The Stale-Session Follow-Up
+
+- Trusting `getSession()` alone was not enough. It restored a locally cached session, not an authenticated server-approved one.
+- Returning `400` from protected routes hid the real class of failure. This should have been an auth error from the start.
+- Keeping the invite screen alive without clearing the dead browser session would still have left the app stuck. The durable fix required local auth cleanup, not another invite-specific workaround.
+- A browser tab can stay dirty after test-user deletion even when the database and API code are otherwise correct. Without an explicit stale-session check, this looks like another invite regression and wastes debugging cycles.
 
 ## Deployment and Config Audit
 
@@ -392,6 +496,17 @@ Follow-up production deployment after the query-race fix:
   - first `GET codex_dashboard_accounts` returned shared + owned rows
   - first `POST list_dashboard_inviters` returned the inviter row
 
+Follow-up production deployment after the stale-session fix:
+
+- deployment id: `dpl_72jcNnyKRPP3MxddEPyHEY9JPMwJ`
+- audited stale-session repro on 2026-04-08 showed:
+  - browser started with `sb-ccgghgxfocdmelclrpef-auth-token` still present for deleted user `5b8d4573-9f8b-48cd-b026-7da28323fe4a`
+  - `GET /auth/v1/user` returned `403`
+  - the client then cleared the local Supabase session
+  - the stale storage key disappeared from local storage
+  - the UI returned to `Continue with Google`
+  - the error shown to the user became `Your session is no longer valid. Sign in again.`
+
 ## Fast Triage Checklist For Next Time
 
 When this class of bug happens again, do these checks in order:
@@ -411,6 +526,8 @@ When this class of bug happens again, do these checks in order:
 8. Verify which Vercel domains are attached to the production deployment.
 9. Audit whether the invite token is modeled as a reusable capability or as a one-viewer claim.
 10. If the product intent is “share one link with multiple people,” verify the same pending invite can be redeemed by two distinct viewer accounts before calling the fix complete.
+11. If the UI says the user is signed in but protected routes are failing, compare the browser's persisted auth session with the current live Auth user before debugging invite logic further.
+12. After deleting or recreating test users, assume every open browser tab may be carrying a zombie local session until proven otherwise.
 
 ## Regression Rules
 
@@ -433,6 +550,10 @@ These are the rules that should prevent a repeat:
 12. Keep viewer access truth in `codex_dashboard_shares`, one row per `(owner_user_id, viewer_user_id)`.
 13. If product intent is a universal invite link, do not transition the invite row into a terminal `accepted` state on first redemption.
 14. When changing invite copy, audit the schema and the accept endpoint in the same change. Text and backend contract must agree.
+15. Never treat `supabase.auth.getSession()` as enough proof that the current browser session is still valid for protected actions.
+16. Validate persisted sessions with `getUser()` before trusting them to drive authenticated UI.
+17. Protected dashboard endpoints must return `401` for invalid sessions, not generic `400` request failures.
+18. After deleting or recreating auth users during testing, explicitly test that a stale browser tab signs itself out cleanly instead of getting stuck half signed in.
 
 ## Recommended Future Hardening
 
@@ -444,6 +565,7 @@ These were not required for the fix, but they would make this class of bug cheap
   - verifies the app normalizes to `codexusage.vercel.app`
 - Add an invite smoke test that asserts dashboard queries do not start until invite redemption has completed.
 - Add an invite smoke test that redeems the same pending invite from two distinct viewer accounts and asserts two active `codex_dashboard_shares` rows.
+- Add an auth smoke test that seeds a stale Supabase session blob in local storage and verifies the app clears it on boot.
 - Log invite-accept start and failure paths explicitly in `/api/shares/accept` so “route never hit” becomes obvious from logs.
 - Add a doc review item to any auth/domain change:
   `Does this change alter the canonical hosted origin or Supabase redirect contract?`
@@ -451,10 +573,12 @@ These were not required for the fix, but they would make this class of bug cheap
   `Can dashboard data load before the invite token has been redeemed and the first shared-data read has succeeded?`
 - Add a second invite-flow doc review item:
   `Is the invite row acting as a reusable capability, or did we accidentally turn it back into a one-viewer claim?`
+- Add an auth-lifecycle doc review item:
+  `If a persisted browser session points at a deleted or revoked auth user, does the UI recover to a clean sign-in state automatically?`
 
 ## Short Version
 
-We had two different bugs in sequence.
+We had four different bugs in sequence.
 
 First, we kept trying to fix invite redemption inside the app while the real break was outside the accept path:
 
@@ -468,6 +592,17 @@ Then, after that was fixed, invite acceptance still had one more race:
 - the page could transition before the first shared-data read finished
 - the app was relying on timing instead of a hard state barrier
 
+Then, after that, the share link itself was still modeled wrong:
+
+- one invite row could still be consumed by one viewer
+- access state was attached to the token instead of per-viewer share rows
+
+Then, after that, stale browser auth exposed one more trust-boundary bug:
+
+- the client trusted cached local auth state
+- the server rejected the same session as dead
+- the UI got stuck in a fake signed-in state until we explicitly validated and cleared it
+
 The durable fix was:
 
 - one canonical hosted hostname
@@ -477,3 +612,5 @@ The durable fix was:
 - dashboard queries disabled until invite resolution finishes
 - explicit post-accept dashboard fetch and cache seed before the UI leaves the invite flow
 - access moved back to the correct source of truth: one share row per viewer, while the invite token stays reusable until expiry
+- persisted browser sessions validated against the Auth server before the UI trusts them
+- invalid sessions collapsed back to a clean local sign-out instead of masquerading as invite failures
