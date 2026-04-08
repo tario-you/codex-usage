@@ -133,7 +133,9 @@ using (
   )
 );
 
-create or replace view public.codex_dashboard_accounts
+drop view if exists public.codex_dashboard_accounts;
+
+create view public.codex_dashboard_accounts
 with (security_invoker = true)
 as
 with latest_snapshot as (
@@ -195,3 +197,5 @@ select
 from public.codex_accounts as acct
 left join latest_snapshot
   on latest_snapshot.account_id = acct.id;
+
+grant select on public.codex_dashboard_accounts to authenticated;
