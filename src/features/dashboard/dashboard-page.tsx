@@ -48,7 +48,6 @@ import {
   DASHBOARD_CONNECTED_QUERY_KEY,
 } from '@/shared/cli'
 import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
-import { getPreferredDashboardHref } from '@/shared/site'
 
 interface PairingCommandState {
   command: string
@@ -121,10 +120,6 @@ export function DashboardPage() {
     typeof window === 'undefined'
       ? ''
       : buildConnectCommand(window.location.origin)
-  const inviteOriginRedirectUrl =
-    typeof window === 'undefined' || !inviteToken
-      ? null
-      : getInviteOriginRedirectUrl(window.location.href)
   const googleIdentityEmail = getProviderEmail(session, 'google')
   const isGuestSession = getIsGuestSession(session)
   const canLinkGoogle = Boolean(session) && isGuestSession && !googleIdentityEmail
@@ -167,14 +162,6 @@ export function DashboardPage() {
   }, [isTerminalCommandCopied])
 
   useEffect(() => {
-    if (!inviteOriginRedirectUrl) {
-      return
-    }
-
-    window.location.replace(inviteOriginRedirectUrl)
-  }, [inviteOriginRedirectUrl])
-
-  useEffect(() => {
     if (!inviteToken) {
       setHasAttemptedInviteAccept(false)
       setInviteAcceptError(null)
@@ -183,12 +170,7 @@ export function DashboardPage() {
       return
     }
 
-    if (
-      inviteOriginRedirectUrl ||
-      !session?.access_token ||
-      !googleIdentityEmail ||
-      hasAttemptedInviteAccept
-    ) {
+    if (!session?.access_token || !googleIdentityEmail || hasAttemptedInviteAccept) {
       return
     }
 
@@ -198,12 +180,11 @@ export function DashboardPage() {
     googleIdentityEmail,
     hasAttemptedInviteAccept,
     inviteToken,
-    inviteOriginRedirectUrl,
     session?.access_token,
   ])
 
   useEffect(() => {
-    if (!inviteToken || inviteOriginRedirectUrl) {
+    if (!inviteToken) {
       return
     }
 
@@ -245,7 +226,7 @@ export function DashboardPage() {
     return () => {
       cancelled = true
     }
-  }, [inviteOriginRedirectUrl, inviteToken])
+  }, [inviteToken])
 
   async function handleGoogleSignIn() {
     setLoginError(null)
@@ -969,11 +950,6 @@ export function DashboardPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {inviteOriginRedirectUrl ? (
-                      <InlineMessage tone="default">
-                        Redirecting to the shared dashboard link...
-                      </InlineMessage>
-                    ) : null}
                     {invitePreview ? (
                       <div className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-3">
                         <UserAvatar
@@ -1010,7 +986,6 @@ export function DashboardPage() {
                     ) : null}
                     <Button
                       disabled={
-                        Boolean(inviteOriginRedirectUrl) ||
                         isStartingGoogleLogin ||
                         invitePreview?.status === 'accepted' ||
                         invitePreview?.status === 'expired' ||
@@ -1537,11 +1512,6 @@ function getInviteTokenFromLocation() {
 
   const inviteToken = new URL(window.location.href).searchParams.get('invite')
   return inviteToken?.trim() ? inviteToken : null
-}
-
-function getInviteOriginRedirectUrl(currentHref: string) {
-  const nextHref = getPreferredDashboardHref(currentHref)
-  return nextHref === currentHref ? null : nextHref
 }
 
 function clearInviteTokenFromLocation() {

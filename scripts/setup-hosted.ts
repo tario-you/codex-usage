@@ -17,6 +17,7 @@ const projectRefPath = path.join(rootDir, 'supabase', '.temp', 'project-ref')
 const supabaseBin = resolveSupabaseBin()
 const defaultHostedSiteUrl =
   'https://codex-use-age-tario-yous-projects.vercel.app'
+const defaultHostedAdditionalRedirectUrls = ['https://codexusage.vercel.app']
 const localAuthRedirectUrls = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -170,7 +171,12 @@ function resolveHostedAuthRedirects() {
   return {
     siteUrl,
     redirectUrls: Array.from(
-      new Set([...localAuthRedirectUrls, siteUrl, ...extraRedirectUrls]),
+      new Set([
+        ...localAuthRedirectUrls,
+        siteUrl,
+        ...defaultHostedAdditionalRedirectUrls,
+        ...extraRedirectUrls,
+      ]),
     ),
   }
 }
