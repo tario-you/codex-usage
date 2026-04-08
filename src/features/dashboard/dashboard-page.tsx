@@ -120,14 +120,16 @@ export function DashboardPage() {
     typeof window === 'undefined'
       ? ''
       : buildConnectCommand(window.location.origin)
+  const hasGoogleSession = hasSessionProvider(session, 'google')
   const googleIdentityEmail = getProviderEmail(session, 'google')
   const isGuestSession = getIsGuestSession(session)
-  const canLinkGoogle = Boolean(session) && isGuestSession && !googleIdentityEmail
+  const canLinkGoogle = Boolean(session) && isGuestSession && !hasGoogleSession
   const sessionLabel = isGuestSession
-    ? googleIdentityEmail ?? 'Local dashboard session'
+    ? googleIdentityEmail ?? session?.user.email ?? 'Local dashboard session'
     : session?.user.email ?? 'Signed in'
   const sessionAvatarUrl = getSessionAvatarUrl(session)
   const primaryInviter = inviters.length === 1 ? inviters[0] : null
+  const showInviteLanding = Boolean(inviteToken) && !session
   const isLoadingAccounts =
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
   const hasPairingDetails = Boolean(pairingError || pairingCommand)
@@ -170,14 +172,14 @@ export function DashboardPage() {
       return
     }
 
-    if (!session?.access_token || !googleIdentityEmail || hasAttemptedInviteAccept) {
+    if (!session?.access_token || !hasGoogleSession || hasAttemptedInviteAccept) {
       return
     }
 
     setHasAttemptedInviteAccept(true)
     void handleAcceptInvite()
   }, [
-    googleIdentityEmail,
+    hasGoogleSession,
     hasAttemptedInviteAccept,
     inviteToken,
     session?.access_token,
@@ -621,9 +623,7 @@ export function DashboardPage() {
         </header>
 
         <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          {authIsLoading ? (
-            <LoadingState />
-          ) : session ? (
+          {session ? (
             <div className="space-y-6">
               {connectedNotice ? (
                 <InlineMessage tone="default">{connectedNotice}</InlineMessage>
@@ -639,7 +639,7 @@ export function DashboardPage() {
               {inviteAcceptError ? (
                 <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
               ) : null}
-              {inviteToken && googleIdentityEmail && inviteAcceptError ? (
+              {inviteToken && session?.access_token && inviteAcceptError ? (
                 <div>
                   <Button
                     onClick={() => void handleAcceptInvite()}
@@ -934,111 +934,124 @@ export function DashboardPage() {
                 </Card>
               </div>
             </div>
+          ) : showInviteLanding ? (
+            <div className="mx-auto max-w-[720px] space-y-4">
+              {loginError ? (
+                <InlineMessage tone="error">{loginError}</InlineMessage>
+              ) : null}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Accept shared dashboard access</CardTitle>
+                  <CardDescription>
+                    Sign in with Google and this dashboard will load the same
+                    Codex accounts the inviter can see.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {invitePreview ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-3">
+                      <UserAvatar
+                        alt={invitePreview.inviter.displayName}
+                        fallback={invitePreview.inviter.displayName}
+                        size="sm"
+                        src={invitePreview.inviter.avatarUrl}
+                      />
+                      <div className="min-w-0 text-sm">
+                        <p className="font-medium text-foreground">
+                          Invited by {invitePreview.inviter.displayName}
+                        </p>
+                        {invitePreview.inviter.email &&
+                        invitePreview.inviter.email !==
+                          invitePreview.inviter.displayName ? (
+                          <p className="truncate text-muted-foreground">
+                            {invitePreview.inviter.email}
+                          </p>
+                        ) : null}
+                        <p className="text-muted-foreground">
+                          Link status: {formatInviteStatus(invitePreview.status)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : !invitePreviewError ? (
+                    <InlineMessage tone="default">
+                      Loading invite details...
+                    </InlineMessage>
+                  ) : null}
+                  {invitePreviewError ? (
+                    <InlineMessage tone="error">{invitePreviewError}</InlineMessage>
+                  ) : null}
+                  {authRedirectError ? (
+                    <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+                  ) : null}
+                  {inviteAcceptError ? (
+                    <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
+                  ) : null}
+                  <Button
+                    disabled={
+                      authIsLoading ||
+                      isStartingGoogleLogin ||
+                      invitePreview?.status === 'accepted' ||
+                      invitePreview?.status === 'expired' ||
+                      invitePreview?.status === 'revoked'
+                    }
+                    onClick={() => void handleGoogleSignIn()}
+                    type="button"
+                  >
+                    <GoogleIcon className="mr-2 size-4" />
+                    {authIsLoading
+                      ? 'Checking sign-in...'
+                      : isStartingGoogleLogin
+                        ? 'Redirecting to Google...'
+                        : 'Continue with Google'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          ) : authIsLoading ? (
+            <LoadingState />
           ) : (
             <div className="mx-auto max-w-[720px] space-y-4">
               {loginError ? (
                 <InlineMessage tone="error">{loginError}</InlineMessage>
               ) : null}
 
-              {inviteToken ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Accept shared dashboard access</CardTitle>
-                    <CardDescription>
-                      Sign in with Google and this dashboard will load the same
-                      Codex accounts the inviter can see.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {invitePreview ? (
-                      <div className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-3">
-                        <UserAvatar
-                          alt={invitePreview.inviter.displayName}
-                          fallback={invitePreview.inviter.displayName}
-                          size="sm"
-                          src={invitePreview.inviter.avatarUrl}
-                        />
-                        <div className="min-w-0 text-sm">
-                          <p className="font-medium text-foreground">
-                            Invited by {invitePreview.inviter.displayName}
-                          </p>
-                          {invitePreview.inviter.email &&
-                          invitePreview.inviter.email !==
-                            invitePreview.inviter.displayName ? (
-                            <p className="truncate text-muted-foreground">
-                              {invitePreview.inviter.email}
-                            </p>
-                          ) : null}
-                          <p className="text-muted-foreground">
-                            Link status: {formatInviteStatus(invitePreview.status)}
-                          </p>
-                        </div>
-                      </div>
-                    ) : null}
-                    {invitePreviewError ? (
-                      <InlineMessage tone="error">{invitePreviewError}</InlineMessage>
-                    ) : null}
-                    {authRedirectError ? (
-                      <InlineMessage tone="error">{authRedirectError}</InlineMessage>
-                    ) : null}
-                    {inviteAcceptError ? (
-                      <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
-                    ) : null}
-                    <Button
-                      disabled={
-                        isStartingGoogleLogin ||
-                        invitePreview?.status === 'accepted' ||
-                        invitePreview?.status === 'expired' ||
-                        invitePreview?.status === 'revoked'
-                      }
-                      onClick={() => void handleGoogleSignIn()}
-                      type="button"
-                    >
-                      <GoogleIcon className="mr-2 size-4" />
-                      {isStartingGoogleLogin
-                        ? 'Redirecting to Google...'
-                        : 'Continue with Google'}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <section className="space-y-4">
-                  <h2 className="text-2xl font-semibold tracking-[-0.02em]">
-                    Connect from terminal
-                  </h2>
+              <section className="space-y-4">
+                <h2 className="text-2xl font-semibold tracking-[-0.02em]">
+                  Connect from terminal
+                </h2>
 
-                  {authRedirectError ? (
-                    <InlineMessage tone="error">{authRedirectError}</InlineMessage>
-                  ) : null}
+                {authRedirectError ? (
+                  <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+                ) : null}
 
-                  <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
-                    <Button
-                      aria-label={
-                        isTerminalCommandCopied ? 'Command copied' : 'Copy command'
-                      }
-                      className="absolute top-2 right-2"
-                      onClick={() => void handleCopyTerminalCommand()}
-                      size="icon-sm"
-                      title={
-                        isTerminalCommandCopied ? 'Command copied' : 'Copy command'
-                      }
-                      type="button"
-                      variant="ghost"
-                    >
-                      {isTerminalCommandCopied ? (
-                        <Check className="size-3.5" />
-                      ) : (
-                        <Copy className="size-3.5" />
-                      )}
-                    </Button>
-                    {connectCommand}
-                  </div>
+                <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
+                  <Button
+                    aria-label={
+                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
+                    }
+                    className="absolute top-2 right-2"
+                    onClick={() => void handleCopyTerminalCommand()}
+                    size="icon-sm"
+                    title={
+                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
+                    }
+                    type="button"
+                    variant="ghost"
+                  >
+                    {isTerminalCommandCopied ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </Button>
+                  {connectCommand}
+                </div>
 
-                  {terminalCopyError ? (
-                    <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
-                  ) : null}
-                </section>
-              )}
+                {terminalCopyError ? (
+                  <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
+                ) : null}
+              </section>
             </div>
           )}
         </div>
@@ -1449,7 +1462,32 @@ function getProviderEmail(
   )
   const email = identity?.identity_data?.email
 
-  return typeof email === 'string' ? email : null
+  if (typeof email === 'string') {
+    return email
+  }
+
+  return hasSessionProvider(session, provider) ? session?.user.email ?? null : null
+}
+
+function hasSessionProvider(
+  session: Session | null,
+  provider: UserIdentity['provider'],
+) {
+  if (session?.user.app_metadata?.provider === provider) {
+    return true
+  }
+
+  const providers = Array.isArray(session?.user.app_metadata?.providers)
+    ? session.user.app_metadata.providers
+    : []
+  if (providers.includes(provider)) {
+    return true
+  }
+
+  return (
+    session?.user.identities?.some((identity) => identity.provider === provider) ??
+    false
+  )
 }
 
 function getSessionAvatarUrl(session: Session | null) {
