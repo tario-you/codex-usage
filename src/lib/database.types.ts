@@ -68,6 +68,112 @@ export interface Database {
           },
         ]
       }
+      codex_dashboard_share_invites: {
+        Row: {
+          id: string
+          owner_user_id: string
+          invite_token_hash: string
+          invite_token_preview: string
+          status: string
+          expires_at: string
+          accepted_by_user_id: string | null
+          accepted_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          invite_token_hash: string
+          invite_token_preview: string
+          status?: string
+          expires_at: string
+          accepted_by_user_id?: string | null
+          accepted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          invite_token_hash?: string
+          invite_token_preview?: string
+          status?: string
+          expires_at?: string
+          accepted_by_user_id?: string | null
+          accepted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_dashboard_share_invites_accepted_by_user_id_fkey'
+            columns: ['accepted_by_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_dashboard_share_invites_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      codex_dashboard_shares: {
+        Row: {
+          id: string
+          owner_user_id: string
+          viewer_user_id: string
+          invite_id: string | null
+          revoked_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          viewer_user_id: string
+          invite_id?: string | null
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          viewer_user_id?: string
+          invite_id?: string | null
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_dashboard_shares_invite_id_fkey'
+            columns: ['invite_id']
+            isOneToOne: false
+            referencedRelation: 'codex_dashboard_share_invites'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_dashboard_shares_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_dashboard_shares_viewer_user_id_fkey'
+            columns: ['viewer_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       codex_devices: {
         Row: {
           id: string
@@ -245,6 +351,8 @@ export interface Database {
       codex_dashboard_accounts: {
         Row: {
           id: string
+          owner_user_id: string | null
+          access_scope: string
           account_key: string
           email: string | null
           label: string | null
@@ -274,7 +382,14 @@ export interface Database {
         Relationships: []
       }
     }
-    Functions: Record<string, never>
+    Functions: {
+      user_can_access_codex_owner: {
+        Args: {
+          candidate_owner_user_id: string
+        }
+        Returns: boolean
+      }
+    }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }

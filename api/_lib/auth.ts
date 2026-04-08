@@ -1,3 +1,5 @@
+import type { User } from '@supabase/supabase-js'
+
 import { serviceRoleSupabase } from './supabase.js'
 
 export async function requireUser(request: Request) {
@@ -16,4 +18,21 @@ export async function requireUser(request: Request) {
   }
 
   return data.user
+}
+
+export function hasGoogleIdentity(user: User) {
+  if (user.app_metadata?.provider === 'google') {
+    return true
+  }
+
+  const providers = Array.isArray(user.app_metadata?.providers)
+    ? user.app_metadata.providers
+    : []
+  if (providers.includes('google')) {
+    return true
+  }
+
+  return (
+    user.identities?.some((identity) => identity.provider === 'google') ?? false
+  )
 }

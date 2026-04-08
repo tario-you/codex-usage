@@ -54,22 +54,38 @@ interface PairingCommandState {
   syncCommand: string
 }
 
+interface ShareInviteState {
+  expiresAt: string
+  inviteUrl: string
+}
+
 export function DashboardPage() {
   const {
     isLoading: authIsLoading,
     redirectError: authRedirectError,
     session,
   } = useAuthSession()
+  const [inviteToken, setInviteToken] = useState<string | null>(() =>
+    getInviteTokenFromLocation(),
+  )
   const [loginError, setLoginError] = useState<string | null>(null)
   const [isStartingGoogleLogin, setIsStartingGoogleLogin] = useState(false)
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false)
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false)
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(false)
+  const [hasAttemptedInviteAccept, setHasAttemptedInviteAccept] = useState(false)
   const [terminalCopyError, setTerminalCopyError] = useState<string | null>(null)
   const [isTerminalCommandCopied, setIsTerminalCommandCopied] = useState(false)
   const [pairingCommand, setPairingCommand] = useState<PairingCommandState | null>(
     null,
   )
+  const [shareInvite, setShareInvite] = useState<ShareInviteState | null>(null)
   const [pairingError, setPairingError] = useState<string | null>(null)
-  const [copyNotice, setCopyNotice] = useState<string | null>(null)
+  const [inviteCreateError, setInviteCreateError] = useState<string | null>(null)
+  const [inviteAcceptError, setInviteAcceptError] = useState<string | null>(null)
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null)
+  const [pairingCopyNotice, setPairingCopyNotice] = useState<string | null>(null)
+  const [inviteCopyNotice, setInviteCopyNotice] = useState<string | null>(null)
   const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null)
@@ -94,6 +110,7 @@ export function DashboardPage() {
   const isLoadingAccounts =
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
   const hasPairingDetails = Boolean(pairingError || pairingCommand)
+  const hasInviteDetails = Boolean(inviteCreateError || shareInvite)
   const hasAccountsDetails = Boolean(
     accountsQuery.error || unlinkError || isLoadingAccounts || accounts.length > 0,
   )
@@ -123,6 +140,26 @@ export function DashboardPage() {
     return () => window.clearTimeout(timeoutId)
   }, [isTerminalCommandCopied])
 
+  useEffect(() => {
+    if (!inviteToken) {
+      setHasAttemptedInviteAccept(false)
+      setInviteAcceptError(null)
+      return
+    }
+
+    if (!session?.access_token || !googleIdentityEmail || hasAttemptedInviteAccept) {
+      return
+    }
+
+    setHasAttemptedInviteAccept(true)
+    void handleAcceptInvite()
+  }, [
+    googleIdentityEmail,
+    hasAttemptedInviteAccept,
+    inviteToken,
+    session?.access_token,
+  ])
+
   async function handleGoogleSignIn() {
     setLoginError(null)
 
@@ -137,7 +174,7 @@ export function DashboardPage() {
     setIsStartingGoogleLogin(true)
 
     const authOptions = {
-      redirectTo: window.location.origin,
+      redirectTo: window.location.href,
       skipBrowserRedirect: true,
     }
 
@@ -185,7 +222,12 @@ export function DashboardPage() {
   async function handleSignOut() {
     setPairingCommand(null)
     setPairingError(null)
-    setCopyNotice(null)
+    setInviteCreateError(null)
+    setInviteAcceptError(null)
+    setInviteNotice(null)
+    setShareInvite(null)
+    setPairingCopyNotice(null)
+    setInviteCopyNotice(null)
     setConnectedNotice(null)
     setTerminalCopyError(null)
     setIsTerminalCommandCopied(false)
@@ -231,13 +273,108 @@ export function DashboardPage() {
       }
 
       setPairingCommand(payload as PairingCommandState)
-      setCopyNotice(null)
+      setPairingCopyNotice(null)
     } catch (error) {
       setPairingError(
         error instanceof Error ? error.message : 'Unable to create pairing.',
       )
     } finally {
       setIsGeneratingPairing(false)
+    }
+  }
+
+  async function handleCreateInvite() {
+    if (!session?.access_token) {
+      setInviteCreateError('Sign in first.')
+      return
+    }
+
+    setIsCreatingInvite(true)
+    setInviteCreateError(null)
+
+    try {
+      const response = await fetch('/api/shares/start', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      })
+
+      const payload = (await response.json().catch(() => null)) as
+        | ShareInviteState
+        | { error?: string }
+        | null
+
+      if (!response.ok) {
+        throw new Error(
+          payload && 'error' in payload && payload.error
+            ? payload.error
+            : 'Unable to create an invite link.',
+        )
+      }
+
+      setShareInvite(payload as ShareInviteState)
+      setInviteCopyNotice(null)
+    } catch (error) {
+      setInviteCreateError(
+        error instanceof Error ? error.message : 'Unable to create the invite.',
+      )
+    } finally {
+      setIsCreatingInvite(false)
+    }
+  }
+
+  async function handleAcceptInvite() {
+    if (!inviteToken) {
+      return
+    }
+
+    if (!session?.access_token) {
+      setInviteAcceptError('Sign in with Google to accept this invite.')
+      return
+    }
+
+    setIsAcceptingInvite(true)
+    setInviteAcceptError(null)
+
+    try {
+      const response = await fetch('/api/shares/accept', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          inviteToken,
+        }),
+      })
+
+      const payload = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; alreadyAccepted?: boolean }
+        | null
+
+      if (!response.ok) {
+        throw new Error(
+          payload && 'error' in payload && payload.error
+            ? payload.error
+            : 'Unable to accept the invite.',
+        )
+      }
+
+      clearInviteTokenFromLocation()
+      setInviteToken(null)
+      setInviteNotice(
+        payload?.alreadyAccepted
+          ? 'This shared dashboard is already available in your account.'
+          : 'Invite accepted. Shared accounts are now visible in this dashboard.',
+      )
+      await accountsQuery.refetch()
+    } catch (error) {
+      setInviteAcceptError(
+        error instanceof Error ? error.message : 'Unable to accept the invite.',
+      )
+    } finally {
+      setIsAcceptingInvite(false)
     }
   }
 
@@ -248,9 +385,22 @@ export function DashboardPage() {
 
     try {
       await navigator.clipboard.writeText(pairingCommand.command)
-      setCopyNotice('Command copied.')
+      setPairingCopyNotice('Command copied.')
     } catch {
-      setCopyNotice('Copy failed. Select the command manually.')
+      setPairingCopyNotice('Copy failed. Select the command manually.')
+    }
+  }
+
+  async function handleCopyInviteLink() {
+    if (!shareInvite) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareInvite.inviteUrl)
+      setInviteCopyNotice('Invite link copied.')
+    } catch {
+      setInviteCopyNotice('Copy failed. Select the invite link manually.')
     }
   }
 
@@ -266,6 +416,11 @@ export function DashboardPage() {
   }
 
   async function handleUnlinkAccount(account: DashboardAccountRow) {
+    if (account.access_scope !== 'owned') {
+      setUnlinkError('Only the account owner can unlink this account.')
+      return
+    }
+
     if (!session?.access_token) {
       setUnlinkError('Your session is no longer valid. Sign in again.')
       return
@@ -397,17 +552,41 @@ export function DashboardPage() {
               {connectedNotice ? (
                 <InlineMessage tone="default">{connectedNotice}</InlineMessage>
               ) : null}
+              {inviteNotice ? (
+                <InlineMessage tone="default">{inviteNotice}</InlineMessage>
+              ) : null}
+              {isAcceptingInvite ? (
+                <InlineMessage tone="default">
+                  Accepting shared dashboard access...
+                </InlineMessage>
+              ) : null}
+              {inviteAcceptError ? (
+                <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
+              ) : null}
+              {inviteToken && googleIdentityEmail && inviteAcceptError ? (
+                <div>
+                  <Button
+                    onClick={() => void handleAcceptInvite()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Retry invite
+                  </Button>
+                </div>
+              ) : null}
 
               <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
                 <div className="space-y-6">
                   {canLinkGoogle ? (
                     <Card>
                       <CardHeader>
-                        <CardTitle>Link Google</CardTitle>
+                        <CardTitle>
+                          {inviteToken ? 'Accept shared dashboard access' : 'Link Google'}
+                        </CardTitle>
                         <CardDescription>
-                          The dashboard already works through the local terminal
-                          flow. Add Google if you want the same account to keep a
-                          reusable browser sign-in.
+                          {inviteToken
+                            ? 'This invite only works after you sign in with Google.'
+                            : 'The dashboard already works through the local terminal flow. Add Google if you want the same account to keep a reusable browser sign-in.'}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
@@ -419,7 +598,9 @@ export function DashboardPage() {
                           <GoogleIcon className="mr-2 size-4" />
                           {isStartingGoogleLogin
                             ? 'Redirecting to Google...'
-                            : 'Link Google'}
+                            : inviteToken
+                              ? 'Continue with Google'
+                              : 'Link Google'}
                         </Button>
 
                         {loginError ? (
@@ -428,6 +609,66 @@ export function DashboardPage() {
                       </CardContent>
                     </Card>
                   ) : null}
+
+                  <Card>
+                    <CardHeader
+                      className={hasInviteDetails ? 'border-b border-border' : undefined}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <CardTitle>Invite viewer</CardTitle>
+                          <CardDescription>
+                            Create a single-use link. The first person who opens
+                            it and signs in with Google gets access to your
+                            dashboard accounts.
+                          </CardDescription>
+                        </div>
+                        <Button
+                          className="shrink-0"
+                          disabled={isCreatingInvite}
+                          onClick={() => void handleCreateInvite()}
+                        >
+                          {isCreatingInvite ? 'Creating link...' : 'Create invite link'}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    {hasInviteDetails ? (
+                      <CardContent className="space-y-4">
+                        {inviteCreateError ? (
+                          <InlineMessage tone="error">{inviteCreateError}</InlineMessage>
+                        ) : null}
+
+                        {shareInvite ? (
+                          <div className="space-y-3">
+                            <label className="block text-sm font-medium text-foreground">
+                              Share this link
+                            </label>
+                            <div className="rounded-lg border border-border bg-muted px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                              {shareInvite.inviteUrl}
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs text-muted-foreground">
+                                Expires {formatTimestamp(shareInvite.expiresAt)}
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleCopyInviteLink()}
+                              >
+                                <Copy className="mr-2 size-3.5" />
+                                Copy
+                              </Button>
+                            </div>
+                            {inviteCopyNotice ? (
+                              <p className="text-xs text-muted-foreground">
+                                {inviteCopyNotice}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </CardContent>
+                    ) : null}
+                  </Card>
 
                   <Card>
                     <CardHeader
@@ -474,9 +715,9 @@ export function DashboardPage() {
                                 Copy
                               </Button>
                             </div>
-                            {copyNotice ? (
+                            {pairingCopyNotice ? (
                               <p className="text-xs text-muted-foreground">
-                                {copyNotice}
+                                {pairingCopyNotice}
                               </p>
                             ) : null}
                             <div className="space-y-2 border-t border-border pt-3">
@@ -501,7 +742,7 @@ export function DashboardPage() {
                   >
                     <div className="flex flex-wrap items-end justify-between gap-3">
                       <div className="min-w-0">
-                        <CardTitle>Your synced accounts</CardTitle>
+                        <CardTitle>Accounts you can view</CardTitle>
                         <CardDescription>
                           Latest sync{' '}
                           {summary.mostRecentSync
@@ -572,42 +813,72 @@ export function DashboardPage() {
                 <InlineMessage tone="error">{loginError}</InlineMessage>
               ) : null}
 
-              <section className="space-y-4">
-                <h2 className="text-2xl font-semibold tracking-[-0.02em]">
-                  Connect from terminal
-                </h2>
+              {inviteToken ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Accept shared dashboard access</CardTitle>
+                    <CardDescription>
+                      Sign in with Google and this dashboard will load the same
+                      Codex accounts the sender can see.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {authRedirectError ? (
+                      <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+                    ) : null}
+                    {inviteAcceptError ? (
+                      <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
+                    ) : null}
+                    <Button
+                      disabled={isStartingGoogleLogin}
+                      onClick={() => void handleGoogleSignIn()}
+                      type="button"
+                    >
+                      <GoogleIcon className="mr-2 size-4" />
+                      {isStartingGoogleLogin
+                        ? 'Redirecting to Google...'
+                        : 'Continue with Google'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-semibold tracking-[-0.02em]">
+                    Connect from terminal
+                  </h2>
 
-                {authRedirectError ? (
-                  <InlineMessage tone="error">{authRedirectError}</InlineMessage>
-                ) : null}
+                  {authRedirectError ? (
+                    <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+                  ) : null}
 
-                <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
-                  <Button
-                    aria-label={
-                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
-                    }
-                    className="absolute top-2 right-2"
-                    onClick={() => void handleCopyTerminalCommand()}
-                    size="icon-sm"
-                    title={
-                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
-                    }
-                    type="button"
-                    variant="ghost"
-                  >
-                    {isTerminalCommandCopied ? (
-                      <Check className="size-3.5" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
-                  </Button>
-                  {connectCommand}
-                </div>
+                  <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
+                    <Button
+                      aria-label={
+                        isTerminalCommandCopied ? 'Command copied' : 'Copy command'
+                      }
+                      className="absolute top-2 right-2"
+                      onClick={() => void handleCopyTerminalCommand()}
+                      size="icon-sm"
+                      title={
+                        isTerminalCommandCopied ? 'Command copied' : 'Copy command'
+                      }
+                      type="button"
+                      variant="ghost"
+                    >
+                      {isTerminalCommandCopied ? (
+                        <Check className="size-3.5" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
+                    </Button>
+                    {connectCommand}
+                  </div>
 
-                {terminalCopyError ? (
-                  <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
-                ) : null}
-              </section>
+                  {terminalCopyError ? (
+                    <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
+                  ) : null}
+                </section>
+              )}
             </div>
           )}
         </div>
@@ -743,6 +1014,7 @@ function AccountTable({
       <TableBody>
         {accounts.map((account) => {
           const identity = getAccountIdentityLines(account)
+          const isOwnedAccount = account.access_scope === 'owned'
           const isUnlinking = unlinkingAccountId === account.id
 
           return (
@@ -754,6 +1026,9 @@ function AccountTable({
                     <p className="text-sm text-muted-foreground">
                       {identity.secondary}
                     </p>
+                  ) : null}
+                  {!isOwnedAccount ? (
+                    <p className="text-sm text-muted-foreground">Shared with you</p>
                   ) : null}
                 </div>
               </TableCell>
@@ -782,11 +1057,13 @@ function AccountTable({
                 </div>
               </TableCell>
               <TableCell className="px-4 text-right sm:px-5">
-                <UnlinkAccountButton
-                  disabled={Boolean(unlinkingAccountId)}
-                  isUnlinking={isUnlinking}
-                  onClick={() => onUnlinkAccount(account)}
-                />
+                {isOwnedAccount ? (
+                  <UnlinkAccountButton
+                    disabled={Boolean(unlinkingAccountId)}
+                    isUnlinking={isUnlinking}
+                    onClick={() => onUnlinkAccount(account)}
+                  />
+                ) : null}
               </TableCell>
             </TableRow>
           )
@@ -809,6 +1086,7 @@ function AccountSummaryList({
     <div className="divide-y divide-border">
       {accounts.map((account) => {
         const identity = getAccountIdentityLines(account)
+        const isOwnedAccount = account.access_scope === 'owned'
         const isUnlinking = unlinkingAccountId === account.id
 
         return (
@@ -821,12 +1099,17 @@ function AccountSummaryList({
                     {identity.secondary}
                   </p>
                 ) : null}
+                {!isOwnedAccount ? (
+                  <p className="text-sm text-muted-foreground">Shared with you</p>
+                ) : null}
               </div>
-              <UnlinkAccountButton
-                disabled={Boolean(unlinkingAccountId)}
-                isUnlinking={isUnlinking}
-                onClick={() => onUnlinkAccount(account)}
-              />
+              {isOwnedAccount ? (
+                <UnlinkAccountButton
+                  disabled={Boolean(unlinkingAccountId)}
+                  isUnlinking={isUnlinking}
+                  onClick={() => onUnlinkAccount(account)}
+                />
+              ) : null}
             </div>
 
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -952,4 +1235,27 @@ function getProviderEmail(
   const email = identity?.identity_data?.email
 
   return typeof email === 'string' ? email : null
+}
+
+function getInviteTokenFromLocation() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const inviteToken = new URL(window.location.href).searchParams.get('invite')
+  return inviteToken?.trim() ? inviteToken : null
+}
+
+function clearInviteTokenFromLocation() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('invite')) {
+    return
+  }
+
+  url.searchParams.delete('invite')
+  window.history.replaceState(window.history.state, '', url.toString())
 }
