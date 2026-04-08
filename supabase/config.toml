@@ -153,13 +153,16 @@ enabled = true
 # in emails.
 # Local development stays on localhost. `npm run setup:hosted` temporarily rewrites this block,
 # runs `supabase config push`, and restores the local defaults afterwards.
-site_url = "http://localhost:5173"
+site_url = "http://localhost:5173/"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:3000",
-  "https://127.0.0.1:3000",
+  "http://localhost:5173/",
+  "http://127.0.0.1:5173/",
+  "http://localhost:3001/",
+  "http://127.0.0.1:3000/",
+  "http://127.0.0.1:3001/",
+  "https://127.0.0.1:3000/",
+  "https://127.0.0.1:3001/",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600

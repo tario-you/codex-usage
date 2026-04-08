@@ -17,13 +17,16 @@ const projectRefPath = path.join(rootDir, 'supabase', '.temp', 'project-ref')
 const supabaseBin = resolveSupabaseBin()
 const defaultHostedSiteUrl = 'https://codexusage.vercel.app'
 const defaultHostedAdditionalRedirectUrls = [
-  'https://codex-use-age-tario-yous-projects.vercel.app',
+  'https://codex-use-age-tario-yous-projects.vercel.app/',
 ]
 const localAuthRedirectUrls = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:3000',
-  'https://127.0.0.1:3000',
+  'http://localhost:5173/',
+  'http://127.0.0.1:5173/',
+  'http://localhost:3001/',
+  'http://127.0.0.1:3000/',
+  'http://127.0.0.1:3001/',
+  'https://127.0.0.1:3000/',
+  'https://127.0.0.1:3001/',
 ]
 
 type SupabaseApiKey = {
@@ -157,7 +160,7 @@ async function writeEnvFiles(projectRef: string) {
 }
 
 function resolveHostedAuthRedirects() {
-  const siteUrl = normalizeOrigin(
+  const siteUrl = normalizeRedirectUrl(
     process.env.HOSTED_SITE_URL?.trim() || defaultHostedSiteUrl,
     'HOSTED_SITE_URL',
   )
@@ -166,7 +169,7 @@ function resolveHostedAuthRedirects() {
     .map((value) => value.trim())
     .filter(Boolean)
     .map((value) =>
-      normalizeOrigin(value, 'HOSTED_ADDITIONAL_REDIRECT_URLS'),
+      normalizeRedirectUrl(value, 'HOSTED_ADDITIONAL_REDIRECT_URLS'),
     )
 
   return {
@@ -182,9 +185,16 @@ function resolveHostedAuthRedirects() {
   }
 }
 
-function normalizeOrigin(value: string, envName: string) {
+function normalizeRedirectUrl(value: string, envName: string) {
   try {
-    return new URL(value).origin
+    const url = new URL(value)
+
+    if (url.pathname === '/') {
+      url.hash = ''
+      url.search = ''
+    }
+
+    return url.toString()
   } catch {
     throw new Error(`Invalid URL for ${envName}: ${value}`)
   }
