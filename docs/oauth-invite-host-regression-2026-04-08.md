@@ -2,16 +2,17 @@
 
 Date: 2026-04-08
 
-Status: fixed in hosted Supabase config, fixed in code, follow-up query race fixed in code, deployed to production
+Status: fixed in hosted Supabase config, fixed in code, follow-up query race fixed in code, universal-link follow-up fixed in code, deployed to production for the earlier host/race fixes
 
 ## Summary
 
-Two user-visible failures were coupled:
+Three user-visible failures were coupled across the same invite flow over time:
 
 1. Clicking `Continue with Google` on the hosted dashboard returned to `https://codex-use-age-tario-yous-projects.vercel.app/#` instead of `https://codexusage.vercel.app/`.
 2. Invite links appeared to do nothing. New invite rows were created, but invite acceptance never created any rows in `codex_dashboard_shares`, so invitees saw zero inherited accounts.
+3. Even after those fixes, invite links were still single-claim. The first successful viewer effectively consumed the link, which is the opposite of a universal invite link.
 
-The real bug was not in the share-recursion SQL. The break happened earlier in the flow: Supabase OAuth redirect handling and host selection.
+The earlier break was not in the share-recursion SQL. It happened earlier in the flow: Supabase OAuth redirect handling and host selection. The later universal-link bug was different: it was encoded directly into the invite schema, the accept handler, and the dashboard copy.
 
 ## Audited Sources
 
@@ -31,6 +32,13 @@ Repo and production evidence:
 - [scripts/setup-hosted.ts](/Users/tarioyou/codex-usage/scripts/setup-hosted.ts)
 - [api/shares/start.ts](/Users/tarioyou/codex-usage/api/shares/start.ts)
 - [api/shares/accept.ts](/Users/tarioyou/codex-usage/api/shares/accept.ts)
+- [api/shares/preview.ts](/Users/tarioyou/codex-usage/api/shares/preview.ts)
+- [supabase/migrations/20260408103000_add_dashboard_share_invites.sql](/Users/tarioyou/codex-usage/supabase/migrations/20260408103000_add_dashboard_share_invites.sql#L1)
+- `git show b934153` audited on 2026-04-08: original invite launch encoded single-use semantics in schema, API, and UI
+- `git show eee7d4f` audited on 2026-04-08: first-visit race fix was correct, but it intentionally left the single-claim invite state machine unchanged
+- Current `HEAD` audit on 2026-04-08:
+  - [api/shares/accept.ts](/Users/tarioyou/codex-usage/api/shares/accept.ts#L16) now keeps pending invites reusable and issues access per viewer via `codex_dashboard_shares`
+  - [src/features/dashboard/dashboard-page.tsx](/Users/tarioyou/codex-usage/src/features/dashboard/dashboard-page.tsx#L972) now describes the link as reusable
 - Vercel project `prj_L99BYyV8e92hqOJrn5yDaAT32L5h` audited on 2026-04-08 via MCP:
   `domains = [codexdash.vercel.app, codexusage.vercel.app, a-ten-brown.vercel.app, codexmonitor.vercel.app, codexdashboard.vercel.app, codex-use-age-tario-yous-projects.vercel.app, codex-use-age-git-master-tario-yous-projects.vercel.app]`
 - Production deployment audited on 2026-04-08:
@@ -78,10 +86,11 @@ That distinction mattered. It proved:
 
 ## Root Cause
 
-There were two distinct failures across the same invite flow:
+There were three distinct failures across the same invite flow over time:
 
 1. Hosted OAuth could return to the wrong host and drop the invite token.
 2. Even after that was fixed, dashboard queries could start before invite redemption had finished.
+3. Even after both of those were fixed, the invite itself was still modeled as something one viewer could claim, not as a reusable capability multiple viewers could redeem.
 
 ## Root Cause, Layer 1: Hosted OAuth Redirect Contract
 
@@ -144,6 +153,34 @@ After the follow-up fix on production, a fresh invite trace showed:
 - first `POST list_dashboard_inviters` returned the inviter row
 
 There was no pre-accept dashboard read anymore.
+
+## Root Cause, Layer 3: Invite Rows Encoded Single-Claim State Instead Of Reusable Access
+
+The original share migration in [supabase/migrations/20260408103000_add_dashboard_share_invites.sql](/Users/tarioyou/codex-usage/supabase/migrations/20260408103000_add_dashboard_share_invites.sql#L1) stored:
+
+- invite `status`
+- `accepted_by_user_id`
+- `accepted_at`
+
+That was a clue that the invite row itself was being treated as the thing that gets claimed.
+
+The original acceptance flow introduced in `b934153` did exactly that:
+
+- it updated the invite row from `pending` to `accepted`
+- it wrote one `accepted_by_user_id`
+- it rejected later viewers with `This invite link has already been claimed.`
+
+The dashboard copy also matched that contract. Before this follow-up, the invite card explicitly said the link was single-use.
+
+This is why the universal-link complaint survived the host fix and the query-race fix: those fixes made invite redemption reliable for the first viewer, but they did not change the underlying rule that the invite row dies after one successful claimant.
+
+That rule was also unnecessary. Actual dashboard access is already enforced in [supabase/migrations/20260408103000_add_dashboard_share_invites.sql](/Users/tarioyou/codex-usage/supabase/migrations/20260408103000_add_dashboard_share_invites.sql#L19) by `codex_dashboard_shares`, which already has:
+
+- one row per `(owner_user_id, viewer_user_id)`
+- a uniqueness constraint on that pair
+- `revoked_at` for turning access off later
+
+So the correct per-viewer source of truth was already in the schema. We were just using the wrong table as the state machine.
 
 ## Why Previous Fixes Did Not Actually Fix It
 
@@ -211,6 +248,20 @@ Why that was not enough on its own:
 - it did not remove the pre-accept fetch window
 
 That experiment was useful because it narrowed the problem to query sequencing, but it was not the durable fix.
+
+### `eee7d4f` (`fix: load shared accounts on the first invite visit`)
+
+This fixed the post-auth race correctly.
+
+Why it still did not solve the universal-link complaint:
+
+- it gated dashboard reads until invite redemption finished
+- it did not change the invite state machine introduced in `b934153`
+- `/api/shares/accept` still tried to turn one invite row into one accepted claimant
+- the second distinct viewer was still blocked even though `codex_dashboard_shares` could safely hold both viewers
+- the dashboard copy still described the link as single-use
+
+So `eee7d4f` solved “first invite visit renders empty” and left “this link should work for multiple people” untouched.
 
 ## What Actually Worked
 
@@ -287,6 +338,34 @@ Why this matters:
 - if `/api/shares/accept` succeeds but the subsequent dashboard read fails, the user can still retry from the same invite state
 - the app no longer throws away the only resume handle before the first successful shared-data load
 
+### 9. Keep pending invite links reusable and move viewer state to `codex_dashboard_shares`
+
+[api/shares/accept.ts](/Users/tarioyou/codex-usage/api/shares/accept.ts#L16) now treats invite acceptance as:
+
+- validate the viewer session and Google identity
+- reject only invalid, expired, or revoked links
+- keep a live invite row in `pending`
+- upsert one `codex_dashboard_shares` row for `(owner_user_id, viewer_user_id)`
+- report `alreadyAccepted` based on that viewer's existing share row instead of the invite row
+
+This is the part that actually makes the link universal. The invite token stays reusable until expiry or revocation, while access is still scoped per viewer.
+
+### 10. Align the dashboard text with the actual contract
+
+[src/features/dashboard/dashboard-page.tsx](/Users/tarioyou/codex-usage/src/features/dashboard/dashboard-page.tsx#L972) now says:
+
+- `Invite viewers`
+- `Create a reusable link. Anyone who opens it before it expires and signs in with Google gets access to your dashboard accounts.`
+
+This matters because the old copy was not just misleading text. It was describing the exact backend contract we had accidentally kept.
+
+## What Did Not Work In The Universal-Link Follow-Up
+
+- Changing the UI copy alone would not have fixed anything. The restriction was server-side in `/api/shares/accept`.
+- Reusing invite `status = 'accepted'` as “someone has used this link at least once” would still be wrong, because [api/shares/preview.ts](/Users/tarioyou/codex-usage/api/shares/preview.ts#L37) surfaces that status to the client and [src/features/dashboard/dashboard-page.tsx](/Users/tarioyou/codex-usage/src/features/dashboard/dashboard-page.tsx#L846) disables the Google CTA when status is `accepted`.
+- Treating `accepted_by_user_id` as the access source of truth was the architectural mistake. Access belongs in `codex_dashboard_shares`, not on the invite token row.
+- We did not backfill old already-accepted invite rows into reusable ones. Legacy links already marked `accepted` still behave as consumed links and should be regenerated.
+
 ## Deployment and Config Audit
 
 Hosted config change applied on 2026-04-08:
@@ -330,6 +409,8 @@ When this class of bug happens again, do these checks in order:
    - `/api/shares/accept`
    - first successful shared-data read
 8. Verify which Vercel domains are attached to the production deployment.
+9. Audit whether the invite token is modeled as a reusable capability or as a one-viewer claim.
+10. If the product intent is “share one link with multiple people,” verify the same pending invite can be redeemed by two distinct viewer accounts before calling the fix complete.
 
 ## Regression Rules
 
@@ -348,6 +429,10 @@ These are the rules that should prevent a repeat:
 8. Do not enable dashboard account queries while an invite token is still unresolved.
 9. Do not clear the invite token, sessionStorage resume token, or invite-focused UI until the first post-accept dashboard read succeeds.
 10. When a fix claims to solve invite acceptance, audit the actual network order. One successful later refetch does not prove the race is gone.
+11. Do not use `accepted_by_user_id` on `codex_dashboard_share_invites` as the live source of truth for who currently has access.
+12. Keep viewer access truth in `codex_dashboard_shares`, one row per `(owner_user_id, viewer_user_id)`.
+13. If product intent is a universal invite link, do not transition the invite row into a terminal `accepted` state on first redemption.
+14. When changing invite copy, audit the schema and the accept endpoint in the same change. Text and backend contract must agree.
 
 ## Recommended Future Hardening
 
@@ -358,11 +443,14 @@ These were not required for the fix, but they would make this class of bug cheap
   - opens `/?invite=test-token` on each attached hosted alias
   - verifies the app normalizes to `codexusage.vercel.app`
 - Add an invite smoke test that asserts dashboard queries do not start until invite redemption has completed.
+- Add an invite smoke test that redeems the same pending invite from two distinct viewer accounts and asserts two active `codex_dashboard_shares` rows.
 - Log invite-accept start and failure paths explicitly in `/api/shares/accept` so “route never hit” becomes obvious from logs.
 - Add a doc review item to any auth/domain change:
   `Does this change alter the canonical hosted origin or Supabase redirect contract?`
 - Add a doc review item to any invite-flow change:
   `Can dashboard data load before the invite token has been redeemed and the first shared-data read has succeeded?`
+- Add a second invite-flow doc review item:
+  `Is the invite row acting as a reusable capability, or did we accidentally turn it back into a one-viewer claim?`
 
 ## Short Version
 
@@ -388,3 +476,4 @@ The durable fix was:
 - hosted config updated so future setup runs do not regress production
 - dashboard queries disabled until invite resolution finishes
 - explicit post-accept dashboard fetch and cache seed before the UI leaves the invite flow
+- access moved back to the correct source of truth: one share row per viewer, while the invite token stays reusable until expiry
