@@ -61,6 +61,16 @@ interface ShareInviteState {
   inviteUrl: string
 }
 
+interface InvitePreviewState {
+  expiresAt: string
+  inviter: {
+    avatarUrl: string | null
+    displayName: string
+    email: string | null
+  }
+  status: 'accepted' | 'expired' | 'pending' | 'revoked'
+}
+
 export function DashboardPage() {
   const {
     isLoading: authIsLoading,
@@ -85,6 +95,8 @@ export function DashboardPage() {
   const [pairingError, setPairingError] = useState<string | null>(null)
   const [inviteCreateError, setInviteCreateError] = useState<string | null>(null)
   const [inviteAcceptError, setInviteAcceptError] = useState<string | null>(null)
+  const [invitePreview, setInvitePreview] = useState<InvitePreviewState | null>(null)
+  const [invitePreviewError, setInvitePreviewError] = useState<string | null>(null)
   const [inviteNotice, setInviteNotice] = useState<string | null>(null)
   const [pairingCopyNotice, setPairingCopyNotice] = useState<string | null>(null)
   const [inviteCopyNotice, setInviteCopyNotice] = useState<string | null>(null)
@@ -153,6 +165,8 @@ export function DashboardPage() {
     if (!inviteToken) {
       setHasAttemptedInviteAccept(false)
       setInviteAcceptError(null)
+      setInvitePreview(null)
+      setInvitePreviewError(null)
       return
     }
 
@@ -168,6 +182,51 @@ export function DashboardPage() {
     inviteToken,
     session?.access_token,
   ])
+
+  useEffect(() => {
+    if (!inviteToken) {
+      return
+    }
+
+    let cancelled = false
+
+    void fetch(`/api/shares/preview?token=${encodeURIComponent(inviteToken)}`)
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as
+          | InvitePreviewState
+          | { error?: string }
+          | null
+
+        if (!response.ok) {
+          throw new Error(
+            payload && 'error' in payload && payload.error
+              ? payload.error
+              : 'Unable to load invite details.',
+          )
+        }
+
+        if (cancelled) {
+          return
+        }
+
+        setInvitePreview(payload as InvitePreviewState)
+        setInvitePreviewError(null)
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return
+        }
+
+        setInvitePreview(null)
+        setInvitePreviewError(
+          error instanceof Error ? error.message : 'Unable to load invite details.',
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [inviteToken])
 
   async function handleGoogleSignIn() {
     setLoginError(null)
@@ -887,10 +946,38 @@ export function DashboardPage() {
                     <CardTitle>Accept shared dashboard access</CardTitle>
                     <CardDescription>
                       Sign in with Google and this dashboard will load the same
-                      Codex accounts the sender can see.
+                      Codex accounts the inviter can see.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {invitePreview ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-3">
+                        <UserAvatar
+                          alt={invitePreview.inviter.displayName}
+                          fallback={invitePreview.inviter.displayName}
+                          size="sm"
+                          src={invitePreview.inviter.avatarUrl}
+                        />
+                        <div className="min-w-0 text-sm">
+                          <p className="font-medium text-foreground">
+                            Invited by {invitePreview.inviter.displayName}
+                          </p>
+                          {invitePreview.inviter.email &&
+                          invitePreview.inviter.email !==
+                            invitePreview.inviter.displayName ? (
+                            <p className="truncate text-muted-foreground">
+                              {invitePreview.inviter.email}
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground">
+                            Link status: {formatInviteStatus(invitePreview.status)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                    {invitePreviewError ? (
+                      <InlineMessage tone="error">{invitePreviewError}</InlineMessage>
+                    ) : null}
                     {authRedirectError ? (
                       <InlineMessage tone="error">{authRedirectError}</InlineMessage>
                     ) : null}
@@ -898,7 +985,12 @@ export function DashboardPage() {
                       <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
                     ) : null}
                     <Button
-                      disabled={isStartingGoogleLogin}
+                      disabled={
+                        isStartingGoogleLogin ||
+                        invitePreview?.status === 'accepted' ||
+                        invitePreview?.status === 'expired' ||
+                        invitePreview?.status === 'revoked'
+                      }
                       onClick={() => void handleGoogleSignIn()}
                       type="button"
                     >
@@ -1398,6 +1490,19 @@ function getAvatarInitials(value: string) {
   }
 
   return `${words[0].slice(0, 1)}${words[1].slice(0, 1)}`.toUpperCase()
+}
+
+function formatInviteStatus(status: InvitePreviewState['status']) {
+  switch (status) {
+    case 'accepted':
+      return 'Already used'
+    case 'expired':
+      return 'Expired'
+    case 'revoked':
+      return 'Revoked'
+    default:
+      return 'Ready'
+  }
 }
 
 function getInviteTokenFromLocation() {

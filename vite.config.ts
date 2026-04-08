@@ -29,6 +29,12 @@ const devRouteHandlers: Record<string, Partial<Record<string, RouteHandler>>> = 
       return module.POST(request)
     },
   },
+  '/api/shares/preview': {
+    GET: async (request) => {
+      const module = await import('./api/shares/preview')
+      return module.GET(request)
+    },
+  },
   '/api/shares/start': {
     POST: async (request) => {
       const module = await import('./api/shares/start')
