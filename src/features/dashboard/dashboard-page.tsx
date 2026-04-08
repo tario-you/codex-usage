@@ -38,10 +38,13 @@ import {
   buildSummary,
   dashboardAccountsQueryOptions,
   dashboardInvitersQueryOptions,
+  fetchDashboardAccounts,
+  fetchDashboardInviters,
   type DashboardAccountRow,
   type DashboardInviterRow,
 } from '@/lib/dashboard'
 import { clientEnvError } from '@/lib/env'
+import { queryClient } from '@/lib/query-client'
 import { supabase } from '@/lib/supabase'
 import {
   buildConnectCommand,
@@ -110,14 +113,16 @@ export function DashboardPage() {
   const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null)
+  const showInviteLanding = Boolean(inviteToken)
+  const canLoadDashboardData = Boolean(session?.user.id) && !showInviteLanding
 
   const accountsQuery = useQuery({
     ...dashboardAccountsQueryOptions(session?.user.id ?? 'guest'),
-    enabled: Boolean(session?.user.id),
+    enabled: canLoadDashboardData,
   })
   const invitersQuery = useQuery({
     ...dashboardInvitersQueryOptions(session?.user.id ?? 'guest'),
-    enabled: Boolean(session?.user.id),
+    enabled: canLoadDashboardData,
   })
 
   const accounts = accountsQuery.data ?? []
@@ -135,12 +140,12 @@ export function DashboardPage() {
   const googleIdentityEmail = getProviderEmail(session, 'google')
   const isGuestSession = getIsGuestSession(session)
   const canLinkGoogle = Boolean(session) && isGuestSession && !hasGoogleSession
+  const canRetryInvite = Boolean(inviteToken && session?.access_token && inviteAcceptError)
   const sessionLabel = isGuestSession
     ? googleIdentityEmail ?? session?.user.email ?? 'Local dashboard session'
     : session?.user.email ?? 'Signed in'
   const sessionAvatarUrl = getSessionAvatarUrl(session)
   const primaryInviter = inviters.length === 1 ? inviters[0] : null
-  const showInviteLanding = Boolean(inviteToken) && !session
   const isLoadingAccounts =
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
   const hasPairingDetails = Boolean(pairingError || pairingCommand)
@@ -466,15 +471,23 @@ export function DashboardPage() {
         )
       }
 
+      const viewerUserId = session.user.id
+      const [nextAccounts, nextInviters] = await Promise.all([
+        fetchDashboardAccounts(),
+        fetchDashboardInviters(),
+      ])
+
+      queryClient.setQueryData(['dashboard-accounts', viewerUserId], nextAccounts)
+      queryClient.setQueryData(['dashboard-inviters', viewerUserId], nextInviters)
+
       clearPendingInviteToken()
       clearInviteTokenFromLocation()
-      setInviteToken(null)
       setInviteNotice(
         payload?.alreadyAccepted
           ? 'This shared dashboard is already available in your account.'
           : 'Invite accepted. Shared accounts are now visible in this dashboard.',
       )
-      await Promise.all([accountsQuery.refetch(), invitersQuery.refetch()])
+      setInviteToken(null)
     } catch (error) {
       setInviteAcceptError(
         error instanceof Error ? error.message : 'Unable to accept the invite.',
@@ -638,8 +651,15 @@ export function DashboardPage() {
                         {sessionLabel}
                       </p>
                       <p className="text-muted-foreground">
-                        {summary.accountsTracked} tracked
-                        {summary.accountsTracked === 1 ? ' account' : ' accounts'}
+                        {showInviteLanding
+                          ? isAcceptingInvite
+                            ? 'Finishing shared access...'
+                            : 'Shared invite in progress'
+                          : `${summary.accountsTracked} tracked${
+                              summary.accountsTracked === 1
+                                ? ' account'
+                                : ' accounts'
+                            }`}
                       </p>
                     </div>
                   </div>
@@ -659,7 +679,127 @@ export function DashboardPage() {
         </header>
 
         <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          {session ? (
+          {showInviteLanding ? (
+            <div className="mx-auto max-w-[720px] space-y-4">
+              {loginError ? (
+                <InlineMessage tone="error">{loginError}</InlineMessage>
+              ) : null}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Accept shared dashboard access</CardTitle>
+                  <CardDescription>
+                    Sign in with Google and this dashboard will load the same
+                    Codex accounts the inviter can see.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {invitePreview ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-3">
+                      <UserAvatar
+                        alt={invitePreview.inviter.displayName}
+                        fallback={invitePreview.inviter.displayName}
+                        size="sm"
+                        src={invitePreview.inviter.avatarUrl}
+                      />
+                      <div className="min-w-0 text-sm">
+                        <p className="font-medium text-foreground">
+                          Invited by {invitePreview.inviter.displayName}
+                        </p>
+                        {invitePreview.inviter.email &&
+                        invitePreview.inviter.email !==
+                          invitePreview.inviter.displayName ? (
+                          <p className="truncate text-muted-foreground">
+                            {invitePreview.inviter.email}
+                          </p>
+                        ) : null}
+                        <p className="text-muted-foreground">
+                          Link status: {formatInviteStatus(invitePreview.status)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : inviteOriginRedirectUrl ? (
+                    <InlineMessage tone="default">
+                      Opening the invite on codexusage.vercel.app...
+                    </InlineMessage>
+                  ) : !invitePreviewError ? (
+                    <InlineMessage tone="default">
+                      Loading invite details...
+                    </InlineMessage>
+                  ) : null}
+                  {session ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-3">
+                      <UserAvatar
+                        alt={sessionLabel}
+                        fallback={sessionLabel}
+                        size="sm"
+                        src={sessionAvatarUrl}
+                      />
+                      <div className="min-w-0 text-sm">
+                        <p className="font-medium text-foreground">{sessionLabel}</p>
+                        <p className="text-muted-foreground">
+                          {isAcceptingInvite
+                            ? 'Loading shared accounts into this dashboard...'
+                            : hasGoogleSession
+                              ? 'Google sign-in complete.'
+                              : 'Sign in with Google to finish accepting this invite.'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                  {invitePreviewError ? (
+                    <InlineMessage tone="error">{invitePreviewError}</InlineMessage>
+                  ) : null}
+                  {authRedirectError ? (
+                    <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+                  ) : null}
+                  {inviteAcceptError ? (
+                    <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
+                  ) : null}
+                  {isAcceptingInvite ? (
+                    <LoadingState />
+                  ) : null}
+                  {canRetryInvite ? (
+                    <div>
+                      <Button
+                        onClick={() => void handleAcceptInvite()}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Retry invite
+                      </Button>
+                    </div>
+                  ) : null}
+                  {!isAcceptingInvite ? (
+                    <Button
+                      disabled={
+                        Boolean(inviteOriginRedirectUrl) ||
+                        authIsLoading ||
+                        isStartingGoogleLogin ||
+                        invitePreview?.status === 'accepted' ||
+                        invitePreview?.status === 'expired' ||
+                        invitePreview?.status === 'revoked' ||
+                        Boolean(session?.access_token && hasGoogleSession)
+                      }
+                      onClick={() => void handleGoogleSignIn()}
+                      type="button"
+                    >
+                      <GoogleIcon className="mr-2 size-4" />
+                      {inviteOriginRedirectUrl
+                        ? 'Opening shared link...'
+                        : authIsLoading
+                          ? 'Checking sign-in...'
+                          : isStartingGoogleLogin
+                            ? 'Redirecting to Google...'
+                            : session?.access_token && hasGoogleSession
+                              ? 'Loading shared accounts...'
+                              : 'Continue with Google'}
+                    </Button>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
+          ) : session ? (
             <div className="space-y-6">
               {connectedNotice ? (
                 <InlineMessage tone="default">{connectedNotice}</InlineMessage>
@@ -667,24 +807,8 @@ export function DashboardPage() {
               {inviteNotice ? (
                 <InlineMessage tone="default">{inviteNotice}</InlineMessage>
               ) : null}
-              {isAcceptingInvite ? (
-                <InlineMessage tone="default">
-                  Accepting shared dashboard access...
-                </InlineMessage>
-              ) : null}
               {inviteAcceptError ? (
                 <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
-              ) : null}
-              {inviteToken && session?.access_token && inviteAcceptError ? (
-                <div>
-                  <Button
-                    onClick={() => void handleAcceptInvite()}
-                    size="sm"
-                    variant="outline"
-                  >
-                    Retry invite
-                  </Button>
-                </div>
               ) : null}
 
               <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -971,87 +1095,6 @@ export function DashboardPage() {
                   ) : null}
                 </Card>
               </div>
-            </div>
-          ) : showInviteLanding ? (
-            <div className="mx-auto max-w-[720px] space-y-4">
-              {loginError ? (
-                <InlineMessage tone="error">{loginError}</InlineMessage>
-              ) : null}
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Accept shared dashboard access</CardTitle>
-                  <CardDescription>
-                    Sign in with Google and this dashboard will load the same
-                    Codex accounts the inviter can see.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {invitePreview ? (
-                    <div className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-3">
-                      <UserAvatar
-                        alt={invitePreview.inviter.displayName}
-                        fallback={invitePreview.inviter.displayName}
-                        size="sm"
-                        src={invitePreview.inviter.avatarUrl}
-                      />
-                      <div className="min-w-0 text-sm">
-                        <p className="font-medium text-foreground">
-                          Invited by {invitePreview.inviter.displayName}
-                        </p>
-                        {invitePreview.inviter.email &&
-                        invitePreview.inviter.email !==
-                          invitePreview.inviter.displayName ? (
-                          <p className="truncate text-muted-foreground">
-                            {invitePreview.inviter.email}
-                          </p>
-                        ) : null}
-                        <p className="text-muted-foreground">
-                          Link status: {formatInviteStatus(invitePreview.status)}
-                        </p>
-                      </div>
-                    </div>
-                  ) : inviteOriginRedirectUrl ? (
-                    <InlineMessage tone="default">
-                      Opening the invite on codexusage.vercel.app...
-                    </InlineMessage>
-                  ) : !invitePreviewError ? (
-                    <InlineMessage tone="default">
-                      Loading invite details...
-                    </InlineMessage>
-                  ) : null}
-                  {invitePreviewError ? (
-                    <InlineMessage tone="error">{invitePreviewError}</InlineMessage>
-                  ) : null}
-                  {authRedirectError ? (
-                    <InlineMessage tone="error">{authRedirectError}</InlineMessage>
-                  ) : null}
-                  {inviteAcceptError ? (
-                    <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
-                  ) : null}
-                  <Button
-                    disabled={
-                      Boolean(inviteOriginRedirectUrl) ||
-                      authIsLoading ||
-                      isStartingGoogleLogin ||
-                      invitePreview?.status === 'accepted' ||
-                      invitePreview?.status === 'expired' ||
-                      invitePreview?.status === 'revoked'
-                    }
-                    onClick={() => void handleGoogleSignIn()}
-                    type="button"
-                  >
-                    <GoogleIcon className="mr-2 size-4" />
-                    {inviteOriginRedirectUrl
-                      ? 'Opening shared link...'
-                      : authIsLoading
-                      ? 'Checking sign-in...'
-                      : isStartingGoogleLogin
-                        ? 'Redirecting to Google...'
-                        : 'Continue with Google'}
-                  </Button>
-                </CardContent>
-              </Card>
             </div>
           ) : authIsLoading ? (
             <LoadingState />

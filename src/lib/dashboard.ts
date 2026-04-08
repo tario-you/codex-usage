@@ -49,7 +49,7 @@ export function dashboardInvitersQueryOptions(userId: string) {
   })
 }
 
-async function fetchDashboardAccounts() {
+export async function fetchDashboardAccounts() {
   if (!supabase) {
     throw new Error(
       clientEnvError ??
@@ -70,7 +70,7 @@ async function fetchDashboardAccounts() {
   return data ?? []
 }
 
-async function fetchDashboardInviters() {
+export async function fetchDashboardInviters() {
   if (!supabase) {
     throw new Error(
       clientEnvError ??
