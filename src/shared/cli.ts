@@ -1,3 +1,5 @@
+import { getPreferredDashboardOrigin } from './site'
+
 export const NPM_PACKAGE_NAME = 'codex-usage-dashboard'
 export const NPX_COMMAND = `npx ${NPM_PACKAGE_NAME}@latest`
 export const DASHBOARD_CONNECTED_QUERY_KEY = 'connected'
@@ -8,7 +10,7 @@ interface DashboardAuthUrlOptions {
 }
 
 export function buildConnectCommand(siteUrl: string) {
-  return `${NPX_COMMAND} connect --site "${normalizeSiteOrigin(siteUrl)}"`
+  return `${NPX_COMMAND} connect --site "${getPreferredDashboardOrigin(normalizeSiteOrigin(siteUrl))}"`
 }
 
 export function buildPairCommand(pairUrl: string) {
@@ -20,7 +22,7 @@ export function buildSyncCommand() {
 }
 
 export function buildConnectedDashboardUrl(origin: string) {
-  const url = new URL('/', origin)
+  const url = new URL('/', getPreferredDashboardOrigin(origin))
   url.searchParams.set(DASHBOARD_CONNECTED_QUERY_KEY, '1')
   return url.toString()
 }
