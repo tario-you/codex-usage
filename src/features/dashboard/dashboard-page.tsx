@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Check,
   Copy,
+  Link2,
   Link2Off,
   LogOut,
   RefreshCcw,
@@ -1026,19 +1027,13 @@ export function DashboardPage() {
                       className={hasInviteDetails ? 'border-b border-border' : undefined}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="space-y-1">
                           <CardTitle>Invite viewers</CardTitle>
-                          <CardDescription>
-                            Create a reusable link. Anyone who opens it before
-                            it expires and signs in with Google gets access to
-                            your dashboard accounts.
-                          </CardDescription>
-                        </div>
                         <Button
                           className="shrink-0"
                           disabled={isCreatingInvite}
                           onClick={() => void handleCreateInvite()}
                         >
+                          <Link2 className="mr-2 size-4" />
                           {isCreatingInvite ? 'Creating link...' : 'Create invite link'}
                         </Button>
                       </div>
