@@ -11,6 +11,8 @@ import {
 
 export type DashboardAccountRow =
   Database['public']['Views']['codex_dashboard_accounts']['Row']
+export type DashboardInviterRow =
+  Database['public']['Functions']['list_dashboard_inviters']['Returns'][number]
 
 export interface ModelBucket {
   key: string
@@ -39,6 +41,14 @@ export function dashboardAccountsQueryOptions(userId: string) {
   })
 }
 
+export function dashboardInvitersQueryOptions(userId: string) {
+  return queryOptions({
+    queryKey: ['dashboard-inviters', userId],
+    queryFn: fetchDashboardInviters,
+    refetchInterval: 30_000,
+  })
+}
+
 async function fetchDashboardAccounts() {
   if (!supabase) {
     throw new Error(
@@ -52,6 +62,25 @@ async function fetchDashboardAccounts() {
     .select('*')
     .order('last_snapshot_at', { ascending: false, nullsFirst: false })
     .returns<DashboardAccountRow[]>()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return data ?? []
+}
+
+async function fetchDashboardInviters() {
+  if (!supabase) {
+    throw new Error(
+      clientEnvError ??
+        'Supabase env vars are missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+    )
+  }
+
+  const { data, error } = await supabase
+    .rpc('list_dashboard_inviters')
+    .returns<DashboardInviterRow[]>()
 
   if (error) {
     throw new Error(error.message)

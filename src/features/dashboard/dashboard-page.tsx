@@ -37,7 +37,9 @@ import { useAuthSession } from '@/lib/auth'
 import {
   buildSummary,
   dashboardAccountsQueryOptions,
+  dashboardInvitersQueryOptions,
   type DashboardAccountRow,
+  type DashboardInviterRow,
 } from '@/lib/dashboard'
 import { clientEnvError } from '@/lib/env'
 import { supabase } from '@/lib/supabase'
@@ -94,8 +96,13 @@ export function DashboardPage() {
     ...dashboardAccountsQueryOptions(session?.user.id ?? 'guest'),
     enabled: Boolean(session?.user.id),
   })
+  const invitersQuery = useQuery({
+    ...dashboardInvitersQueryOptions(session?.user.id ?? 'guest'),
+    enabled: Boolean(session?.user.id),
+  })
 
   const accounts = accountsQuery.data ?? []
+  const inviters = invitersQuery.data ?? []
   const summary = buildSummary(accounts)
   const connectCommand =
     typeof window === 'undefined'
@@ -107,6 +114,8 @@ export function DashboardPage() {
   const sessionLabel = isGuestSession
     ? googleIdentityEmail ?? 'Local dashboard session'
     : session?.user.email ?? 'Signed in'
+  const sessionAvatarUrl = getSessionAvatarUrl(session)
+  const primaryInviter = inviters.length === 1 ? inviters[0] : null
   const isLoadingAccounts =
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
   const hasPairingDetails = Boolean(pairingError || pairingCommand)
@@ -368,7 +377,7 @@ export function DashboardPage() {
           ? 'This shared dashboard is already available in your account.'
           : 'Invite accepted. Shared accounts are now visible in this dashboard.',
       )
-      await accountsQuery.refetch()
+      await Promise.all([accountsQuery.refetch(), invitersQuery.refetch()])
     } catch (error) {
       setInviteAcceptError(
         error instanceof Error ? error.message : 'Unable to accept the invite.',
@@ -520,14 +529,22 @@ export function DashboardPage() {
 
               {session ? (
                 <div className="flex flex-wrap items-center justify-end gap-3">
-                  <div className="text-right text-sm">
-                    <p className="font-medium text-foreground">
-                      {sessionLabel}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {summary.accountsTracked} tracked
-                      {summary.accountsTracked === 1 ? ' account' : ' accounts'}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <UserAvatar
+                      alt={sessionLabel}
+                      fallback={sessionLabel}
+                      size="sm"
+                      src={sessionAvatarUrl}
+                    />
+                    <div className="text-right text-sm">
+                      <p className="font-medium text-foreground">
+                        {sessionLabel}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {summary.accountsTracked} tracked
+                        {summary.accountsTracked === 1 ? ' account' : ' accounts'}
+                      </p>
+                    </div>
                   </div>
                   <Button
                     aria-label="Sign out"
@@ -606,6 +623,55 @@ export function DashboardPage() {
                         {loginError ? (
                           <InlineMessage tone="error">{loginError}</InlineMessage>
                         ) : null}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  {inviters.length > 0 || invitersQuery.error ? (
+                    <Card>
+                      <CardHeader
+                        className={
+                          inviters.length > 0 || invitersQuery.error
+                            ? 'border-b border-border'
+                            : undefined
+                        }
+                      >
+                        <CardTitle>Shared with you</CardTitle>
+                        <CardDescription>
+                          These people invited you to see their dashboard accounts.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {invitersQuery.error ? (
+                          <InlineMessage tone="error">
+                            {invitersQuery.error.message}
+                          </InlineMessage>
+                        ) : null}
+
+                        {inviters.map((inviter) => (
+                          <div
+                            key={inviter.sharer_user_id}
+                            className="flex items-center gap-3"
+                          >
+                            <UserAvatar
+                              alt={getInviterLabel(inviter)}
+                              fallback={getInviterLabel(inviter)}
+                              size="sm"
+                              src={inviter.sharer_avatar_url}
+                            />
+                            <div className="min-w-0 text-sm">
+                              <p className="truncate font-medium text-foreground">
+                                {getInviterLabel(inviter)}
+                              </p>
+                              {inviter.sharer_email &&
+                              inviter.sharer_email !== getInviterLabel(inviter) ? (
+                                <p className="truncate text-muted-foreground">
+                                  {inviter.sharer_email}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
                       </CardContent>
                     </Card>
                   ) : null}
@@ -785,6 +851,7 @@ export function DashboardPage() {
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={accounts}
+                              primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
                                 void handleUnlinkAccount(account)
                               }
@@ -794,6 +861,7 @@ export function DashboardPage() {
                           <div className="hidden md:block">
                             <AccountTable
                               accounts={accounts}
+                              primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
                                 void handleUnlinkAccount(account)
                               }
@@ -990,10 +1058,12 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
 
 function AccountTable({
   accounts,
+  primaryInviter,
   onUnlinkAccount,
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  primaryInviter: DashboardInviterRow | null
   onUnlinkAccount: (account: DashboardAccountRow) => void
   unlinkingAccountId: string | null
 }) {
@@ -1028,7 +1098,7 @@ function AccountTable({
                     </p>
                   ) : null}
                   {!isOwnedAccount ? (
-                    <p className="text-sm text-muted-foreground">Shared with you</p>
+                    <SharedAccessNote inviter={primaryInviter} />
                   ) : null}
                 </div>
               </TableCell>
@@ -1075,10 +1145,12 @@ function AccountTable({
 
 function AccountSummaryList({
   accounts,
+  primaryInviter,
   onUnlinkAccount,
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  primaryInviter: DashboardInviterRow | null
   onUnlinkAccount: (account: DashboardAccountRow) => void
   unlinkingAccountId: string | null
 }) {
@@ -1100,7 +1172,7 @@ function AccountSummaryList({
                   </p>
                 ) : null}
                 {!isOwnedAccount ? (
-                  <p className="text-sm text-muted-foreground">Shared with you</p>
+                  <SharedAccessNote inviter={primaryInviter} />
                 ) : null}
               </div>
               {isOwnedAccount ? (
@@ -1137,6 +1209,57 @@ function AccountSummaryList({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function SharedAccessNote({
+  inviter,
+}: {
+  inviter: DashboardInviterRow | null
+}) {
+  if (!inviter) {
+    return <p className="text-sm text-muted-foreground">Shared with you</p>
+  }
+
+  const inviterLabel = getInviterLabel(inviter)
+
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <UserAvatar
+        alt={inviterLabel}
+        fallback={inviterLabel}
+        size="xs"
+        src={inviter.sharer_avatar_url}
+      />
+      <span className="truncate">Invited by {inviterLabel}</span>
+    </div>
+  )
+}
+
+function UserAvatar({
+  alt,
+  fallback,
+  size,
+  src,
+}: {
+  alt: string
+  fallback: string
+  size: 'xs' | 'sm'
+  src: string | null
+}) {
+  const sizeClassName = size === 'xs' ? 'size-5 text-[10px]' : 'size-8 text-xs'
+
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted font-medium text-muted-foreground ${sizeClassName}`}
+      title={alt}
+    >
+      {src ? (
+        <img alt={alt} className="size-full object-cover" src={src} />
+      ) : (
+        <span>{getAvatarInitials(fallback)}</span>
+      )}
     </div>
   )
 }
@@ -1235,6 +1358,46 @@ function getProviderEmail(
   const email = identity?.identity_data?.email
 
   return typeof email === 'string' ? email : null
+}
+
+function getSessionAvatarUrl(session: Session | null) {
+  const avatarCandidates = [
+    session?.user.user_metadata?.avatar_url,
+    session?.user.user_metadata?.picture,
+    ...(
+      session?.user.identities?.flatMap((identity) => [
+        identity.identity_data?.avatar_url,
+        identity.identity_data?.picture,
+      ]) ?? []
+    ),
+  ]
+
+  const avatarUrl = avatarCandidates.find(
+    (value): value is string => typeof value === 'string' && value.length > 0,
+  )
+
+  return avatarUrl ?? null
+}
+
+function getInviterLabel(inviter: DashboardInviterRow) {
+  return inviter.sharer_display_name ?? inviter.sharer_email ?? 'Unknown inviter'
+}
+
+function getAvatarInitials(value: string) {
+  const words = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (words.length === 0) {
+    return '?'
+  }
+
+  if (words.length === 1) {
+    return words[0].slice(0, 1).toUpperCase()
+  }
+
+  return `${words[0].slice(0, 1)}${words[1].slice(0, 1)}`.toUpperCase()
 }
 
 function getInviteTokenFromLocation() {

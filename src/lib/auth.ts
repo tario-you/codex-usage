@@ -48,6 +48,7 @@ export function useAuthSession() {
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession)
       void queryClient.invalidateQueries({ queryKey: ['dashboard-accounts'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-inviters'] })
     })
 
     return () => {

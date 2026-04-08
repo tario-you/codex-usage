@@ -383,6 +383,16 @@ export interface Database {
       }
     }
     Functions: {
+      list_dashboard_inviters: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          sharer_user_id: string
+          sharer_email: string | null
+          sharer_display_name: string | null
+          sharer_avatar_url: string | null
+          created_at: string
+        }[]
+      }
       user_can_access_codex_owner: {
         Args: {
           candidate_owner_user_id: string
