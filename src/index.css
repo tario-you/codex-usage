@@ -40,6 +40,9 @@
   --chart-3: #9a5a4b;
   --chart-4: #8a8176;
   --chart-5: #b8afa2;
+  --success-surface: #e3ebe5;
+  --success-border: #bfd0c4;
+  --success-foreground: #476353;
   --radius: 0.5rem;
   --sidebar: #f1eadf;
   --sidebar-foreground: #231d18;
@@ -194,6 +197,9 @@ pre {
   --chart-3: #cf7768;
   --chart-4: #a69a8b;
   --chart-5: #6c6258;
+  --success-surface: #314036;
+  --success-border: #53685b;
+  --success-foreground: #dbe8de;
   --sidebar: #26211d;
   --sidebar-foreground: #f5efe6;
   --sidebar-primary: #f5efe6;

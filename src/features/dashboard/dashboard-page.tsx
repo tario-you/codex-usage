@@ -81,6 +81,7 @@ interface InvitePreviewState {
 }
 
 const PENDING_INVITE_TOKEN_STORAGE_KEY = 'codex-usage.pending-invite-token'
+const COPY_FEEDBACK_DURATION_MS = 2000
 
 export function DashboardPage() {
   const {
@@ -184,7 +185,7 @@ export function DashboardPage() {
 
     const timeoutId = window.setTimeout(() => {
       setIsTerminalCommandCopied(false)
-    }, 1500)
+    }, COPY_FEEDBACK_DURATION_MS)
 
     return () => window.clearTimeout(timeoutId)
   }, [isTerminalCommandCopied])
@@ -196,7 +197,7 @@ export function DashboardPage() {
 
     const timeoutId = window.setTimeout(() => {
       setIsInviteLinkCopied(false)
-    }, 1500)
+    }, COPY_FEEDBACK_DURATION_MS)
 
     return () => window.clearTimeout(timeoutId)
   }, [isInviteLinkCopied])
@@ -208,7 +209,7 @@ export function DashboardPage() {
 
     const timeoutId = window.setTimeout(() => {
       setIsPairingCommandCopied(false)
-    }, 1500)
+    }, COPY_FEEDBACK_DURATION_MS)
 
     return () => window.clearTimeout(timeoutId)
   }, [isPairingCommandCopied])
@@ -220,7 +221,7 @@ export function DashboardPage() {
 
     const timeoutId = window.setTimeout(() => {
       setIsSyncCommandCopied(false)
-    }, 1500)
+    }, COPY_FEEDBACK_DURATION_MS)
 
     return () => window.clearTimeout(timeoutId)
   }, [isSyncCommandCopied])
@@ -414,6 +415,28 @@ export function DashboardPage() {
     return message
   }
 
+  async function copyPairingCommandToClipboard(command: string) {
+    try {
+      await navigator.clipboard.writeText(command)
+      setPairingCopyError(null)
+      setIsPairingCommandCopied(true)
+    } catch {
+      setIsPairingCommandCopied(false)
+      setPairingCopyError('Copy failed. Select the command manually.')
+    }
+  }
+
+  async function copyInviteLinkToClipboard(inviteUrl: string) {
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setInviteCopyError(null)
+      setIsInviteLinkCopied(true)
+    } catch {
+      setIsInviteLinkCopied(false)
+      setInviteCopyError('Copy failed. Select the invite link manually.')
+    }
+  }
+
   async function handleStartPairing() {
     if (!session?.access_token) {
       setPairingError('Sign in first.')
@@ -422,6 +445,8 @@ export function DashboardPage() {
 
     setIsGeneratingPairing(true)
     setPairingError(null)
+    setPairingCopyError(null)
+    setIsPairingCommandCopied(false)
 
     try {
       const response = await fetch('/api/pair/start', {
@@ -454,11 +479,11 @@ export function DashboardPage() {
         )
       }
 
-      setPairingCommand(payload as PairingCommandState)
-      setPairingCopyError(null)
-      setIsPairingCommandCopied(false)
+      const nextPairingCommand = payload as PairingCommandState
+      setPairingCommand(nextPairingCommand)
       setSyncCommandCopyError(null)
       setIsSyncCommandCopied(false)
+      await copyPairingCommandToClipboard(nextPairingCommand.command)
     } catch (error) {
       setPairingError(
         error instanceof Error ? error.message : 'Unable to create pairing.',
@@ -476,6 +501,8 @@ export function DashboardPage() {
 
     setIsCreatingInvite(true)
     setInviteCreateError(null)
+    setInviteCopyError(null)
+    setIsInviteLinkCopied(false)
 
     try {
       const response = await fetch('/api/shares/start', {
@@ -508,9 +535,9 @@ export function DashboardPage() {
         )
       }
 
-      setShareInvite(payload as ShareInviteState)
-      setInviteCopyError(null)
-      setIsInviteLinkCopied(false)
+      const nextShareInvite = payload as ShareInviteState
+      setShareInvite(nextShareInvite)
+      await copyInviteLinkToClipboard(nextShareInvite.inviteUrl)
     } catch (error) {
       setInviteCreateError(
         error instanceof Error ? error.message : 'Unable to create the invite.',
@@ -598,14 +625,7 @@ export function DashboardPage() {
       return
     }
 
-    try {
-      await navigator.clipboard.writeText(pairingCommand.command)
-      setPairingCopyError(null)
-      setIsPairingCommandCopied(true)
-    } catch {
-      setIsPairingCommandCopied(false)
-      setPairingCopyError('Copy failed. Select the command manually.')
-    }
+    await copyPairingCommandToClipboard(pairingCommand.command)
   }
 
   async function handleCopySyncCommand() {
@@ -628,14 +648,7 @@ export function DashboardPage() {
       return
     }
 
-    try {
-      await navigator.clipboard.writeText(shareInvite.inviteUrl)
-      setInviteCopyError(null)
-      setIsInviteLinkCopied(true)
-    } catch {
-      setIsInviteLinkCopied(false)
-      setInviteCopyError('Copy failed. Select the invite link manually.')
-    }
+    await copyInviteLinkToClipboard(shareInvite.inviteUrl)
   }
 
   async function handleCopyTerminalCommand() {
@@ -1027,15 +1040,19 @@ export function DashboardPage() {
                       className={hasInviteDetails ? 'border-b border-border' : undefined}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                          <CardTitle>Invite viewers</CardTitle>
-                        <Button
-                          className="shrink-0"
-                          disabled={isCreatingInvite}
-                          onClick={() => void handleCreateInvite()}
-                        >
-                          <Link2 className="mr-2 size-4" />
-                          {isCreatingInvite ? 'Creating link...' : 'Create invite link'}
-                        </Button>
+                        <CardTitle>Invite viewers</CardTitle>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isInviteLinkCopied ? <CopiedPill /> : null}
+                          <Button
+                            className="shrink-0"
+                            disabled={isCreatingInvite}
+                            onClick={() => void handleCreateInvite()}
+                            type="button"
+                          >
+                            <Link2 className="mr-2 size-4" />
+                            {isCreatingInvite ? 'Creating link...' : 'Create invite link'}
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     {hasInviteDetails ? (
@@ -1097,16 +1114,20 @@ export function DashboardPage() {
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <CardTitle>Connect Codex</CardTitle>
-                        <Button
-                          className="shrink-0"
-                          disabled={isGeneratingPairing}
-                          onClick={() => void handleStartPairing()}
-                        >
-                          <TerminalSquare className="mr-2 size-4" />
-                          {isGeneratingPairing
-                            ? 'Creating command...'
-                            : 'Create pairing command'}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isPairingCommandCopied ? <CopiedPill /> : null}
+                          <Button
+                            className="shrink-0"
+                            disabled={isGeneratingPairing}
+                            onClick={() => void handleStartPairing()}
+                            type="button"
+                          >
+                            <TerminalSquare className="mr-2 size-4" />
+                            {isGeneratingPairing
+                              ? 'Creating command...'
+                              : 'Create pairing command'}
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     {hasPairingDetails ? (
@@ -1387,6 +1408,24 @@ function InlineMessage({
     >
       {children}
     </div>
+  )
+}
+
+function CopiedPill() {
+  return (
+    <span
+      aria-live="polite"
+      className="inline-flex h-6 items-center rounded-full border px-2.5 text-[0.72rem] font-medium motion-safe:animate-in motion-safe:fade-in"
+      role="status"
+      style={{
+        backgroundColor: 'var(--success-surface)',
+        borderColor: 'var(--success-border)',
+        color: 'var(--success-foreground)',
+      }}
+    >
+      <Check className="mr-1 size-3" />
+      Copied
+    </span>
   )
 }
 
