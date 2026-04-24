@@ -949,92 +949,92 @@ export function DashboardPage() {
                 <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
               ) : null}
 
-              <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <div className="space-y-6">
-                  {canLinkGoogle ? (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>
-                          {inviteToken ? 'Accept shared dashboard access' : 'Link Google'}
-                        </CardTitle>
-                        <CardDescription>
-                          {inviteToken
-                            ? 'This invite only works after you sign in with Google.'
-                            : 'The dashboard already works through the local terminal flow. Add Google if you want the same account to keep a reusable browser sign-in.'}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <Button
-                          disabled={Boolean(inviteOriginRedirectUrl) || isStartingGoogleLogin}
-                          onClick={() => void handleGoogleSignIn()}
-                          type="button"
-                        >
-                          <GoogleIcon className="mr-2 size-4" />
-                          {inviteOriginRedirectUrl
-                            ? 'Opening shared link...'
-                            : isStartingGoogleLogin
+              <div className="space-y-6">
+                {canLinkGoogle ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>
+                        {inviteToken ? 'Accept shared dashboard access' : 'Link Google'}
+                      </CardTitle>
+                      <CardDescription>
+                        {inviteToken
+                          ? 'This invite only works after you sign in with Google.'
+                          : 'The dashboard already works through the local terminal flow. Add Google if you want the same account to keep a reusable browser sign-in.'}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Button
+                        disabled={Boolean(inviteOriginRedirectUrl) || isStartingGoogleLogin}
+                        onClick={() => void handleGoogleSignIn()}
+                        type="button"
+                      >
+                        <GoogleIcon className="mr-2 size-4" />
+                        {inviteOriginRedirectUrl
+                          ? 'Opening shared link...'
+                          : isStartingGoogleLogin
                             ? 'Redirecting to Google...'
                             : inviteToken
                               ? 'Continue with Google'
                               : 'Link Google'}
-                        </Button>
+                      </Button>
 
-                        {loginError ? (
-                          <InlineMessage tone="error">{loginError}</InlineMessage>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  ) : null}
+                      {loginError ? (
+                        <InlineMessage tone="error">{loginError}</InlineMessage>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                ) : null}
 
-                  {inviters.length > 0 || invitersQuery.error ? (
-                    <Card>
-                      <CardHeader
-                        className={
-                          inviters.length > 0 || invitersQuery.error
-                            ? 'border-b border-border'
-                            : undefined
-                        }
-                      >
-                        <CardTitle>Shared with you</CardTitle>
-                        <CardDescription>
-                          These people invited you to see their dashboard accounts.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {invitersQuery.error ? (
-                          <InlineMessage tone="error">
-                            {invitersQuery.error.message}
-                          </InlineMessage>
-                        ) : null}
+                {inviters.length > 0 || invitersQuery.error ? (
+                  <Card>
+                    <CardHeader
+                      className={
+                        inviters.length > 0 || invitersQuery.error
+                          ? 'border-b border-border'
+                          : undefined
+                      }
+                    >
+                      <CardTitle>Shared with you</CardTitle>
+                      <CardDescription>
+                        These people invited you to see their dashboard accounts.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {invitersQuery.error ? (
+                        <InlineMessage tone="error">
+                          {invitersQuery.error.message}
+                        </InlineMessage>
+                      ) : null}
 
-                        {inviters.map((inviter) => (
-                          <div
-                            key={inviter.sharer_user_id}
-                            className="flex items-center gap-3"
-                          >
-                            <UserAvatar
-                              alt={getInviterLabel(inviter)}
-                              fallback={getInviterLabel(inviter)}
-                              size="sm"
-                              src={inviter.sharer_avatar_url}
-                            />
-                            <div className="min-w-0 text-sm">
-                              <p className="truncate font-medium text-foreground">
-                                {getInviterLabel(inviter)}
+                      {inviters.map((inviter) => (
+                        <div
+                          key={inviter.sharer_user_id}
+                          className="flex items-center gap-3"
+                        >
+                          <UserAvatar
+                            alt={getInviterLabel(inviter)}
+                            fallback={getInviterLabel(inviter)}
+                            size="sm"
+                            src={inviter.sharer_avatar_url}
+                          />
+                          <div className="min-w-0 text-sm">
+                            <p className="truncate font-medium text-foreground">
+                              {getInviterLabel(inviter)}
+                            </p>
+                            {inviter.sharer_email &&
+                            inviter.sharer_email !== getInviterLabel(inviter) ? (
+                              <p className="truncate text-muted-foreground">
+                                {inviter.sharer_email}
                               </p>
-                              {inviter.sharer_email &&
-                              inviter.sharer_email !== getInviterLabel(inviter) ? (
-                                <p className="truncate text-muted-foreground">
-                                  {inviter.sharer_email}
-                                </p>
-                              ) : null}
-                            </div>
+                            ) : null}
                           </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  ) : null}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
 
+                <div className="grid gap-6 lg:grid-cols-2">
                   <Card>
                     <CardHeader
                       className={hasInviteDetails ? 'border-b border-border' : undefined}
