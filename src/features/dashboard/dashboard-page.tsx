@@ -1477,12 +1477,13 @@ function AccountTable({
   unlinkingAccountId: string | null
 }) {
   return (
-    <Table className="min-w-[808px]">
+    <Table className="min-w-[940px]">
       <TableHeader className="bg-muted/70">
         <TableRow className="hover:bg-muted/70">
           <TableHead className="px-4 sm:px-5">Account</TableHead>
           <TableHead>Snapshot</TableHead>
           <TableHead>5-hour</TableHead>
+          <TableHead>5-hour reset</TableHead>
           <TableHead>Weekly</TableHead>
           <TableHead>Weekly reset</TableHead>
           <TableHead className="w-12 px-4 sm:px-5">
@@ -1523,17 +1524,13 @@ function AccountTable({
               </TableCell>
               <TableCell>{percentLabel(account.primary_remaining_percent)}</TableCell>
               <TableCell>
+                <ResetTime value={account.primary_resets_at} />
+              </TableCell>
+              <TableCell>
                 {percentLabel(account.secondary_remaining_percent)}
               </TableCell>
               <TableCell>
-                <div className="space-y-1">
-                  <p className="font-medium text-foreground">
-                    {formatTimestamp(account.secondary_resets_at)}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatResetCountdown(account.secondary_resets_at)}
-                  </p>
-                </div>
+                <ResetTime value={account.secondary_resets_at} />
               </TableCell>
               <TableCell className="px-4 text-right sm:px-5">
                 {isOwnedAccount ? (
@@ -1603,6 +1600,14 @@ function AccountSummaryList({
                 value={percentLabel(account.primary_remaining_percent)}
               />
               <MetaField
+                label="5-hour resets in"
+                value={formatResetCountdown(account.primary_resets_at)}
+              />
+              <MetaField
+                label="5-hour resets at"
+                value={formatTimestamp(account.primary_resets_at)}
+              />
+              <MetaField
                 label="Weekly"
                 value={percentLabel(account.secondary_remaining_percent)}
               />
@@ -1618,6 +1623,17 @@ function AccountSummaryList({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function ResetTime({ value }: { value: Date | string | null | undefined }) {
+  return (
+    <div className="space-y-1">
+      <p className="font-medium text-foreground">{formatTimestamp(value)}</p>
+      <p className="text-sm text-muted-foreground">
+        {formatResetCountdown(value)}
+      </p>
     </div>
   )
 }
