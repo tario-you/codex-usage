@@ -14,6 +14,25 @@ export type DashboardAccountRow =
 export type DashboardInviterRow =
   Database['public']['Functions']['list_dashboard_inviters']['Returns'][number]
 
+type DashboardWeeklyUsageHistoryRpcRow =
+  Database['public']['Functions']['list_dashboard_weekly_usage_history']['Returns'][number]
+
+export const dashboardWeeklyUsageRanges = [
+  { days: 1, label: '1 day', value: '1d' },
+  { days: 7, label: '7 day', value: '7d' },
+  { days: 30, label: '30 day', value: '30d' },
+] as const
+
+export type DashboardWeeklyUsageRange =
+  (typeof dashboardWeeklyUsageRanges)[number]['value']
+
+export interface DashboardWeeklyUsageHistoryPoint {
+  accountCount: number
+  fetchedAt: string
+  totalCapacityPercent: number
+  totalRemainingPercent: number
+}
+
 export interface ModelBucket {
   key: string
   label: string
@@ -45,6 +64,17 @@ export function dashboardInvitersQueryOptions(userId: string) {
   return queryOptions({
     queryKey: ['dashboard-inviters', userId],
     queryFn: fetchDashboardInviters,
+    refetchInterval: 30_000,
+  })
+}
+
+export function dashboardWeeklyUsageHistoryQueryOptions(
+  userId: string,
+  range: DashboardWeeklyUsageRange,
+) {
+  return queryOptions({
+    queryKey: ['dashboard-weekly-usage-history', userId, range],
+    queryFn: () => fetchDashboardWeeklyUsageHistory(range),
     refetchInterval: 30_000,
   })
 }
@@ -89,6 +119,33 @@ export async function fetchDashboardInviters() {
   return data ?? []
 }
 
+export async function fetchDashboardWeeklyUsageHistory(
+  range: DashboardWeeklyUsageRange,
+) {
+  if (!supabase) {
+    throw new Error(
+      clientEnvError ??
+        'Supabase env vars are missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+    )
+  }
+
+  const rangeStart = new Date(
+    Date.now() - getDashboardWeeklyUsageRangeDays(range) * 24 * 60 * 60 * 1000,
+  ).toISOString()
+
+  const { data, error } = await supabase
+    .rpc('list_dashboard_weekly_usage_history', {
+      range_start: rangeStart,
+    })
+    .returns<DashboardWeeklyUsageHistoryRpcRow[]>()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return (data ?? []).map(mapWeeklyUsageHistoryRow)
+}
+
 export function getModelBuckets(row: DashboardAccountRow) {
   const rawBuckets = row.raw_rate_limits_by_limit_id
   if (!rawBuckets || typeof rawBuckets !== 'object' || Array.isArray(rawBuckets)) {
@@ -117,6 +174,14 @@ export function getModelBuckets(row: DashboardAccountRow) {
     })
 }
 
+export function getDashboardWeeklyUsageRangeDays(
+  range: DashboardWeeklyUsageRange,
+) {
+  return (
+    dashboardWeeklyUsageRanges.find((option) => option.value === range)?.days ?? 7
+  )
+}
+
 export function buildSummary(rows: DashboardAccountRow[]): DashboardSummary {
   const mostRecentSync = rows
     .map((row) => row.last_snapshot_at)
@@ -133,5 +198,16 @@ export function buildSummary(rows: DashboardAccountRow[]): DashboardSummary {
     mostRecentSync,
     staleAccounts: rows.filter((row) => !isFreshTimestamp(row.last_snapshot_at))
       .length,
+  }
+}
+
+function mapWeeklyUsageHistoryRow(
+  row: DashboardWeeklyUsageHistoryRpcRow,
+): DashboardWeeklyUsageHistoryPoint {
+  return {
+    accountCount: row.account_count,
+    fetchedAt: row.fetched_at,
+    totalCapacityPercent: row.total_capacity_percent,
+    totalRemainingPercent: row.total_remaining_percent,
   }
 }

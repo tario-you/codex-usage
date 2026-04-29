@@ -39,10 +39,15 @@ import {
   buildSummary,
   dashboardAccountsQueryOptions,
   dashboardInvitersQueryOptions,
+  dashboardWeeklyUsageHistoryQueryOptions,
+  dashboardWeeklyUsageRanges,
   fetchDashboardAccounts,
   fetchDashboardInviters,
+  getDashboardWeeklyUsageRangeDays,
   type DashboardAccountRow,
   type DashboardInviterRow,
+  type DashboardWeeklyUsageHistoryPoint,
+  type DashboardWeeklyUsageRange,
 } from '@/lib/dashboard'
 import { clientEnvError } from '@/lib/env'
 import { queryClient } from '@/lib/query-client'
@@ -121,6 +126,8 @@ export function DashboardPage() {
   const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null)
+  const [weeklyUsageRange, setWeeklyUsageRange] =
+    useState<DashboardWeeklyUsageRange>('7d')
   const showInviteLanding = Boolean(inviteToken)
   const canLoadDashboardData = Boolean(session?.user.id) && !showInviteLanding
 
@@ -132,9 +139,17 @@ export function DashboardPage() {
     ...dashboardInvitersQueryOptions(session?.user.id ?? 'guest'),
     enabled: canLoadDashboardData,
   })
+  const weeklyUsageHistoryQuery = useQuery({
+    ...dashboardWeeklyUsageHistoryQueryOptions(
+      session?.user.id ?? 'guest',
+      weeklyUsageRange,
+    ),
+    enabled: canLoadDashboardData,
+  })
 
   const accounts = accountsQuery.data ?? []
   const inviters = invitersQuery.data ?? []
+  const weeklyUsageHistory = weeklyUsageHistoryQuery.data ?? []
   const summary = buildSummary(accounts)
   const connectCommand =
     typeof window === 'undefined'
@@ -716,7 +731,10 @@ export function DashboardPage() {
         )
       }
 
-      await accountsQuery.refetch()
+      await Promise.all([
+        accountsQuery.refetch(),
+        weeklyUsageHistoryQuery.refetch(),
+      ])
     } catch (error) {
       setUnlinkError(
         error instanceof Error ? error.message : 'Unable to unlink this account.',
@@ -1244,7 +1262,10 @@ export function DashboardPage() {
                       <Button
                         className="shrink-0"
                         variant="outline"
-                        onClick={() => void accountsQuery.refetch()}
+                        onClick={() => {
+                          void accountsQuery.refetch()
+                          void weeklyUsageHistoryQuery.refetch()
+                        }}
                       >
                         <RefreshCcw className="mr-2 size-4" />
                         Refresh
@@ -1267,6 +1288,16 @@ export function DashboardPage() {
                       ) : null}
                       {accounts.length > 0 ? (
                         <>
+                          <WeeklyUsageHistoryPanel
+                            accountsTracked={summary.accountsTracked}
+                            errorMessage={
+                              weeklyUsageHistoryQuery.error?.message ?? null
+                            }
+                            isLoading={weeklyUsageHistoryQuery.isPending}
+                            onRangeChange={setWeeklyUsageRange}
+                            points={weeklyUsageHistory}
+                            range={weeklyUsageRange}
+                          />
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={accounts}
@@ -1450,6 +1481,191 @@ function LoadingRows() {
 
 function EmptyState() {
   return null
+}
+
+function WeeklyUsageHistoryPanel({
+  accountsTracked,
+  errorMessage,
+  isLoading,
+  onRangeChange,
+  points,
+  range,
+}: {
+  accountsTracked: number
+  errorMessage: string | null
+  isLoading: boolean
+  onRangeChange: (range: DashboardWeeklyUsageRange) => void
+  points: DashboardWeeklyUsageHistoryPoint[]
+  range: DashboardWeeklyUsageRange
+}) {
+  const latestPoint = points[points.length - 1] ?? null
+  const capacityPercent = Math.max(
+    accountsTracked * 100,
+    latestPoint?.totalCapacityPercent ?? 0,
+  )
+  const rangeLabel =
+    dashboardWeeklyUsageRanges.find((option) => option.value === range)?.label ??
+    '7 day'
+  const summaryText = latestPoint
+    ? `${latestPoint.totalRemainingPercent}% left of ${capacityPercent}% - Updated ${formatRelativeTimestamp(latestPoint.fetchedAt)}`
+    : isLoading
+      ? 'Loading sync history...'
+      : `No sync history in the last ${rangeLabel}.`
+
+  return (
+    <section className="border-b border-border px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium text-foreground">Weekly total remaining</p>
+          <p className="text-sm text-muted-foreground">{summaryText}</p>
+        </div>
+        <div
+          aria-label="History range"
+          className="inline-flex rounded-lg border border-border bg-background p-0.5"
+          role="group"
+        >
+          {dashboardWeeklyUsageRanges.map((option) => {
+            const isSelected = option.value === range
+
+            return (
+              <button
+                aria-pressed={isSelected}
+                className={`h-7 rounded-md px-2 text-sm font-medium transition-colors ${
+                  isSelected
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                key={option.value}
+                onClick={() => onRangeChange(option.value)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {errorMessage ? (
+        <InlineMessage className="mt-4" tone="error">
+          {errorMessage}
+        </InlineMessage>
+      ) : isLoading && points.length === 0 ? (
+        <div className="mt-4 h-56 animate-pulse rounded-md bg-muted" />
+      ) : points.length === 0 ? (
+        <div className="mt-4 flex h-56 items-center justify-center rounded-md border border-border bg-muted/40 px-4 text-sm text-muted-foreground">
+          No points to plot.
+        </div>
+      ) : (
+        <WeeklyUsageHistoryChart
+          capacityPercent={capacityPercent}
+          points={points}
+          range={range}
+        />
+      )}
+    </section>
+  )
+}
+
+function WeeklyUsageHistoryChart({
+  capacityPercent,
+  points,
+  range,
+}: {
+  capacityPercent: number
+  points: DashboardWeeklyUsageHistoryPoint[]
+  range: DashboardWeeklyUsageRange
+}) {
+  const chart = buildWeeklyUsageChart(points, range, capacityPercent)
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-md border border-border bg-background">
+      <svg
+        aria-label="Weekly total remaining history"
+        className="h-56 w-full"
+        role="img"
+        viewBox="0 0 760 220"
+      >
+        <title>Weekly total remaining history</title>
+        {chart.yTicks.map((tick) => (
+          <g key={tick.value}>
+            <line
+              stroke="var(--border)"
+              strokeWidth="1"
+              x1={chart.bounds.left}
+              x2={chart.bounds.right}
+              y1={tick.y}
+              y2={tick.y}
+            />
+            <text
+              fill="var(--muted-foreground)"
+              fontSize="11"
+              textAnchor="end"
+              x={chart.bounds.left - 10}
+              y={tick.y + 4}
+            >
+              {tick.value}%
+            </text>
+          </g>
+        ))}
+        <line
+          stroke="var(--border)"
+          strokeWidth="1"
+          x1={chart.bounds.left}
+          x2={chart.bounds.left}
+          y1={chart.bounds.top}
+          y2={chart.bounds.bottom}
+        />
+        <line
+          stroke="var(--border)"
+          strokeWidth="1"
+          x1={chart.bounds.left}
+          x2={chart.bounds.right}
+          y1={chart.bounds.bottom}
+          y2={chart.bounds.bottom}
+        />
+        {chart.areaPath ? (
+          <path d={chart.areaPath} fill="var(--chart-1)" opacity="0.12" />
+        ) : null}
+        <path
+          d={chart.linePath}
+          fill="none"
+          stroke="var(--chart-1)"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+        {chart.pointsForDots.map((point) => (
+          <circle
+            cx={point.x}
+            cy={point.y}
+            fill="var(--background)"
+            key={`${point.fetchedAt}-${point.x}`}
+            r="3"
+            stroke="var(--chart-1)"
+            strokeWidth="2"
+          >
+            <title>
+              {point.totalRemainingPercent}% at{' '}
+              {formatHistoryTooltipTimestamp(point.fetchedAt)}
+            </title>
+          </circle>
+        ))}
+        {chart.xTicks.map((tick) => (
+          <text
+            fill="var(--muted-foreground)"
+            fontSize="11"
+            key={tick.label}
+            textAnchor={tick.anchor}
+            x={tick.x}
+            y={chart.bounds.bottom + 24}
+          >
+            {tick.label}
+          </text>
+        ))}
+      </svg>
+    </div>
+  )
 }
 
 function getAccountIdentityLines(account: DashboardAccountRow) {
@@ -1744,6 +1960,136 @@ function MetaField({
 
 function percentLabel(value: number | null) {
   return value == null ? 'N/A' : `${value}%`
+}
+
+interface WeeklyUsageChartBounds {
+  bottom: number
+  left: number
+  right: number
+  top: number
+}
+
+interface WeeklyUsageChartPoint {
+  fetchedAt: string
+  totalRemainingPercent: number
+  x: number
+  y: number
+}
+
+function buildWeeklyUsageChart(
+  points: DashboardWeeklyUsageHistoryPoint[],
+  range: DashboardWeeklyUsageRange,
+  capacityPercent: number,
+) {
+  const bounds: WeeklyUsageChartBounds = {
+    bottom: 176,
+    left: 54,
+    right: 744,
+    top: 16,
+  }
+  const rangeMs =
+    getDashboardWeeklyUsageRangeDays(range) * 24 * 60 * 60 * 1000
+  const endMs = Date.now()
+  const startMs = endMs - rangeMs
+  const plotWidth = bounds.right - bounds.left
+  const plotHeight = bounds.bottom - bounds.top
+  const parsedPoints = points
+    .map((point) => ({
+      ...point,
+      fetchedAtMs: Date.parse(point.fetchedAt),
+    }))
+    .filter((point) => Number.isFinite(point.fetchedAtMs))
+    .sort((left, right) => left.fetchedAtMs - right.fetchedAtMs)
+  const maxPointValue = parsedPoints.reduce(
+    (maxValue, point) =>
+      Math.max(maxValue, point.totalRemainingPercent, point.totalCapacityPercent),
+    capacityPercent,
+  )
+  const yMax = Math.max(100, Math.ceil(maxPointValue / 100) * 100)
+  const coordinates: WeeklyUsageChartPoint[] = parsedPoints.map((point) => {
+    const clampedTime = Math.min(Math.max(point.fetchedAtMs, startMs), endMs)
+    const x = bounds.left + ((clampedTime - startMs) / rangeMs) * plotWidth
+    const y =
+      bounds.bottom -
+      (Math.min(Math.max(point.totalRemainingPercent, 0), yMax) / yMax) *
+        plotHeight
+
+    return {
+      fetchedAt: point.fetchedAt,
+      totalRemainingPercent: point.totalRemainingPercent,
+      x: roundChartCoordinate(x),
+      y: roundChartCoordinate(y),
+    }
+  })
+  const linePath = coordinates
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+    .join(' ')
+  const areaPath =
+    coordinates.length > 0
+      ? `${linePath} L ${coordinates[coordinates.length - 1].x} ${bounds.bottom} L ${coordinates[0].x} ${bounds.bottom} Z`
+      : null
+  const middleTick = Math.round(yMax / 2)
+  const xTickValues = [
+    { anchor: 'start' as const, time: startMs },
+    { anchor: 'middle' as const, time: startMs + rangeMs / 2 },
+    { anchor: 'end' as const, time: endMs },
+  ]
+
+  return {
+    areaPath,
+    bounds,
+    linePath,
+    pointsForDots: coordinates.length <= 80 ? coordinates : [],
+    xTicks: xTickValues.map((tick) => ({
+      anchor: tick.anchor,
+      label: formatHistoryAxisTimestamp(tick.time, range),
+      x:
+        tick.anchor === 'start'
+          ? bounds.left
+          : tick.anchor === 'end'
+            ? bounds.right
+            : bounds.left + plotWidth / 2,
+    })),
+    yTicks: [yMax, middleTick, 0].map((value) => ({
+      value,
+      y: roundChartCoordinate(bounds.bottom - (value / yMax) * plotHeight),
+    })),
+  }
+}
+
+function roundChartCoordinate(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+function formatHistoryAxisTimestamp(
+  value: number,
+  range: DashboardWeeklyUsageRange,
+) {
+  const formatter =
+    range === '1d'
+      ? new Intl.DateTimeFormat('en-US', {
+          hour: 'numeric',
+        })
+      : new Intl.DateTimeFormat('en-US', {
+          day: 'numeric',
+          month: 'short',
+        })
+
+  return formatter.format(new Date(value))
+}
+
+function formatHistoryTooltipTimestamp(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return 'unknown time'
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+  }).format(parsed)
 }
 
 function formatResetCountdown(value: Date | string | null | undefined) {
