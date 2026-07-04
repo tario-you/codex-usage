@@ -1,7 +1,7 @@
 {
   "name": "codex-usage-dashboard",
   "private": false,
-  "version": "0.1.5",
+  "version": "0.1.6",
   "files": [
     "README.md",
     "bin"
@@ -28,7 +28,7 @@
     "prepublishOnly": "npm run release:check"
   },
   "dependencies": {
-    "@openai/codex": "^0.118.0"
+    "@openai/codex": "^0.142.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

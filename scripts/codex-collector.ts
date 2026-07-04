@@ -27,10 +27,10 @@ const ONE_SHOT_CONNECT_DELAY_MS = 1_000
 
 const require = createRequire(import.meta.url)
 
-let codexAppServerSupportPromise: Promise<void> | null = null
-let resolvedCodexExecutable:
-  | { argsPrefix: string[]; command: string; label: string }
-  | null = null
+type CodexExecutable = { argsPrefix: string[]; command: string; label: string }
+
+let codexAppServerSupportPromise: Promise<CodexExecutable> | null = null
+let resolvedCodexExecutable: CodexExecutable | null = null
 
 for (const fileName of ['.env.collector.local', '.env.local', '.env']) {
   const envPath = path.resolve(rootDir, fileName)
@@ -343,8 +343,7 @@ class CodexSourceMonitor {
       return
     }
 
-    await ensureCodexAppServerSupport()
-    const codexExecutable = resolveCodexExecutable()
+    const codexExecutable = await ensureCodexAppServerSupport()
 
     const codexHome = this.source.codexHome
       ? expandHomeDirectory(this.source.codexHome)
@@ -481,7 +480,7 @@ function expandHomeDirectory(value: string) {
 
 async function ensureCodexAppServerSupport() {
   if (!codexAppServerSupportPromise) {
-    codexAppServerSupportPromise = inspectCodexCliForAppServer().catch(
+    codexAppServerSupportPromise = selectCodexExecutable().catch(
       (error) => {
         codexAppServerSupportPromise = null
         throw error
@@ -489,11 +488,36 @@ async function ensureCodexAppServerSupport() {
     )
   }
 
-  await codexAppServerSupportPromise
+  return codexAppServerSupportPromise
 }
 
-async function inspectCodexCliForAppServer() {
-  const codexExecutable = resolveCodexExecutable()
+async function selectCodexExecutable() {
+  const diagnostics: string[] = []
+
+  for (const codexExecutable of resolveCodexExecutableCandidates()) {
+    try {
+      await inspectCodexCliForAppServer(codexExecutable)
+      resolvedCodexExecutable = codexExecutable
+      return codexExecutable
+    } catch (error) {
+      diagnostics.push(
+        `${codexExecutable.label}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
+  }
+
+  throw new Error(
+    [
+      'No usable Codex CLI with `app-server` support was found.',
+      ...diagnostics.map((diagnostic) => `- ${diagnostic}`),
+      'Install or repair Codex with `npm install -g @openai/codex@latest`, then rerun the collector.',
+    ].join('\n'),
+  )
+}
+
+async function inspectCodexCliForAppServer(codexExecutable: CodexExecutable) {
   const help = await runCommandCapture(
     codexExecutable.command,
     [...codexExecutable.argsPrefix, '--help'],
@@ -512,31 +536,32 @@ async function inspectCodexCliForAppServer() {
   )
   const versionText = normalizeCodexVersion(version.stdout || version.stderr)
   throw new Error(
-    `Resolved Codex CLI ${versionText} (${codexExecutable.label}) does not support \`codex app-server\`. Reinstall \`codex-usage-dashboard\` or update Codex with \`npm install -g @openai/codex\`, then rerun the collector.`,
+    `resolved Codex CLI ${versionText} does not support \`codex app-server\`.`,
   )
 }
 
-function resolveCodexExecutable() {
+function resolveCodexExecutableCandidates() {
   if (resolvedCodexExecutable) {
-    return resolvedCodexExecutable
+    return [resolvedCodexExecutable]
   }
 
+  const candidates: CodexExecutable[] = []
   const bundledBinPath = resolveBundledCodexBin()
   if (bundledBinPath) {
-    resolvedCodexExecutable = {
+    candidates.push({
       argsPrefix: [bundledBinPath],
       command: process.execPath,
       label: 'bundled @openai/codex',
-    }
-    return resolvedCodexExecutable
+    })
   }
 
-  resolvedCodexExecutable = {
+  candidates.push({
     argsPrefix: [],
     command: 'codex',
     label: 'global codex',
-  }
-  return resolvedCodexExecutable
+  })
+
+  return candidates
 }
 
 function resolveBundledCodexBin() {

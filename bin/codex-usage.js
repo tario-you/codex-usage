@@ -168,8 +168,7 @@ class StdioCodexClient {
   }
 
   async spawnAppServer() {
-    await ensureCodexAppServerSupport()
-    const codexExecutable = resolveCodexExecutable()
+    const codexExecutable = await ensureCodexAppServerSupport()
 
     return new Promise((resolve, reject) => {
       const child = spawn(
@@ -725,7 +724,7 @@ function openInBrowser(url) {
 
 async function ensureCodexAppServerSupport() {
   if (!codexAppServerSupportPromise) {
-    codexAppServerSupportPromise = inspectCodexCliForAppServer().catch(
+    codexAppServerSupportPromise = selectCodexExecutable().catch(
       (error) => {
         codexAppServerSupportPromise = null
         throw error
@@ -733,11 +732,36 @@ async function ensureCodexAppServerSupport() {
     )
   }
 
-  await codexAppServerSupportPromise
+  return codexAppServerSupportPromise
 }
 
-async function inspectCodexCliForAppServer() {
-  const codexExecutable = resolveCodexExecutable()
+async function selectCodexExecutable() {
+  const diagnostics = []
+
+  for (const codexExecutable of resolveCodexExecutableCandidates()) {
+    try {
+      await inspectCodexCliForAppServer(codexExecutable)
+      resolvedCodexExecutable = codexExecutable
+      return codexExecutable
+    } catch (error) {
+      diagnostics.push(
+        `${codexExecutable.label}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
+  }
+
+  throw new Error(
+    [
+      'No usable Codex CLI with `app-server` support was found.',
+      ...diagnostics.map((diagnostic) => `- ${diagnostic}`),
+      'Install or repair Codex with `npm install -g @openai/codex@latest`, then rerun this command.',
+    ].join('\n'),
+  )
+}
+
+async function inspectCodexCliForAppServer(codexExecutable) {
   const help = await runCommandCapture(
     codexExecutable.command,
     [...codexExecutable.argsPrefix, '--help'],
@@ -756,31 +780,32 @@ async function inspectCodexCliForAppServer() {
   )
   const versionText = normalizeCodexVersion(version.stdout || version.stderr)
   throw new Error(
-    `Resolved Codex CLI ${versionText} (${codexExecutable.label}) does not support \`codex app-server\`. Reinstall \`codex-usage-dashboard\` or update Codex with \`npm install -g @openai/codex\`, then rerun this command.`,
+    `resolved Codex CLI ${versionText} does not support \`codex app-server\`.`,
   )
 }
 
-function resolveCodexExecutable() {
+function resolveCodexExecutableCandidates() {
   if (resolvedCodexExecutable) {
-    return resolvedCodexExecutable
+    return [resolvedCodexExecutable]
   }
 
+  const candidates = []
   const bundledBinPath = resolveBundledCodexBin()
   if (bundledBinPath) {
-    resolvedCodexExecutable = {
+    candidates.push({
       argsPrefix: [bundledBinPath],
       command: process.execPath,
       label: 'bundled @openai/codex',
-    }
-    return resolvedCodexExecutable
+    })
   }
 
-  resolvedCodexExecutable = {
+  candidates.push({
     argsPrefix: [],
     command: 'codex',
     label: 'global codex',
-  }
-  return resolvedCodexExecutable
+  })
+
+  return candidates
 }
 
 function resolveBundledCodexBin() {
