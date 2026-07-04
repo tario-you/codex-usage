@@ -1325,55 +1325,86 @@ export function DashboardPage() {
                 </Card>
               </div>
             </div>
-          ) : authIsLoading ? (
-            <LoadingState label="Checking sign-in..." />
           ) : (
-            <div className="mx-auto max-w-[720px] space-y-4">
-              {loginError ? (
-                <InlineMessage tone="error">{loginError}</InlineMessage>
-              ) : null}
-
-              <section className="space-y-4">
-                <h2 className="text-2xl font-semibold tracking-[-0.02em]">
-                  Connect from terminal
-                </h2>
-
-                {authRedirectError ? (
-                  <InlineMessage tone="error">{authRedirectError}</InlineMessage>
-                ) : null}
-
-                <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
-                  <Button
-                    aria-label={
-                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
-                    }
-                    className="absolute top-2 right-2"
-                    onClick={() => void handleCopyTerminalCommand()}
-                    size="icon-sm"
-                    title={
-                      isTerminalCommandCopied ? 'Command copied' : 'Copy command'
-                    }
-                    type="button"
-                    variant="ghost"
-                  >
-                    {isTerminalCommandCopied ? (
-                      <Check className="size-3.5" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
-                  </Button>
-                  {connectCommand}
-                </div>
-
-                {terminalCopyError ? (
-                  <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
-                ) : null}
-              </section>
-            </div>
+            <TerminalConnectView
+              authRedirectError={authIsLoading ? null : authRedirectError}
+              connectCommand={connectCommand}
+              isTerminalCommandCopied={isTerminalCommandCopied}
+              loginError={authIsLoading ? null : loginError}
+              onCopyCommand={() => void handleCopyTerminalCommand()}
+              statusMessage={authIsLoading ? 'Checking sign-in...' : null}
+              terminalCopyError={terminalCopyError}
+            />
           )}
         </div>
       </div>
     </main>
+  )
+}
+
+function TerminalConnectView({
+  authRedirectError,
+  connectCommand,
+  isTerminalCommandCopied,
+  loginError,
+  onCopyCommand,
+  statusMessage,
+  terminalCopyError,
+}: {
+  authRedirectError: string | null
+  connectCommand: string
+  isTerminalCommandCopied: boolean
+  loginError: string | null
+  onCopyCommand: () => void
+  statusMessage: string | null
+  terminalCopyError: string | null
+}) {
+  return (
+    <div
+      aria-busy={statusMessage ? true : undefined}
+      className="mx-auto max-w-[720px] space-y-4"
+    >
+      {loginError ? <InlineMessage tone="error">{loginError}</InlineMessage> : null}
+
+      <section className="space-y-4">
+        <h2 className="text-2xl font-semibold tracking-[-0.02em]">
+          Connect from terminal
+        </h2>
+
+        {statusMessage ? (
+          <p aria-live="polite" className="text-sm text-muted-foreground" role="status">
+            {statusMessage}
+          </p>
+        ) : null}
+
+        {authRedirectError ? (
+          <InlineMessage tone="error">{authRedirectError}</InlineMessage>
+        ) : null}
+
+        <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
+          <Button
+            aria-label={isTerminalCommandCopied ? 'Command copied' : 'Copy command'}
+            className="absolute top-2 right-2"
+            onClick={onCopyCommand}
+            size="icon-sm"
+            title={isTerminalCommandCopied ? 'Command copied' : 'Copy command'}
+            type="button"
+            variant="ghost"
+          >
+            {isTerminalCommandCopied ? (
+              <Check className="size-3.5" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+          </Button>
+          {connectCommand}
+        </div>
+
+        {terminalCopyError ? (
+          <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
+        ) : null}
+      </section>
+    </div>
   )
 }
 
@@ -1462,11 +1493,7 @@ function CopiedPill() {
 
 function LoadingState({ label = 'Loading...' }: { label?: string }) {
   return (
-    <div aria-busy="true" aria-live="polite" className="space-y-4" role="status">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <div className="h-32 animate-pulse rounded-lg bg-muted" />
-      <div className="h-32 animate-pulse rounded-lg bg-muted" />
-    </div>
+    <InlineMessage tone="default">{label}</InlineMessage>
   )
 }
 
