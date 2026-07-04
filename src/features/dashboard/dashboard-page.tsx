@@ -1326,7 +1326,7 @@ export function DashboardPage() {
               </div>
             </div>
           ) : authIsLoading ? (
-            <LoadingState />
+            <LoadingState label="Checking sign-in..." />
           ) : (
             <div className="mx-auto max-w-[720px] space-y-4">
               {loginError ? (
@@ -1460,9 +1460,10 @@ function CopiedPill() {
   )
 }
 
-function LoadingState() {
+function LoadingState({ label = 'Loading...' }: { label?: string }) {
   return (
-    <div className="space-y-4">
+    <div aria-busy="true" aria-live="polite" className="space-y-4" role="status">
+      <p className="text-sm text-muted-foreground">{label}</p>
       <div className="h-32 animate-pulse rounded-lg bg-muted" />
       <div className="h-32 animate-pulse rounded-lg bg-muted" />
     </div>

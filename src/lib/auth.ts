@@ -24,6 +24,12 @@ const emailOtpTypes = new Set<EmailOtpType>([
 export const INVALID_SESSION_MESSAGE =
   'Your session is no longer valid. Sign in again.'
 
+const AUTH_STATE_TIMEOUT_MS = 8_000
+const AUTH_STATE_TIMEOUT_MESSAGE =
+  'Checking your sign-in timed out. Refresh or sign in again.'
+const AUTH_STATE_FAILURE_MESSAGE =
+  'Unable to check your sign-in. Refresh or sign in again.'
+
 export function useAuthSession() {
   const [isLoading, setIsLoading] = useState(Boolean(supabase))
   const [redirectError, setRedirectError] = useState<string | null>(null)
@@ -35,16 +41,41 @@ export function useAuthSession() {
     }
 
     let cancelled = false
-
-    void hydrateAuthState().then(({ error, session: nextSession }) => {
-      if (cancelled) {
+    let didSettle = false
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled || didSettle) {
         return
       }
 
-      setRedirectError(error)
-      setSession(nextSession)
+      didSettle = true
+      setRedirectError(AUTH_STATE_TIMEOUT_MESSAGE)
+      setSession(null)
       setIsLoading(false)
-    })
+    }, AUTH_STATE_TIMEOUT_MS)
+
+    void hydrateAuthState()
+      .then(({ error, session: nextSession }) => {
+        if (cancelled || didSettle) {
+          return
+        }
+
+        didSettle = true
+        window.clearTimeout(timeoutId)
+        setRedirectError(error)
+        setSession(nextSession)
+        setIsLoading(false)
+      })
+      .catch(() => {
+        if (cancelled || didSettle) {
+          return
+        }
+
+        didSettle = true
+        window.clearTimeout(timeoutId)
+        setRedirectError(AUTH_STATE_FAILURE_MESSAGE)
+        setSession(null)
+        setIsLoading(false)
+      })
 
     const {
       data: { subscription },
@@ -52,10 +83,14 @@ export function useAuthSession() {
       setSession(nextSession)
       void queryClient.invalidateQueries({ queryKey: ['dashboard-accounts'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard-inviters'] })
+      void queryClient.invalidateQueries({
+        queryKey: ['dashboard-weekly-usage-history'],
+      })
     })
 
     return () => {
       cancelled = true
+      window.clearTimeout(timeoutId)
       subscription.unsubscribe()
     }
   }, [])
