@@ -22,7 +22,7 @@
     "sync": "node ./bin/codex-usage.js sync",
     "setup:hosted": "tsx scripts/setup-hosted.ts",
     "setup:local": "tsx scripts/setup-local.ts",
-    "test": "tsx --test tests/reset-plan.test.ts",
+    "test": "tsx --test tests/reset-plan.test.ts tests/codex-resolver.test.js",
     "collector": "tsx scripts/codex-collector.ts",
     "collector:once": "tsx scripts/codex-collector.ts --once",
     "release:check": "node ./scripts/check-publish.mjs",

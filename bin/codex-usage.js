@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
 const DEFAULT_POLL_MS = 60_000
 const CODEX_HELP_TIMEOUT_MS = 15_000
@@ -735,13 +736,19 @@ async function ensureCodexAppServerSupport() {
   return codexAppServerSupportPromise
 }
 
-async function selectCodexExecutable() {
+async function selectCodexExecutable(options = {}) {
   const diagnostics = []
+  const candidates =
+    options.candidates ?? resolveCodexExecutableCandidates(options)
+  const inspect = options.inspect ?? inspectCodexCliForAppServer
+  const shouldCache = Object.keys(options).length === 0
 
-  for (const codexExecutable of resolveCodexExecutableCandidates()) {
+  for (const codexExecutable of candidates) {
     try {
-      await inspectCodexCliForAppServer(codexExecutable)
-      resolvedCodexExecutable = codexExecutable
+      await inspect(codexExecutable)
+      if (shouldCache) {
+        resolvedCodexExecutable = codexExecutable
+      }
       return codexExecutable
     } catch (error) {
       diagnostics.push(
@@ -784,13 +791,63 @@ async function inspectCodexCliForAppServer(codexExecutable) {
   )
 }
 
-function resolveCodexExecutableCandidates() {
-  if (resolvedCodexExecutable) {
+function resolveCodexExecutableCandidates(options = {}) {
+  const shouldUseCache = Object.keys(options).length === 0
+  if (shouldUseCache && resolvedCodexExecutable) {
     return [resolvedCodexExecutable]
   }
 
   const candidates = []
-  const bundledBinPath = resolveBundledCodexBin()
+  const bundledBinPath =
+    options.bundledBinPath === undefined
+      ? resolveBundledCodexBin()
+      : options.bundledBinPath
+  const fileExists = options.fileExists ?? existsSync
+  const pathValue = options.pathValue ?? process.env.PATH ?? ''
+  const platform = options.platform ?? process.platform
+  const resolveRealPath = options.resolveRealPath ?? realpathSync
+  const bundledRealPath = safelyResolveRealPath(
+    bundledBinPath,
+    resolveRealPath,
+  )
+  const seenRealPaths = new Set()
+
+  if (platform !== 'win32') {
+    for (const directory of pathValue.split(path.delimiter)) {
+      if (!directory) {
+        continue
+      }
+
+      const command = path.join(directory, 'codex')
+      if (!fileExists(command)) {
+        continue
+      }
+
+      const realPath = safelyResolveRealPath(command, resolveRealPath)
+      if (
+        (bundledRealPath && realPath === bundledRealPath) ||
+        (realPath && seenRealPaths.has(realPath))
+      ) {
+        continue
+      }
+
+      if (realPath) {
+        seenRealPaths.add(realPath)
+      }
+      candidates.push({
+        argsPrefix: [],
+        command,
+        label: `installed Codex (${command})`,
+      })
+    }
+  } else {
+    candidates.push({
+      argsPrefix: [],
+      command: 'codex',
+      label: 'installed Codex',
+    })
+  }
+
   if (bundledBinPath) {
     candidates.push({
       argsPrefix: [bundledBinPath],
@@ -799,13 +856,19 @@ function resolveCodexExecutableCandidates() {
     })
   }
 
-  candidates.push({
-    argsPrefix: [],
-    command: 'codex',
-    label: 'global codex',
-  })
-
   return candidates
+}
+
+function safelyResolveRealPath(value, resolveRealPath) {
+  if (!value) {
+    return null
+  }
+
+  try {
+    return resolveRealPath(value)
+  } catch {
+    return null
+  }
 }
 
 function resolveBundledCodexBin() {
@@ -1080,7 +1143,25 @@ function printUsage() {
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
 }
 
-await main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
-})
+function isDirectExecution() {
+  const entryPath = process.argv[1]
+  if (!entryPath) {
+    return false
+  }
+
+  const modulePath = fileURLToPath(import.meta.url)
+  try {
+    return realpathSync(entryPath) === realpathSync(modulePath)
+  } catch {
+    return path.resolve(entryPath) === path.resolve(modulePath)
+  }
+}
+
+export { resolveCodexExecutableCandidates, selectCodexExecutable }
+
+if (isDirectExecution()) {
+  await main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  })
+}

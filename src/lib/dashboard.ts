@@ -8,6 +8,7 @@ import {
   isFreshTimestamp,
   type CodexRateLimitSnapshot,
 } from '@/shared/codex'
+import { getRateLimitWindows } from '@/shared/rate-limit-windows'
 
 export type DashboardAccountRow =
   Database['public']['Views']['codex_dashboard_accounts']['Row']
@@ -97,7 +98,7 @@ export async function fetchDashboardAccounts() {
     throw new Error(error.message)
   }
 
-  return data ?? []
+  return (data ?? []).map(normalizeDashboardAccountRow)
 }
 
 export async function fetchDashboardInviters() {
@@ -190,14 +191,29 @@ export function buildSummary(rows: DashboardAccountRow[]): DashboardSummary {
 
   return {
     accountsTracked: rows.length,
-    lowBalanceCount: rows.filter((row) => {
-      const primary = row.primary_remaining_percent ?? 100
-      const secondary = row.secondary_remaining_percent ?? 100
-      return primary <= 20 || secondary <= 20
-    }).length,
+    lowBalanceCount: rows.filter((row) =>
+      getRateLimitWindows(row).some(
+        (window) =>
+          window.remainingPercent != null && window.remainingPercent <= 20,
+      ),
+    ).length,
     mostRecentSync,
     staleAccounts: rows.filter((row) => !isFreshTimestamp(row.last_snapshot_at))
       .length,
+  }
+}
+
+function normalizeDashboardAccountRow(row: DashboardAccountRow) {
+  return {
+    ...row,
+    primary_remaining_percent:
+      row.primary_used_percent == null
+        ? null
+        : getRemainingPercent(row.primary_used_percent),
+    secondary_remaining_percent:
+      row.secondary_used_percent == null
+        ? null
+        : getRemainingPercent(row.secondary_used_percent),
   }
 }
 
