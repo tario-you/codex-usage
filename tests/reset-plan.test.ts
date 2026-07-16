@@ -84,17 +84,45 @@ test('ignores expired or invalid reset timestamps', () => {
   assert.deepEqual(plan.upcomingResets, [])
 })
 
+test('treats a weekly primary with no secondary as one weekly-only limit', () => {
+  const plan = buildResetPlan(
+    [
+      account({
+        primary_remaining_percent: 72,
+        primary_resets_at: isoAfterHours(48),
+        primary_used_percent: 28,
+        primary_window_mins: 10_080,
+        secondary_remaining_percent: 100,
+        secondary_resets_at: null,
+        secondary_used_percent: null,
+        secondary_window_mins: null,
+      }),
+    ],
+    NOW,
+  )
+
+  assert.equal(plan.current?.usablePercent, 72)
+  assert.equal(plan.current?.limitingWindowLabel, 'Weekly')
+  assert.equal(plan.upcomingResets.length, 1)
+  assert.equal(plan.upcomingResets[0]?.windowLabel, 'Weekly')
+})
+
 function account(overrides: Partial<ResetPlanAccount>): ResetPlanAccount {
+  const primaryRemaining = overrides.primary_remaining_percent ?? 100
+  const secondaryRemaining = overrides.secondary_remaining_percent ?? 100
+
   return {
     account_key: 'chatgpt:test@example.com',
     email: 'test@example.com',
     id: 'test',
     label: 'Test account',
-    primary_remaining_percent: 100,
+    primary_remaining_percent: primaryRemaining,
     primary_resets_at: isoAfterHours(5),
+    primary_used_percent: 100 - primaryRemaining,
     primary_window_mins: 300,
-    secondary_remaining_percent: 100,
+    secondary_remaining_percent: secondaryRemaining,
     secondary_resets_at: isoAfterHours(24),
+    secondary_used_percent: 100 - secondaryRemaining,
     secondary_window_mins: 10_080,
     ...overrides,
   }

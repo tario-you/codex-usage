@@ -1,9 +1,11 @@
-import { formatWindowLabel } from '@/shared/codex'
-
-type ResetWindowKey = 'primary' | 'secondary'
+import {
+  getRateLimitWindows,
+  type RateLimitWindowKey,
+  type RateLimitWindowSource,
+} from '@/shared/rate-limit-windows'
 
 interface NormalizedResetWindow {
-  key: ResetWindowKey
+  key: RateLimitWindowKey
   label: string
   remainingPercent: number | null
   resetsAt: number | null
@@ -12,7 +14,7 @@ interface NormalizedResetWindow {
 interface NormalizedResetAccount {
   id: string
   label: string
-  windows: [NormalizedResetWindow, NormalizedResetWindow]
+  windows: NormalizedResetWindow[]
 }
 
 export interface ResetPlanRecommendation {
@@ -29,7 +31,7 @@ export interface ResetPlanEvent {
   accountLabel: string
   at: number
   projectedUsablePercent: number | null
-  windowKey: ResetWindowKey
+  windowKey: RateLimitWindowKey
   windowLabel: string
 }
 
@@ -40,17 +42,11 @@ export interface ResetPlan {
   upcomingResets: ResetPlanEvent[]
 }
 
-export interface ResetPlanAccount {
+export interface ResetPlanAccount extends RateLimitWindowSource {
   account_key: string
   email: string | null
   id: string
   label: string | null
-  primary_remaining_percent: number | null
-  primary_resets_at: string | null
-  primary_window_mins: number | null
-  secondary_remaining_percent: number | null
-  secondary_resets_at: string | null
-  secondary_window_mins: number | null
 }
 
 export function buildResetPlan(
@@ -87,20 +83,12 @@ function normalizeAccount(
   return {
     id: account.id,
     label: account.label ?? account.email ?? account.account_key,
-    windows: [
-      {
-        key: 'primary',
-        label: formatWindowLabel(account.primary_window_mins),
-        remainingPercent: clampPercent(account.primary_remaining_percent),
-        resetsAt: parseFutureTimestamp(account.primary_resets_at, now),
-      },
-      {
-        key: 'secondary',
-        label: formatWindowLabel(account.secondary_window_mins),
-        remainingPercent: clampPercent(account.secondary_remaining_percent),
-        resetsAt: parseFutureTimestamp(account.secondary_resets_at, now),
-      },
-    ],
+    windows: getRateLimitWindows(account).map((window) => ({
+      key: window.key,
+      label: window.label,
+      remainingPercent: window.remainingPercent,
+      resetsAt: parseFutureTimestamp(window.resetsAt, now),
+    })),
   }
 }
 
@@ -162,10 +150,9 @@ function buildUpcomingResets(accounts: NormalizedResetAccount[]) {
   const state = new Map(
     accounts.map((account) => [
       account.id,
-      {
-        primary: account.windows[0].remainingPercent,
-        secondary: account.windows[1].remainingPercent,
-      },
+      Object.fromEntries(
+        account.windows.map((window) => [window.key, window.remainingPercent]),
+      ) as Partial<Record<RateLimitWindowKey, number | null>>,
     ]),
   )
   const resetWindows = accounts
@@ -196,7 +183,7 @@ function buildUpcomingResets(accounts: NormalizedResetAccount[]) {
       accountLabel: account.label,
       at,
       projectedUsablePercent: accountState
-        ? getUsablePercent([accountState.primary, accountState.secondary])
+        ? getUsablePercent(Object.values(accountState))
         : null,
       windowKey: window.key,
       windowLabel: window.label,
@@ -225,17 +212,9 @@ function findNextAvailableReset(
   )
 }
 
-function getUsablePercent(values: Array<number | null>) {
+function getUsablePercent(values: Array<number | null | undefined>) {
   const knownValues = values.filter((value): value is number => value != null)
   return knownValues.length > 0 ? Math.min(...knownValues) : null
-}
-
-function clampPercent(value: number | null) {
-  if (value == null || !Number.isFinite(value)) {
-    return null
-  }
-
-  return Math.max(0, Math.min(100, value))
 }
 
 function parseFutureTimestamp(value: string | null, now: number) {

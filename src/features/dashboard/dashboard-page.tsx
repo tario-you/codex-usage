@@ -57,6 +57,7 @@ import {
   DASHBOARD_CONNECTED_QUERY_KEY,
 } from '@/shared/cli'
 import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
+import { getRateLimitWindows } from '@/shared/rate-limit-windows'
 import {
   buildDashboardAuthReturnUrl,
   getPreferredDashboardHref,
@@ -1724,15 +1725,13 @@ function AccountTable({
   unlinkingAccountId: string | null
 }) {
   return (
-    <Table className="min-w-[940px]">
+    <Table className="min-w-[760px]">
       <TableHeader className="bg-muted/70">
         <TableRow className="hover:bg-muted/70">
           <TableHead className="px-4 sm:px-5">Account</TableHead>
           <TableHead>Snapshot</TableHead>
-          <TableHead>5-hour</TableHead>
-          <TableHead>5-hour reset</TableHead>
-          <TableHead>Weekly</TableHead>
-          <TableHead>Weekly reset</TableHead>
+          <TableHead>Limits</TableHead>
+          <TableHead>Resets</TableHead>
           <TableHead className="w-12 px-4 sm:px-5">
             <span className="sr-only">Unlink</span>
           </TableHead>
@@ -1741,6 +1740,7 @@ function AccountTable({
       <TableBody>
         {accounts.map((account) => {
           const identity = getAccountIdentityLines(account)
+          const limitWindows = getRateLimitWindows(account)
           const isOwnedAccount = account.access_scope === 'owned'
           const isUnlinking = unlinkingAccountId === account.id
 
@@ -1769,15 +1769,39 @@ function AccountTable({
                   </p>
                 </div>
               </TableCell>
-              <TableCell>{percentLabel(account.primary_remaining_percent)}</TableCell>
               <TableCell>
-                <ResetTime value={account.primary_resets_at} />
+                <div className="space-y-2">
+                  {limitWindows.length > 0 ? (
+                    limitWindows.map((window) => (
+                      <div key={window.key}>
+                        <p className="text-sm text-muted-foreground">
+                          {window.label}
+                        </p>
+                        <p className="font-medium text-foreground">
+                          {percentLabel(window.remainingPercent)}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground">N/A</span>
+                  )}
+                </div>
               </TableCell>
               <TableCell>
-                {percentLabel(account.secondary_remaining_percent)}
-              </TableCell>
-              <TableCell>
-                <ResetTime value={account.secondary_resets_at} />
+                <div className="space-y-2">
+                  {limitWindows.length > 0 ? (
+                    limitWindows.map((window) => (
+                      <div key={window.key}>
+                        <p className="text-sm text-muted-foreground">
+                          {window.label}
+                        </p>
+                        <ResetTime value={window.resetsAt} />
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground">N/A</span>
+                  )}
+                </div>
               </TableCell>
               <TableCell className="px-4 text-right sm:px-5">
                 {isOwnedAccount ? (
@@ -1811,6 +1835,7 @@ function AccountSummaryList({
     <div className="divide-y divide-border">
       {accounts.map((account) => {
         const identity = getAccountIdentityLines(account)
+        const limitWindows = getRateLimitWindows(account)
         const isOwnedAccount = account.access_scope === 'owned'
         const isUnlinking = unlinkingAccountId === account.id
 
@@ -1842,30 +1867,22 @@ function AccountSummaryList({
                 label="Snapshot"
                 value={formatRelativeTimestamp(account.last_snapshot_at)}
               />
-              <MetaField
-                label="5-hour"
-                value={percentLabel(account.primary_remaining_percent)}
-              />
-              <MetaField
-                label="5-hour resets in"
-                value={formatResetCountdown(account.primary_resets_at)}
-              />
-              <MetaField
-                label="5-hour resets at"
-                value={formatTimestamp(account.primary_resets_at)}
-              />
-              <MetaField
-                label="Weekly"
-                value={percentLabel(account.secondary_remaining_percent)}
-              />
-              <MetaField
-                label="Weekly resets in"
-                value={formatResetCountdown(account.secondary_resets_at)}
-              />
-              <MetaField
-                label="Weekly resets at"
-                value={formatTimestamp(account.secondary_resets_at)}
-              />
+              {limitWindows.length > 0 ? (
+                limitWindows.flatMap((window) => [
+                  <MetaField
+                    key={`${window.key}-remaining`}
+                    label={`${window.label} remaining`}
+                    value={percentLabel(window.remainingPercent)}
+                  />,
+                  <MetaField
+                    key={`${window.key}-reset`}
+                    label={`${window.label} reset`}
+                    value={`${formatResetCountdown(window.resetsAt)} · ${formatTimestamp(window.resetsAt)}`}
+                  />,
+                ])
+              ) : (
+                <MetaField label="Usage limits" value="N/A" />
+              )}
             </dl>
           </div>
         )
