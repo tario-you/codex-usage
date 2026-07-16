@@ -63,6 +63,8 @@ import {
   getPreferredDashboardOrigin,
 } from '@/shared/site'
 
+import { ResetPlanPanel } from './reset-plan-panel'
+
 interface PairingCommandState {
   command: string
   expiresAt: string
@@ -1298,6 +1300,7 @@ export function DashboardPage() {
                             points={weeklyUsageHistory}
                             range={weeklyUsageRange}
                           />
+                          <ResetPlanPanel accounts={accounts} />
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={accounts}
