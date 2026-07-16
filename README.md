@@ -66,6 +66,13 @@ npm view codex-usage-dashboard@latest version --prefer-online
 
 Version `0.1.6` and newer skip a broken Codex shim injected by an `npx`
 environment and probe installed Codex executables for `app-server` support.
+Version `0.1.8` and newer also self-repair when every installed and bundled
+candidate is broken: the CLI installs a fresh private Codex runtime under
+`~/.codex/codex-usage-runtime` using an isolated npm cache, verifies
+`app-server`, and reuses that runtime on later runs.
+
+Set `CODEX_USAGE_RUNTIME_DIR` to move the private runtime. Set
+`CODEX_USAGE_DISABLE_AUTO_REPAIR=1` to opt out of automatic network repair.
 
 If pairing still reports a native Codex `ENOENT`, test through a clean npm
 cache:
@@ -74,7 +81,7 @@ cache:
 npm_config_cache="$(mktemp -d)" npx --yes codex-usage-dashboard@latest pair "PAIRING_URL"
 ```
 
-Then confirm the installed Codex CLI works:
+If automatic repair also fails, confirm the installed Codex CLI works:
 
 ```bash
 command -v codex

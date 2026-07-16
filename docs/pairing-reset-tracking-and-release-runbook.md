@@ -2,8 +2,9 @@
 
 Date: 2026-07-15
 
-Status: pairing fix published in `codex-usage-dashboard@0.1.6`; weekly-only
-normalization and history fix deployed to production
+Status: pairing resolver fixed in `0.1.6`; automatic private-runtime recovery
+added in `0.1.8`; weekly-only normalization and history fix deployed to
+production
 
 ## Scope
 
@@ -158,6 +159,33 @@ The resolver now:
 5. Uses the bundled dependency only as a final verified fallback.
 6. Reports diagnostics for every failed candidate if none work.
 
+### Automatic recovery in `0.1.8`
+
+If every installed, previously repaired, and bundled candidate fails its
+`app-server` probe, the CLI now repairs itself before returning an error:
+
+1. Creates `~/.codex/codex-usage-runtime` by default.
+2. Uses a new temporary npm cache instead of the potentially corrupted cache
+   that produced the original failure.
+3. Installs `@openai/codex@latest` with optional platform packages explicitly
+   included.
+4. Deletes the temporary npm cache after installation.
+5. Probes the repaired launcher for `app-server` support.
+6. Reuses the private runtime on later pairing and sync commands.
+
+This does not modify the global Codex installation and does not require
+`sudo`. The network install runs only after every local candidate fails.
+
+Configuration:
+
+| Environment variable | Behavior |
+| --- | --- |
+| `CODEX_USAGE_RUNTIME_DIR` | Overrides the private runtime location |
+| `CODEX_USAGE_DISABLE_AUTO_REPAIR=1` | Disables the automatic network repair |
+
+If the private repair also fails, the final diagnostic preserves every failed
+candidate and the repair error before recommending a manual global install.
+
 ### Troubleshooting checklist
 
 Confirm the public release:
@@ -278,6 +306,7 @@ The `0.1.6` release was verified at these boundaries:
 ## Relevant implementation
 
 - [`bin/codex-usage.js`](../bin/codex-usage.js)
+- [`bin/lib/codex-runtime.js`](../bin/lib/codex-runtime.js)
 - [`src/shared/rate-limit-windows.ts`](../src/shared/rate-limit-windows.ts)
 - [`src/features/dashboard/reset-plan.ts`](../src/features/dashboard/reset-plan.ts)
 - [`src/features/dashboard/dashboard-page.tsx`](../src/features/dashboard/dashboard-page.tsx)
