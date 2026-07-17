@@ -346,6 +346,48 @@ export interface Database {
           },
         ]
       }
+      codex_usage_percentage_overrides: {
+        Row: {
+          account_id: string
+          window_key: string
+          remaining_percent: number
+          source_snapshot_id: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          window_key: string
+          remaining_percent: number
+          source_snapshot_id: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          window_key?: string
+          remaining_percent?: number
+          source_snapshot_id?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_usage_percentage_overrides_account_id_fkey'
+            columns: ['account_id']
+            isOneToOne: false
+            referencedRelation: 'codex_accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_usage_percentage_overrides_source_snapshot_id_fkey'
+            columns: ['source_snapshot_id']
+            isOneToOne: false
+            referencedRelation: 'codex_usage_snapshots'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: {
       codex_dashboard_accounts: {
@@ -367,10 +409,12 @@ export interface Database {
           fetched_at: string | null
           primary_used_percent: number | null
           primary_remaining_percent: number | null
+          primary_remaining_overridden: boolean
           primary_window_mins: number | null
           primary_resets_at: string | null
           secondary_used_percent: number | null
           secondary_remaining_percent: number | null
+          secondary_remaining_overridden: boolean
           secondary_window_mins: number | null
           secondary_resets_at: string | null
           credits_balance: number | null

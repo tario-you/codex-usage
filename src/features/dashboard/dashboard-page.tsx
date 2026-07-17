@@ -1,4 +1,10 @@
-import { useEffect, useEffectEvent, useState, type ComponentProps } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
@@ -57,7 +63,10 @@ import {
   DASHBOARD_CONNECTED_QUERY_KEY,
 } from '@/shared/cli'
 import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
-import { getRateLimitWindows } from '@/shared/rate-limit-windows'
+import {
+  getRateLimitWindows,
+  type RateLimitWindowKey,
+} from '@/shared/rate-limit-windows'
 import {
   buildDashboardAuthReturnUrl,
   getPreferredDashboardHref,
@@ -65,6 +74,7 @@ import {
 } from '@/shared/site'
 
 import { ResetPlanPanel } from './reset-plan-panel'
+import { RemainingPercentageEditor } from './remaining-percentage-editor'
 
 interface PairingCommandState {
   command: string
@@ -129,6 +139,10 @@ export function DashboardPage() {
   const [connectedNotice, setConnectedNotice] = useState<string | null>(null)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null)
+  const [usageOverrideError, setUsageOverrideError] = useState<string | null>(null)
+  const [savingUsageOverride, setSavingUsageOverride] = useState<string | null>(
+    null,
+  )
   const [weeklyUsageRange, setWeeklyUsageRange] =
     useState<DashboardWeeklyUsageRange>('7d')
   const showInviteLanding = Boolean(inviteToken)
@@ -747,6 +761,68 @@ export function DashboardPage() {
     }
   }
 
+  async function handleSaveUsageOverride(
+    account: DashboardAccountRow,
+    windowKey: RateLimitWindowKey,
+    remainingPercent: number,
+  ) {
+    if (account.access_scope !== 'owned') {
+      setUsageOverrideError('Only the account owner can edit this percentage.')
+      return false
+    }
+
+    if (!session?.access_token) {
+      setUsageOverrideError('Your session is no longer valid. Sign in again.')
+      return false
+    }
+
+    const overrideKey = `${account.id}:${windowKey}`
+    setUsageOverrideError(null)
+    setSavingUsageOverride(overrideKey)
+
+    try {
+      const response = await fetch('/api/accounts/usage-override', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          accountId: account.id,
+          remainingPercent,
+          windowKey,
+        }),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; ok?: boolean }
+        | null
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            await handleInvalidSession(
+              payload?.error ?? INVALID_SESSION_MESSAGE,
+            ),
+          )
+        }
+
+        throw new Error(payload?.error ?? 'Unable to update the percentage.')
+      }
+
+      await accountsQuery.refetch()
+      return true
+    } catch (error) {
+      setUsageOverrideError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to update the percentage.',
+      )
+      return false
+    } finally {
+      setSavingUsageOverride(null)
+    }
+  }
+
   if (!supabase) {
     return (
       <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
@@ -1285,6 +1361,13 @@ export function DashboardPage() {
                           <InlineMessage tone="error">{unlinkError}</InlineMessage>
                         </div>
                       ) : null}
+                      {usageOverrideError ? (
+                        <div className="px-4 pt-4 sm:px-5">
+                          <InlineMessage tone="error">
+                            {usageOverrideError}
+                          </InlineMessage>
+                        </div>
+                      ) : null}
                       {isLoadingAccounts ? <LoadingRows /> : null}
                       {!isLoadingAccounts && accounts.length === 0 ? (
                         <EmptyState />
@@ -1305,21 +1388,25 @@ export function DashboardPage() {
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={accounts}
+                              onSaveUsageOverride={handleSaveUsageOverride}
                               primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
                                 void handleUnlinkAccount(account)
                               }
                               unlinkingAccountId={unlinkingAccountId}
+                              savingUsageOverride={savingUsageOverride}
                             />
                           </div>
                           <div className="hidden md:block">
                             <AccountTable
                               accounts={accounts}
+                              onSaveUsageOverride={handleSaveUsageOverride}
                               primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
                                 void handleUnlinkAccount(account)
                               }
                               unlinkingAccountId={unlinkingAccountId}
+                              savingUsageOverride={savingUsageOverride}
                             />
                           </div>
                         </>
@@ -1715,13 +1802,21 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
 
 function AccountTable({
   accounts,
+  onSaveUsageOverride,
   primaryInviter,
   onUnlinkAccount,
+  savingUsageOverride,
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  onSaveUsageOverride: (
+    account: DashboardAccountRow,
+    windowKey: RateLimitWindowKey,
+    remainingPercent: number,
+  ) => Promise<boolean>
   primaryInviter: DashboardInviterRow | null
   onUnlinkAccount: (account: DashboardAccountRow) => void
+  savingUsageOverride: string | null
   unlinkingAccountId: string | null
 }) {
   return (
@@ -1777,9 +1872,23 @@ function AccountTable({
                         <p className="text-sm text-muted-foreground">
                           {window.label}
                         </p>
-                        <p className="font-medium text-foreground">
-                          {percentLabel(window.remainingPercent)}
-                        </p>
+                        <RemainingPercentageEditor
+                          canEdit={isOwnedAccount}
+                          isOverridden={
+                            window.key === 'primary'
+                              ? account.primary_remaining_overridden
+                              : account.secondary_remaining_overridden
+                          }
+                          isSaving={
+                            savingUsageOverride ===
+                            `${account.id}:${window.key}`
+                          }
+                          onSave={(value) =>
+                            onSaveUsageOverride(account, window.key, value)
+                          }
+                          value={window.remainingPercent}
+                          windowLabel={window.label}
+                        />
                       </div>
                     ))
                   ) : (
@@ -1822,13 +1931,21 @@ function AccountTable({
 
 function AccountSummaryList({
   accounts,
+  onSaveUsageOverride,
   primaryInviter,
   onUnlinkAccount,
+  savingUsageOverride,
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  onSaveUsageOverride: (
+    account: DashboardAccountRow,
+    windowKey: RateLimitWindowKey,
+    remainingPercent: number,
+  ) => Promise<boolean>
   primaryInviter: DashboardInviterRow | null
   onUnlinkAccount: (account: DashboardAccountRow) => void
+  savingUsageOverride: string | null
   unlinkingAccountId: string | null
 }) {
   return (
@@ -1872,7 +1989,24 @@ function AccountSummaryList({
                   <MetaField
                     key={`${window.key}-remaining`}
                     label={`${window.label} remaining`}
-                    value={percentLabel(window.remainingPercent)}
+                    value={
+                      <RemainingPercentageEditor
+                        canEdit={isOwnedAccount}
+                        isOverridden={
+                          window.key === 'primary'
+                            ? account.primary_remaining_overridden
+                            : account.secondary_remaining_overridden
+                        }
+                        isSaving={
+                          savingUsageOverride === `${account.id}:${window.key}`
+                        }
+                        onSave={(value) =>
+                          onSaveUsageOverride(account, window.key, value)
+                        }
+                        value={window.remainingPercent}
+                        windowLabel={window.label}
+                      />
+                    }
                   />,
                   <MetaField
                     key={`${window.key}-reset`}
@@ -1992,7 +2126,7 @@ function MetaField({
 }: {
   label: string
   monospace?: boolean
-  value: string
+  value: ReactNode
 }) {
   return (
     <div className="space-y-1">
@@ -2004,10 +2138,6 @@ function MetaField({
       </dd>
     </div>
   )
-}
-
-function percentLabel(value: number | null) {
-  return value == null ? 'N/A' : `${value}%`
 }
 
 interface WeeklyUsageChartBounds {

@@ -108,4 +108,13 @@ export async function persistSnapshotForOwner({
   if (snapshotError) {
     throw snapshotError
   }
+
+  const { error: overrideDeleteError } = await serviceRoleSupabase
+    .from('codex_usage_percentage_overrides')
+    .delete()
+    .eq('account_id', accountRecord.id)
+
+  if (overrideDeleteError) {
+    throw overrideDeleteError
+  }
 }
