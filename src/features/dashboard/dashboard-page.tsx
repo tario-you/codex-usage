@@ -1820,10 +1820,11 @@ function AccountTable({
   unlinkingAccountId: string | null
 }) {
   return (
-    <Table className="min-w-[760px]">
+    <Table className="min-w-[860px]">
       <TableHeader className="bg-muted/70">
         <TableRow className="hover:bg-muted/70">
           <TableHead className="px-4 sm:px-5">Account</TableHead>
+          <TableHead>Plan, first seen</TableHead>
           <TableHead>Snapshot</TableHead>
           <TableHead>Limits</TableHead>
           <TableHead>Resets</TableHead>
@@ -1853,6 +1854,9 @@ function AccountTable({
                     <SharedAccessNote inviter={primaryInviter} />
                   ) : null}
                 </div>
+              </TableCell>
+              <TableCell>
+                <PlanObservedAt account={account} />
               </TableCell>
               <TableCell>
                 <div className="space-y-1">
@@ -1984,6 +1988,10 @@ function AccountSummaryList({
                 label="Snapshot"
                 value={formatRelativeTimestamp(account.last_snapshot_at)}
               />
+              <MetaField
+                label="Plan first seen"
+                value={formatPlanObservedAt(account)}
+              />
               {limitWindows.length > 0 ? (
                 limitWindows.flatMap((window) => [
                   <MetaField
@@ -2023,6 +2031,27 @@ function AccountSummaryList({
       })}
     </div>
   )
+}
+
+function PlanObservedAt({ account }: { account: DashboardAccountRow }) {
+  return (
+    <div className="space-y-1">
+      <p className="font-medium text-foreground">
+        {account.plan_type ?? 'Unknown'}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        {formatPlanObservedAt(account)}
+      </p>
+    </div>
+  )
+}
+
+function formatPlanObservedAt(account: DashboardAccountRow) {
+  if (!account.plan_started_at) {
+    return 'Not observed yet'
+  }
+
+  return `First seen ${formatTimestamp(account.plan_started_at)}`
 }
 
 function ResetTime({ value }: { value: Date | string | null | undefined }) {
