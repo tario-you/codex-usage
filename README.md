@@ -153,9 +153,10 @@ commands, and keeps every copy on the newest token generation.
    npx codex-usage-dashboard@latest publish-login
    ```
 
-   That publishes the account Codex is logged into on this machine. To publish
-   a different account from the Codex switcher store
-   (`~/.codex-switcher/accounts.json`), add `--email you@example.com`. Use
+   That publishes the account Codex is logged into on this machine. With a
+   Codex switcher store (`~/.codex-switcher/accounts.json`), add
+   `--email you@example.com` to publish that account from the store and keep
+   it fresh whether or not it is the active login. Use
    `--auth-file /path/to/auth.json` for any other source.
 3. Open <https://codexusage.vercel.app>, find **Share Codex login**, and select
    **Create login command**. Send that command to the person. It is single use

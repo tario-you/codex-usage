@@ -187,14 +187,14 @@ async function resolvePublishSource(args, codexHome) {
   }
 
   if (email) {
+    const defaultStore = resolveDefaultSwitcherStorePath()
+    if (existsSync(defaultStore)) {
+      return { codexHome, email, kind: 'switcher', path: defaultStore }
+    }
+
     const activeEmail = await readActiveLoginEmail(codexHome)
     if (activeEmail === email) {
       return { email, kind: 'codex-home', path: codexHome }
-    }
-
-    const defaultStore = resolveDefaultSwitcherStorePath()
-    if (existsSync(defaultStore)) {
-      return { email, kind: 'store', path: defaultStore }
     }
 
     throw new Error(
@@ -206,6 +206,35 @@ async function resolvePublishSource(args, codexHome) {
 }
 
 async function readLoginFromSource(source) {
+  if (source.kind === 'switcher') {
+    const candidates = []
+    const active = await readJsonFile(resolveAuthFilePath(source.codexHome))
+    if (active?.tokens?.access_token) {
+      try {
+        const file = validateSharedLoginFile(active)
+        if (describeSharedLogin(file).email === source.email.toLowerCase()) {
+          candidates.push(file)
+        }
+      } catch {
+        // The active login is not a shareable ChatGPT login; use the store.
+      }
+    }
+
+    try {
+      candidates.push(await readLoginFromSource({ ...source, kind: 'store' }))
+    } catch (error) {
+      if (candidates.length === 0) {
+        throw error
+      }
+    }
+
+    return candidates.sort(
+      (left, right) =>
+        Date.parse(describeSharedLogin(right).issuedAt) -
+        Date.parse(describeSharedLogin(left).issuedAt),
+    )[0]
+  }
+
   if (source.kind === 'store') {
     const store = await readJsonFile(source.path)
     if (!store) {
@@ -230,6 +259,23 @@ async function readLoginFromSource(source) {
 }
 
 async function writeLoginToSource(source, authFile) {
+  if (source.kind === 'switcher') {
+    await writeLoginToSource({ ...source, kind: 'store' }, authFile)
+
+    const activePath = resolveAuthFilePath(source.codexHome)
+    const active = await readJsonFile(activePath)
+    if (active?.tokens?.access_token) {
+      try {
+        if (describeSharedLogin(validateSharedLoginFile(active)).email === source.email.toLowerCase()) {
+          await writeJsonFilePrivately(activePath, { ...active, ...authFile })
+        }
+      } catch {
+        // Leave a foreign or unreadable active login alone.
+      }
+    }
+    return
+  }
+
   if (source.kind === 'store') {
     const store = await readJsonFile(source.path)
     const account = store ? findSwitcherStoreAccount(store, source.email) : null
@@ -260,6 +306,10 @@ async function readActiveLoginEmail(codexHome) {
 }
 
 function describeSource(source) {
+  if (source.kind === 'switcher') {
+    return `${source.path} (${source.email}), plus ${resolveAuthFilePath(source.codexHome)} while that account is active`
+  }
+
   if (source.kind === 'store') {
     return `${source.path} (${source.email})`
   }
