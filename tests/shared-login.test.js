@@ -240,6 +240,57 @@ test('the owner reconcile pulls newer generations into the switcher store', asyn
   assert.equal(config.publishedLogins[0].fingerprint, fingerprintSharedLogin(newer))
 })
 
+test('the switcher source reads the newest of auth.json and the store, and writes pulls to both', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-login-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const storePath = path.join(dir, 'accounts.json')
+  const authPath = path.join(dir, 'auth.json')
+  const storeGeneration = buildAuthFile({ issuedAt: ISSUED_AT, salt: 'store' })
+  const activeGeneration = buildAuthFile({ issuedAt: ISSUED_AT + 300, salt: 'active' })
+  await writeFile(storePath, JSON.stringify({ accounts: [{ auth_data: { type: 'chat_g_p_t', ...storeGeneration.tokens }, email: 'owner@example.com' }] }))
+  await writeFile(authPath, JSON.stringify(activeGeneration))
+
+  const pulledGeneration = buildAuthFile({ issuedAt: ISSUED_AT + 900, salt: 'pulled' })
+  const requests = []
+  const server = await startJsonServer((body) => {
+    requests.push(body)
+    return {
+      body: {
+        authFile: pulledGeneration,
+        fingerprint: fingerprintSharedLogin(pulledGeneration),
+        issuedAt: describeSharedLogin(pulledGeneration).issuedAt,
+        ok: true,
+        outcome: 'pull',
+      },
+    }
+  })
+  t.after(() => server.close())
+
+  const config = {
+    dashboardOrigin: server.url,
+    deviceToken: 'device-token',
+    publishedLogins: [
+      {
+        email: 'owner@example.com',
+        fingerprint: 'stale',
+        source: { codexHome: dir, email: 'owner@example.com', kind: 'switcher', path: storePath },
+      },
+    ],
+  }
+
+  await reconcilePublishedLogins({ config, log: () => {} })
+  assert.equal(
+    requests[0].authFile.tokens.refresh_token,
+    activeGeneration.tokens.refresh_token,
+    'the newer active login is what gets offered to the dashboard',
+  )
+  const store = JSON.parse(await readFile(storePath, 'utf8'))
+  assert.equal(store.accounts[0].auth_data.refresh_token, pulledGeneration.tokens.refresh_token)
+  const active = JSON.parse(await readFile(authPath, 'utf8'))
+  assert.equal(active.tokens.refresh_token, pulledGeneration.tokens.refresh_token)
+  assert.equal(active.last_refresh, pulledGeneration.last_refresh)
+})
+
 function buildAuthFile({ email = 'Owner@example.com', issuedAt = ISSUED_AT, salt = '' }) {
   return {
     OPENAI_API_KEY: null,

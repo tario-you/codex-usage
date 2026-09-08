@@ -64,9 +64,14 @@ order:
 1. `--auth-file` reads that file.
 2. `--store <accounts.json> --email <email>` reads one account from a Codex
    switcher store.
-3. `--email <email>` alone uses the active `~/.codex/auth.json` when it is that
-   account, otherwise the default switcher store at
-   `~/.codex-switcher/accounts.json` (override with `CODEX_SWITCHER_STORE`).
+3. `--email <email>` alone, when the default switcher store exists at
+   `~/.codex-switcher/accounts.json` (override with `CODEX_SWITCHER_STORE`),
+   uses the combined `switcher` source: it reads that account's store entry
+   and, while that account is the active `~/.codex/auth.json`, the active
+   file too, and offers the newest generation of the two. A pulled generation
+   is written to the store entry and to the active file when it is that
+   account. Without a store, `--email` uses the active file when it is that
+   account.
 4. No option uses the active `~/.codex/auth.json`, and also sends a usage
    snapshot through `codex app-server` so the dashboard row is current.
 
