@@ -59,48 +59,6 @@ const devRouteHandlers: Record<string, Partial<Record<string, RouteHandler>>> = 
       return module.POST(request)
     },
   },
-  '/api/login/claim': {
-    POST: async (request) => {
-      const module = await import('./api/login/claim')
-      return module.POST(request)
-    },
-  },
-  '/api/login/grants/revoke': {
-    POST: async (request) => {
-      const module = await import('./api/login/grants/revoke')
-      return module.POST(request)
-    },
-  },
-  '/api/login/grants/start': {
-    POST: async (request) => {
-      const module = await import('./api/login/grants/start')
-      return module.POST(request)
-    },
-  },
-  '/api/login/publish': {
-    POST: async (request) => {
-      const module = await import('./api/login/publish')
-      return module.POST(request)
-    },
-  },
-  '/api/login/shares': {
-    GET: async (request) => {
-      const module = await import('./api/login/shares')
-      return module.GET(request)
-    },
-  },
-  '/api/login/sync': {
-    POST: async (request) => {
-      const module = await import('./api/login/sync')
-      return module.POST(request)
-    },
-  },
-  '/api/login/unpublish': {
-    POST: async (request) => {
-      const module = await import('./api/login/unpublish')
-      return module.POST(request)
-    },
-  },
   '/api/pair/complete': {
     POST: async (request) => {
       const module = await import('./api/pair/complete')
@@ -119,6 +77,15 @@ const devRouteHandlers: Record<string, Partial<Record<string, RouteHandler>>> = 
       return module.POST(request)
     },
   },
+}
+
+async function resolveLoginDevHandler(
+  method: string,
+  pathname: string,
+): Promise<RouteHandler | undefined> {
+  const module = await import('./api/login/[...action]')
+  const handler = module.resolveLoginRoute(method, pathname)
+  return handler ?? undefined
 }
 
 function localApiRoutesPlugin() {
@@ -143,7 +110,9 @@ function localApiRoutesPlugin() {
 
         const url = new URL(requestUrl, `http://${req.headers.host ?? 'localhost:5173'}`)
         const method = req.method ?? 'GET'
-        const handler = devRouteHandlers[url.pathname]?.[method]
+        const handler = url.pathname.startsWith('/api/login/')
+          ? await resolveLoginDevHandler(method, url.pathname)
+          : devRouteHandlers[url.pathname]?.[method]
 
         if (!handler) {
           next()

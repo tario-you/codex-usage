@@ -1,11 +1,11 @@
 import { z } from 'zod'
 
-import { errorResponse, jsonResponse } from '../_lib/http.js'
+import { errorResponse, jsonResponse } from '../http.js'
 import {
   describeSharedLogin,
   parseSharedLoginFile,
   sharedLoginFileSchema,
-} from '../_lib/login-file.js'
+} from '../login-file.js'
 import {
   SHARED_LOGIN_SYNC_POLL_MS,
   SharedLoginError,
@@ -17,8 +17,8 @@ import {
   sharedLoginErrorResponse,
   storeSecret,
   type LoginSecretRow,
-} from '../_lib/login-store.js'
-import { serviceRoleSupabase } from '../_lib/supabase.js'
+} from '../login-store.js'
+import { serviceRoleSupabase } from '../supabase.js'
 
 const syncBodySchema = z
   .object({

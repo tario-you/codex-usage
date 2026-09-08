@@ -1,16 +1,16 @@
 import { z } from 'zod'
 
-import { getPreferredDashboardOrigin } from '../../src/shared/site.js'
-import { errorResponse, jsonResponse } from '../_lib/http.js'
+import { getPreferredDashboardOrigin } from '../../../src/shared/site.js'
+import { errorResponse, jsonResponse } from '../http.js'
 import {
   SHARED_LOGIN_SYNC_POLL_MS,
   findSecretByAccountId,
   openSecret,
   sharedLoginDeviceSchema,
   sharedLoginErrorResponse,
-} from '../_lib/login-store.js'
-import { createOpaqueToken, hashToken } from '../_lib/security.js'
-import { serviceRoleSupabase } from '../_lib/supabase.js'
+} from '../login-store.js'
+import { createOpaqueToken, hashToken } from '../security.js'
+import { serviceRoleSupabase } from '../supabase.js'
 
 const claimBodySchema = z.object({
   claimToken: z.string().min(1).optional(),

@@ -2,17 +2,17 @@ import { z } from 'zod'
 
 import { buildUseLoginCommand } from '../../../src/shared/cli.js'
 import { getPreferredDashboardOrigin } from '../../../src/shared/site.js'
-import { requireUser } from '../../_lib/auth.js'
-import { errorResponse, jsonResponse } from '../../_lib/http.js'
+import { requireUser } from '../auth.js'
+import { errorResponse, jsonResponse } from '../http.js'
 import {
   SHARED_LOGIN_GRANT_TTL_MS,
   findOwnedAccountById,
   findSecretByAccountId,
   serializeGrant,
   sharedLoginErrorResponse,
-} from '../../_lib/login-store.js'
-import { createOpaqueToken, hashToken } from '../../_lib/security.js'
-import { serviceRoleSupabase } from '../../_lib/supabase.js'
+} from '../login-store.js'
+import { createOpaqueToken, hashToken } from '../security.js'
+import { serviceRoleSupabase } from '../supabase.js'
 
 const startGrantBodySchema = z.object({
   accountId: z.uuid(),

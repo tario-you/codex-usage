@@ -1,9 +1,9 @@
-import { requireUser } from '../_lib/auth.js'
-import { jsonResponse } from '../_lib/http.js'
+import { requireUser } from '../auth.js'
+import { jsonResponse } from '../http.js'
 import {
   listSharesForOwner,
   sharedLoginErrorResponse,
-} from '../_lib/login-store.js'
+} from '../login-store.js'
 
 /** Dashboard read: which logins this owner publishes, and who holds them. */
 export async function GET(request: Request) {

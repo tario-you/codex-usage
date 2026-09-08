@@ -3,15 +3,15 @@ import { z } from 'zod'
 import type {
   CodexAccountReadResponse,
   CodexRateLimitsResponse,
-} from '../../src/shared/codex.js'
-import { errorResponse, jsonResponse } from '../_lib/http.js'
+} from '../../../src/shared/codex.js'
+import { errorResponse, jsonResponse } from '../http.js'
 import {
   accountKeyForEmail,
   describeSharedLogin,
   parseSharedLoginFile,
   sharedLoginFileSchema,
   type SharedLoginIdentity,
-} from '../_lib/login-file.js'
+} from '../login-file.js'
 import {
   SHARED_LOGIN_SYNC_POLL_MS,
   findActiveDeviceByToken,
@@ -21,14 +21,14 @@ import {
   serializeSharedLoginAccount,
   sharedLoginErrorResponse,
   storeSecret,
-} from '../_lib/login-store.js'
-import { persistSnapshotForOwner } from '../_lib/persistence.js'
+} from '../login-store.js'
+import { persistSnapshotForOwner } from '../persistence.js'
 import {
   accountStateSchema,
   deviceMetadataSchema,
   rateLimitsSchema,
-} from '../_lib/schemas.js'
-import { serviceRoleSupabase } from '../_lib/supabase.js'
+} from '../schemas.js'
+import { serviceRoleSupabase } from '../supabase.js'
 
 const publishBodySchema = z.object({
   accountState: accountStateSchema.optional(),
