@@ -1,9 +1,9 @@
 import { z } from 'zod'
 
-import { requireUser } from '../../_lib/auth.js'
-import { errorResponse, jsonResponse } from '../../_lib/http.js'
-import { serializeGrant, sharedLoginErrorResponse } from '../../_lib/login-store.js'
-import { serviceRoleSupabase } from '../../_lib/supabase.js'
+import { requireUser } from '../auth.js'
+import { errorResponse, jsonResponse } from '../http.js'
+import { serializeGrant, sharedLoginErrorResponse } from '../login-store.js'
+import { serviceRoleSupabase } from '../supabase.js'
 
 const revokeGrantBodySchema = z.object({
   grantId: z.uuid(),

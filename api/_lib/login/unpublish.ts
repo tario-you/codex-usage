@@ -1,16 +1,16 @@
 import { z } from 'zod'
 
-import { requireUser } from '../_lib/auth.js'
-import { errorResponse, jsonResponse } from '../_lib/http.js'
-import { describeSharedLogin, parseSharedLoginFile, sharedLoginFileSchema } from '../_lib/login-file.js'
+import { requireUser } from '../auth.js'
+import { errorResponse, jsonResponse } from '../http.js'
+import { describeSharedLogin, parseSharedLoginFile, sharedLoginFileSchema } from '../login-file.js'
 import {
   findActiveDeviceByToken,
   findOwnedAccountByEmail,
   findOwnedAccountById,
   revokeGrantsForAccount,
   sharedLoginErrorResponse,
-} from '../_lib/login-store.js'
-import { serviceRoleSupabase } from '../_lib/supabase.js'
+} from '../login-store.js'
+import { serviceRoleSupabase } from '../supabase.js'
 
 const unpublishBodySchema = z
   .object({
