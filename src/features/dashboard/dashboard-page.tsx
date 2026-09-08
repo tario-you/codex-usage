@@ -74,6 +74,7 @@ import {
 } from '@/shared/site'
 
 import { ResetPlanPanel } from './reset-plan-panel'
+import { SharedLoginPanel } from './shared-login-panel'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 
 interface PairingCommandState {
@@ -1317,6 +1318,12 @@ export function DashboardPage() {
                   </Card>
 
                 </div>
+
+                <SharedLoginPanel
+                  accounts={accounts}
+                  onInvalidSession={handleInvalidSession}
+                  session={session}
+                />
 
                 <Card className="min-w-0">
                   <CardHeader
