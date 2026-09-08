@@ -24,9 +24,7 @@ const emailOtpTypes = new Set<EmailOtpType>([
 export const INVALID_SESSION_MESSAGE =
   'Your session is no longer valid. Sign in again.'
 
-const AUTH_STATE_TIMEOUT_MS = 20_000
-const AUTH_STATE_TIMEOUT_MESSAGE =
-  'Sign-in check took too long. Try again.'
+const AUTH_STATE_TIMEOUT_MS = 4_000
 const AUTH_STATE_FAILURE_MESSAGE =
   'Unable to check your sign-in. Refresh or sign in again.'
 
@@ -48,7 +46,9 @@ export function useAuthSession() {
       }
 
       didSettle = true
-      setRedirectError(AUTH_STATE_TIMEOUT_MESSAGE)
+      // A stalled browser lock should leave the sign-in surface usable. If
+      // Supabase later emits an auth event, the listener below hydrates it.
+      setRedirectError(null)
       setSession(null)
       setIsLoading(false)
     }, AUTH_STATE_TIMEOUT_MS)
