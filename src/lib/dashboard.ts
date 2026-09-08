@@ -98,7 +98,18 @@ export async function fetchDashboardAccounts() {
     throw new Error(error.message)
   }
 
-  return (data ?? []).map(normalizeDashboardAccountRow)
+  return (data ?? [])
+    .filter((row) => !isArchivedDashboardAccount(row))
+    .map(normalizeDashboardAccountRow)
+}
+
+function isArchivedDashboardAccount(row: DashboardAccountRow) {
+  return Boolean(
+    row.metadata &&
+      typeof row.metadata === 'object' &&
+      !Array.isArray(row.metadata) &&
+      (row.metadata as Record<string, unknown>).archived === true,
+  )
 }
 
 export async function fetchDashboardInviters() {
