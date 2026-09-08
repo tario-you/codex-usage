@@ -24,9 +24,9 @@ const emailOtpTypes = new Set<EmailOtpType>([
 export const INVALID_SESSION_MESSAGE =
   'Your session is no longer valid. Sign in again.'
 
-const AUTH_STATE_TIMEOUT_MS = 8_000
+const AUTH_STATE_TIMEOUT_MS = 20_000
 const AUTH_STATE_TIMEOUT_MESSAGE =
-  'Checking your sign-in timed out. Refresh or sign in again.'
+  'Sign-in check took too long. Try again.'
 const AUTH_STATE_FAILURE_MESSAGE =
   'Unable to check your sign-in. Refresh or sign in again.'
 
