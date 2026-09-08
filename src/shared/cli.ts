@@ -38,3 +38,15 @@ export function buildConnectedDashboardAuthUrl(
 function normalizeSiteOrigin(siteUrl: string) {
   return new URL(siteUrl).origin
 }
+
+export function buildPublishLoginCommand() {
+  return `${NPX_COMMAND} publish-login`
+}
+
+export function buildUseLoginCommand(claimUrl: string) {
+  return `${NPX_COMMAND} use "${claimUrl}"`
+}
+
+export function buildUseLoginWatchCommand() {
+  return `${NPX_COMMAND} use --watch`
+}

@@ -9,6 +9,13 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import { selectCodexExecutable } from './lib/codex-runtime.js'
+import {
+  reconcilePublishedLogins,
+  runPublishLoginCommand,
+  runUnpublishLoginCommand,
+  runUseCommand,
+  sharedLoginUsageLines,
+} from './lib/shared-login.js'
 
 const DEFAULT_POLL_MS = 60_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
@@ -259,6 +266,24 @@ async function main() {
     return
   }
 
+  if (command === 'publish-login') {
+    await runPublishLoginFromCli(args)
+    return
+  }
+
+  if (command === 'unpublish-login') {
+    await runUnpublishLoginFromCli(args)
+    return
+  }
+
+  if (command === 'use') {
+    await runUseCommand({
+      args,
+      codexHome: resolveCodexHome(args.options['codex-home']),
+    })
+    return
+  }
+
   throw new Error(`Unknown command: ${command}`)
 }
 
@@ -440,6 +465,54 @@ async function startConnectFlow(client, args, codexHome, siteOrigin) {
   return config
 }
 
+async function runPublishLoginFromCli(args) {
+  const codexHome = resolveCodexHome(args.options['codex-home'])
+  const config = await requirePairingConfig(codexHome)
+  const usesActiveLogin = !args.options['auth-file'] && !args.options.store
+  const client = usesActiveLogin ? new StdioCodexClient({ codexHome }) : null
+
+  try {
+    if (client) {
+      await client.connect()
+    }
+
+    await runPublishLoginCommand({
+      args,
+      codexHome,
+      config,
+      readSnapshot: client ? () => readSnapshot(client, true) : null,
+      writeConfig: (nextConfig) => writeConfig(codexHome, nextConfig),
+    })
+  } finally {
+    if (client) {
+      await client.close()
+    }
+  }
+}
+
+async function runUnpublishLoginFromCli(args) {
+  const codexHome = resolveCodexHome(args.options['codex-home'])
+  const config = await requirePairingConfig(codexHome)
+
+  await runUnpublishLoginCommand({
+    args,
+    codexHome,
+    config,
+    writeConfig: (nextConfig) => writeConfig(codexHome, nextConfig),
+  })
+}
+
+async function requirePairingConfig(codexHome) {
+  const config = await readConfig(codexHome)
+  if (!config) {
+    throw new Error(
+      'No pairing config found. Run `connect` or pair this machine from the website first.',
+    )
+  }
+
+  return config
+}
+
 async function runSyncCommand(args) {
   const codexHome = resolveCodexHome(args.options['codex-home'])
   const config = await readConfig(codexHome)
@@ -526,6 +599,7 @@ async function runWatchLoop(client, config, args) {
 async function syncOnce(client, config, args) {
   const snapshot = await readSnapshot(client, false)
   if (!snapshot) {
+    await reconcilePublishedLoginsSafely(config, args)
     return
   }
 
@@ -545,6 +619,28 @@ async function syncOnce(client, config, args) {
   const payload = await parseResponseBody(response)
   if (!response.ok) {
     throw new Error(buildHttpErrorMessage(response, payload, 'Sync failed.'))
+  }
+
+  await reconcilePublishedLoginsSafely(config, args)
+}
+
+async function reconcilePublishedLoginsSafely(config, args) {
+  if (!Array.isArray(config.publishedLogins) || config.publishedLogins.length === 0) {
+    return
+  }
+
+  try {
+    const changed = await reconcilePublishedLogins({ config })
+    if (changed) {
+      await writeConfig(
+        config.codexHome ?? resolveCodexHome(args.options['codex-home']),
+        config,
+      )
+    }
+  } catch (error) {
+    console.error(
+      `[shared login] ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 
@@ -646,8 +742,8 @@ function parseArgs(rawArgs) {
 
     const key = value.slice(2)
 
-    if (key === 'watch') {
-      options.watch = true
+    if (key === 'watch' || key === 'restore') {
+      options[key] = true
       continue
     }
 
@@ -924,6 +1020,9 @@ function printUsage() {
   console.log('  codex-usage connect [--site <url>] [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
+  for (const line of sharedLoginUsageLines) {
+    console.log(line)
+  }
 }
 
 function isDirectExecution() {

@@ -136,3 +136,64 @@ npm view codex-usage-dashboard@latest version --prefer-online
 
 - [Pairing, weekly-only reset tracking, and npm release runbook](./docs/pairing-reset-tracking-and-release-runbook.md)
 - [OAuth and invite host regression](./docs/oauth-invite-host-regression-2026-04-08.md)
+
+## Share a Codex login
+
+Let someone run their local Codex CLI or Codex app on one of your ChatGPT
+plans. The dashboard stores the login encrypted, hands out single-use login
+commands, and keeps every copy on the newest token generation.
+
+### Owner
+
+1. Pair the machine that holds the login (see above) and keep
+   `npx codex-usage-dashboard@latest sync --watch` running there.
+2. Publish the login:
+
+   ```bash
+   npx codex-usage-dashboard@latest publish-login
+   ```
+
+   That publishes the account Codex is logged into on this machine. To publish
+   a different account from the Codex switcher store
+   (`~/.codex-switcher/accounts.json`), add `--email you@example.com`. Use
+   `--auth-file /path/to/auth.json` for any other source.
+3. Open <https://codexusage.vercel.app>, find **Share Codex login**, and select
+   **Create login command**. Send that command to the person. It is single use
+   and expires after 24 hours.
+4. **Revoke** a person or **Stop sharing** an account from the same card.
+   Stopping also works from the terminal with
+   `npx codex-usage-dashboard@latest unpublish-login --email you@example.com`.
+
+### Recipient
+
+```bash
+npx codex-usage-dashboard@latest use "https://codexusage.vercel.app/api/login/claim?token=..."
+```
+
+This backs up the current `~/.codex/auth.json` to
+`auth.json.before-shared-login`, installs the shared login, and writes
+`~/.codex/codex-usage-shared-login.json`. Restart the Codex app or start a new
+`codex` session afterwards.
+
+Keep the login current while it is in use:
+
+```bash
+npx codex-usage-dashboard@latest use --watch
+```
+
+Switch back to your own login at any time:
+
+```bash
+npx codex-usage-dashboard@latest use --restore
+```
+
+### How refreshes stay consistent
+
+Codex refreshes ChatGPT tokens after eight days, and OpenAI rotates refresh
+tokens with reuse detection. Every copy therefore syncs through the dashboard:
+the owner's `sync --watch` and each recipient's `use --watch` compare token
+generations once a minute, and the newest generation, ordered by the access
+token's issue time, wins in both directions. A recipient's copy carries
+`last_refresh` shifted one day forward so the owner's machine performs the
+usual refresh. Details and the recovery steps are in
+[docs/shared-codex-login.md](./docs/shared-codex-login.md).

@@ -240,6 +240,154 @@ export interface Database {
           },
         ]
       }
+      codex_login_grants: {
+        Row: {
+          id: string
+          owner_user_id: string
+          account_id: string
+          label: string | null
+          claim_token_hash: string
+          claim_token_preview: string
+          access_token_hash: string | null
+          status: string
+          expires_at: string
+          claimed_at: string | null
+          claimed_machine_name: string | null
+          claimed_label: string | null
+          last_synced_at: string | null
+          last_pushed_at: string | null
+          sync_count: number
+          revoked_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          account_id: string
+          label?: string | null
+          claim_token_hash: string
+          claim_token_preview: string
+          access_token_hash?: string | null
+          status?: string
+          expires_at: string
+          claimed_at?: string | null
+          claimed_machine_name?: string | null
+          claimed_label?: string | null
+          last_synced_at?: string | null
+          last_pushed_at?: string | null
+          sync_count?: number
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          account_id?: string
+          label?: string | null
+          claim_token_hash?: string
+          claim_token_preview?: string
+          access_token_hash?: string | null
+          status?: string
+          expires_at?: string
+          claimed_at?: string | null
+          claimed_machine_name?: string | null
+          claimed_label?: string | null
+          last_synced_at?: string | null
+          last_pushed_at?: string | null
+          sync_count?: number
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_login_grants_account_id_fkey'
+            columns: ['account_id']
+            isOneToOne: false
+            referencedRelation: 'codex_accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_login_grants_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      codex_login_secrets: {
+        Row: {
+          account_id: string
+          owner_user_id: string
+          device_id: string | null
+          account_email: string
+          plan_type: string | null
+          auth_mode: string
+          ciphertext: string
+          key_version: number
+          fingerprint: string
+          token_issued_at: string
+          token_expires_at: string | null
+          published_at: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          owner_user_id: string
+          device_id?: string | null
+          account_email: string
+          plan_type?: string | null
+          auth_mode?: string
+          ciphertext: string
+          key_version?: number
+          fingerprint: string
+          token_issued_at: string
+          token_expires_at?: string | null
+          published_at?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          owner_user_id?: string
+          device_id?: string | null
+          account_email?: string
+          plan_type?: string | null
+          auth_mode?: string
+          ciphertext?: string
+          key_version?: number
+          fingerprint?: string
+          token_issued_at?: string
+          token_expires_at?: string | null
+          published_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_login_secrets_account_id_fkey'
+            columns: ['account_id']
+            isOneToOne: true
+            referencedRelation: 'codex_accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_login_secrets_device_id_fkey'
+            columns: ['device_id']
+            isOneToOne: false
+            referencedRelation: 'codex_devices'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_login_secrets_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       codex_pairing_sessions: {
         Row: {
           id: string
