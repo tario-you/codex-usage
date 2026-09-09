@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
-import { Ban, Check, Copy, KeyRound, Shuffle } from 'lucide-react'
+import { Ban, Check, ChevronDown, ChevronRight, Copy, KeyRound, Shuffle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -85,6 +85,7 @@ export function SharedLoginPanel({
   const [error, setError] = useState<string | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [copyError, setCopyError] = useState<string | null>(null)
+  const [showPlans, setShowPlans] = useState(false)
 
   const sharesQuery = useQuery({
     enabled: Boolean(accessToken),
@@ -229,15 +230,15 @@ export function SharedLoginPanel({
   const hasPublications = publications.length > 0
 
   return (
-    <Card>
+    <Card size="sm">
       <CardHeader className="border-b border-border">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <CardTitle>Share Codex login</CardTitle>
-            <CardDescription>
-              Let someone run their local Codex on your plans. Their machine
-              installs your login, reports its usage here, and switches to your
-              next usable plan when one runs out. Revoke anyone at any time.
+            <CardDescription className="text-xs">
+              One command puts someone's local Codex on your plans. Their machine
+              reports usage here and moves to your next usable plan when one runs
+              out.
             </CardDescription>
           </div>
           {hasPublications ? (
@@ -247,9 +248,10 @@ export function SharedLoginPanel({
                 className="shrink-0"
                 disabled={Boolean(busyKey)}
                 onClick={() => void handleCreateCommand('pool')}
+                size="sm"
                 type="button"
               >
-                <Shuffle className="mr-2 size-4" />
+                <Shuffle className="mr-1.5 size-3.5" />
                 {busyKey === `grant:${POOL_KEY}`
                   ? 'Creating command...'
                   : 'Create login command'}
@@ -258,7 +260,7 @@ export function SharedLoginPanel({
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {sharesQuery.error ? (
           <Notice tone="error">{sharesQuery.error.message}</Notice>
@@ -323,7 +325,7 @@ export function SharedLoginPanel({
             {liveGrants.map((grant) => (
               <li
                 key={grant.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-3 px-3 py-1.5"
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium text-foreground">
@@ -352,14 +354,24 @@ export function SharedLoginPanel({
 
         {hasPublications ? (
           <div className="space-y-2">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Plans in the pool
-            </p>
+            <button
+              aria-expanded={showPlans}
+              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              onClick={() => setShowPlans((value) => !value)}
+              type="button"
+            >
+              {showPlans ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+              {publications.length} {publications.length === 1 ? 'plan' : 'plans'} in the pool
+              {liveGrants.length > 0
+                ? ` · ${liveGrants.length} ${liveGrants.length === 1 ? 'recipient' : 'recipients'}`
+                : ''}
+            </button>
+            {showPlans ? (
             <ul className="divide-y divide-border rounded-md border border-border text-sm">
               {publications.map((publication) => (
                 <li
                   key={publication.accountId}
-                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-1.5"
                 >
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 font-medium text-foreground">
@@ -400,12 +412,15 @@ export function SharedLoginPanel({
                 </li>
               ))}
             </ul>
+            ) : null}
+            {showPlans ? (
             <p className="text-xs text-muted-foreground">
               Add more plans with{' '}
               <span className="font-mono">{buildPublishAllLoginsCommand()}</span> on
               the paired machine. Revoking stops updates immediately; a revoked
               machine keeps working until the tokens rotate, within about ten days.
             </p>
+            ) : null}
           </div>
         ) : null}
       </CardContent>
