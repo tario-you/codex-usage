@@ -86,6 +86,23 @@ export async function findOwnedAccountByEmail(ownerUserId: string, email: string
   return data
 }
 
+/** An accepted, unrevoked dashboard invite from owner to viewer. */
+export async function findActiveShare(ownerUserId: string, viewerUserId: string) {
+  const { data, error } = await serviceRoleSupabase
+    .from('codex_dashboard_shares')
+    .select('id')
+    .eq('owner_user_id', ownerUserId)
+    .eq('viewer_user_id', viewerUserId)
+    .is('revoked_at', null)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
 export async function findSecretByAccountId(accountId: string) {
   const { data, error } = await serviceRoleSupabase
     .from('codex_login_secrets')
@@ -199,7 +216,7 @@ export async function revokeGrantsForAccount(accountId: string) {
 }
 
 export async function listSharesForOwner(ownerUserId: string) {
-  const [secretsResult, grantsResult] = await Promise.all([
+  const [secretsResult, grantsResult, sharedPools] = await Promise.all([
     serviceRoleSupabase
       .from('codex_login_secrets')
       .select('*')
@@ -210,6 +227,7 @@ export async function listSharesForOwner(ownerUserId: string) {
       .select('*')
       .eq('owner_user_id', ownerUserId)
       .order('created_at', { ascending: false }),
+    listPoolsSharedWith(ownerUserId),
   ])
 
   if (secretsResult.error) {
@@ -257,6 +275,7 @@ export async function listSharesForOwner(ownerUserId: string) {
         ? accountsById.get(grant.current_account_id)?.email ?? null
         : null,
     })),
+    sharedPools,
     publications: secrets.map((secret) => ({
       accountId: secret.account_id,
       deviceLabel: accountsById.get(secret.account_id)?.source_label ?? null,
@@ -271,9 +290,121 @@ export async function listSharesForOwner(ownerUserId: string) {
   }
 }
 
+/**
+ * Pools other people share with this viewer: every inviter with an accepted,
+ * unrevoked dashboard share, how many logins they publish, and the pool
+ * commands this viewer already created there.
+ */
+async function listPoolsSharedWith(viewerUserId: string) {
+  const { data: shares, error: sharesError } = await serviceRoleSupabase
+    .from('codex_dashboard_shares')
+    .select('owner_user_id, created_at')
+    .eq('viewer_user_id', viewerUserId)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: true })
+
+  if (sharesError) {
+    throw sharesError
+  }
+
+  const ownerIds = [...new Set((shares ?? []).map((share) => share.owner_user_id))]
+  if (ownerIds.length === 0) {
+    return []
+  }
+
+  const [secretsResult, grantsResult, owners] = await Promise.all([
+    serviceRoleSupabase
+      .from('codex_login_secrets')
+      .select('account_id, owner_user_id')
+      .in('owner_user_id', ownerIds),
+    serviceRoleSupabase
+      .from('codex_login_grants')
+      .select('*')
+      .eq('created_by_user_id', viewerUserId)
+      .in('owner_user_id', ownerIds)
+      .order('created_at', { ascending: false }),
+    Promise.all(
+      ownerIds.map(async (ownerId) => {
+        const { data } = await serviceRoleSupabase.auth.admin.getUserById(ownerId)
+        return [ownerId, data.user] as const
+      }),
+    ),
+  ])
+
+  if (secretsResult.error) {
+    throw secretsResult.error
+  }
+
+  if (grantsResult.error) {
+    throw grantsResult.error
+  }
+
+  const secretAccountIds = new Set((secretsResult.data ?? []).map((row) => row.account_id))
+  const grantAccountIds = [
+    ...new Set(
+      (grantsResult.data ?? [])
+        .map((grant) => grant.current_account_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ]
+  const emailsByAccountId = new Map<string, string | null>()
+  if (grantAccountIds.length > 0) {
+    const { data: accounts, error } = await serviceRoleSupabase
+      .from('codex_accounts')
+      .select('id, email')
+      .in('id', grantAccountIds)
+
+    if (error) {
+      throw error
+    }
+
+    for (const account of accounts ?? []) {
+      emailsByAccountId.set(account.id, account.email)
+    }
+  }
+
+  const planCounts = new Map<string, number>()
+  for (const row of secretsResult.data ?? []) {
+    if (secretAccountIds.has(row.account_id)) {
+      planCounts.set(row.owner_user_id, (planCounts.get(row.owner_user_id) ?? 0) + 1)
+    }
+  }
+
+  return ownerIds.map((ownerId) => {
+    const owner = owners.find(([id]) => id === ownerId)?.[1] ?? null
+    const metadata = (owner?.user_metadata ?? {}) as Record<string, unknown>
+
+    return {
+      grants: (grantsResult.data ?? [])
+        .filter((grant) => grant.owner_user_id === ownerId)
+        .map((grant) => ({
+          ...serializeGrant(grant),
+          currentEmail: grant.current_account_id
+            ? emailsByAccountId.get(grant.current_account_id) ?? null
+            : null,
+        })),
+      inviter: {
+        avatarUrl:
+          (typeof metadata.avatar_url === 'string' && metadata.avatar_url) ||
+          (typeof metadata.picture === 'string' && metadata.picture) ||
+          null,
+        displayName:
+          (typeof metadata.full_name === 'string' && metadata.full_name) ||
+          (typeof metadata.name === 'string' && metadata.name) ||
+          owner?.email ||
+          'Unknown inviter',
+        email: owner?.email ?? null,
+      },
+      ownerUserId: ownerId,
+      planCount: planCounts.get(ownerId) ?? 0,
+    }
+  })
+}
+
 export function serializeGrant(grant: LoginGrantRow) {
   return {
     accountId: grant.account_id,
+    createdByUserId: grant.created_by_user_id,
     currentAccountId: grant.current_account_id,
     scope: grant.scope,
     switchCount: grant.switch_count,

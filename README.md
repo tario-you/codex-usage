@@ -164,7 +164,11 @@ next usable plan when the one they are on runs out.
    recipient starts on the plan the reset plan recommends and switches when it
    hits zero. Each plan row also offers a **Pinned command** that never
    switches. Commands are single use and expire after 24 hours.
-4. **Revoke** a person or **Stop sharing** a plan from the same card.
+4. Anyone who accepted your **Invite a viewer** link sees your pool under
+   **Shared with you** and can get their own auto-switching login command
+   there, without asking you. You see every command they create and can
+   revoke it.
+5. **Revoke** a person or **Stop sharing** a plan from the same card.
    Stopping also works from the terminal with
    `npx codex-usage-dashboard@latest unpublish-login --email you@example.com`.
 
