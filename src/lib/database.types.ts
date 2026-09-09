@@ -240,6 +240,44 @@ export interface Database {
           },
         ]
       }
+      codex_account_notes: {
+        Row: {
+          id: string
+          owner_user_id: string
+          email: string
+          ciphertext: string
+          key_version: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          email: string
+          ciphertext: string
+          key_version?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          email?: string
+          ciphertext?: string
+          key_version?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_account_notes_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       codex_login_grants: {
         Row: {
           id: string

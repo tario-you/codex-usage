@@ -9,7 +9,7 @@ see which account to use next.
 
 ![Codex Usage dashboard](./public/codexusage.png)
 
-> The generated commands install the pinned GitHub release `v0.3.0` because npm still carries 0.1.8, which has no `use` or `publish-login`. Publishing to npm needs the maintainer's own `npm login`; once npm carries 0.3.0 or newer, `CLI_INSTALL_SPEC` in `src/shared/cli.ts` and the two `NPX_COMMAND` constants under `bin/` go back to `codex-usage-dashboard@latest`.
+> npm carries `codex-usage-dashboard@0.3.0`. If a machine cannot reach npm, the same CLI installs from the pinned GitHub release: `npx --yes "github:tario-you/codex-usage#v0.3.0" <command>`.
 
 ## What it does
 
@@ -29,13 +29,13 @@ see which account to use next.
 3. Run the generated command before its token expires:
 
    ```bash
-   npx --yes "github:tario-you/codex-usage#v0.3.0" pair "https://codexusage.vercel.app/api/pair/complete?token=..."
+   npx codex-usage-dashboard@latest pair "https://codexusage.vercel.app/api/pair/complete?token=..."
    ```
 
 4. Keep the dashboard updated when needed:
 
    ```bash
-   npx --yes "github:tario-you/codex-usage#v0.3.0" sync --watch
+   npx codex-usage-dashboard@latest sync --watch
    ```
 
 The CLI stores the paired-device configuration in
@@ -44,7 +44,7 @@ The CLI stores the paired-device configuration in
 ### Start without a website account
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" connect --site "https://codexusage.vercel.app"
+npx codex-usage-dashboard@latest connect --site "https://codexusage.vercel.app"
 ```
 
 ## Weekly-only Codex limits
@@ -80,7 +80,7 @@ If pairing still reports a native Codex `ENOENT`, test through a clean npm
 cache:
 
 ```bash
-npm_config_cache="$(mktemp -d)" npx --yes "github:tario-you/codex-usage#v0.3.0" pair "PAIRING_URL"
+npm_config_cache="$(mktemp -d)" npx codex-usage-dashboard@latest pair "PAIRING_URL"
 ```
 
 If automatic repair also fails, confirm the installed Codex CLI works:
@@ -149,11 +149,11 @@ next usable plan when the one they are on runs out.
 ### Owner
 
 1. Pair the machine that holds the logins (see above) and keep
-   `npx --yes "github:tario-you/codex-usage#v0.3.0" sync --watch` running there.
+   `npx codex-usage-dashboard@latest sync --watch` running there.
 2. Publish your plans:
 
    ```bash
-   npx --yes "github:tario-you/codex-usage#v0.3.0" publish-login --all
+   npx codex-usage-dashboard@latest publish-login --all
    ```
 
    `--all` publishes every account in the Codex switcher store
@@ -172,12 +172,12 @@ next usable plan when the one they are on runs out.
    revoke it.
 5. **Revoke** a person or **Stop sharing** a plan from the same card.
    Stopping also works from the terminal with
-   `npx --yes "github:tario-you/codex-usage#v0.3.0" unpublish-login --email you@example.com`.
+   `npx codex-usage-dashboard@latest unpublish-login --email you@example.com`.
 
 ### Recipient
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" use "https://codexusage.vercel.app/api/login/claim?token=..."
+npx codex-usage-dashboard@latest use "https://codexusage.vercel.app/api/login/claim?token=..."
 ```
 
 This backs up the current `~/.codex/auth.json` to
@@ -188,7 +188,7 @@ This backs up the current `~/.codex/auth.json` to
 Keep the login current while it is in use:
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" use --watch
+npx codex-usage-dashboard@latest use --watch
 ```
 
 The watcher reports the plan's real rate limits to the dashboard once a
@@ -199,7 +199,7 @@ happens; restart the Codex app if it is open.
 Switch back to your own login at any time:
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" use --restore
+npx codex-usage-dashboard@latest use --restore
 ```
 
 ### How refreshes stay consistent
@@ -212,3 +212,7 @@ token's issue time, wins in both directions. A recipient's copy carries
 `last_refresh` shifted one day forward so the owner's machine performs the
 usual refresh. Details and the recovery steps are in
 [docs/shared-codex-login.md](./docs/shared-codex-login.md).
+
+## Account notes
+
+The dashboard has an owner-only **Account notes** card: one row per account with a ChatGPT password, a Google password, and a free note (reset times, who holds the phone). Passwords show as dots until you press the eye icon. Notes are encrypted at rest with `CODEX_LOGIN_ENCRYPTION_KEY` (AES-256-GCM, bound to your user id and the email), live in a service-role-only table, and are served only to the signed-in owner by `/api/login/notes`. Invited viewers never receive them.
