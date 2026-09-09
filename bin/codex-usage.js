@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { selectCodexExecutable } from './lib/codex-runtime.js'
 import {
   reconcilePublishedLogins,
+  runPublishAllLoginsCommand,
   runPublishLoginCommand,
   runUnpublishLoginCommand,
   runUseCommand,
@@ -277,9 +278,11 @@ async function main() {
   }
 
   if (command === 'use') {
+    const codexHome = resolveCodexHome(args.options['codex-home'])
     await runUseCommand({
       args,
-      codexHome: resolveCodexHome(args.options['codex-home']),
+      codexHome,
+      rateLimitReader: createRateLimitReader(codexHome),
     })
     return
   }
@@ -465,9 +468,61 @@ async function startConnectFlow(client, args, codexHome, siteOrigin) {
   return config
 }
 
+/**
+ * Reads the shared account's live rate limits through codex app-server so a
+ * pool recipient reports real usage. Every failure is treated as "no data".
+ */
+function createRateLimitReader(codexHome) {
+  let client = null
+
+  const close = async () => {
+    if (client) {
+      const current = client
+      client = null
+      await current.close()
+    }
+  }
+
+  return {
+    close,
+    async read() {
+      try {
+        if (!client) {
+          client = new StdioCodexClient({ codexHome })
+          await client.connect()
+        }
+
+        const accountState = await client.request('account/read', {
+          refreshToken: false,
+        })
+        if (!accountState.account) {
+          return null
+        }
+
+        return await client.request('account/rateLimits/read')
+      } catch {
+        await close().catch(() => {})
+        return null
+      }
+    },
+    reset: close,
+  }
+}
+
 async function runPublishLoginFromCli(args) {
   const codexHome = resolveCodexHome(args.options['codex-home'])
   const config = await requirePairingConfig(codexHome)
+
+  if (args.options.all) {
+    await runPublishAllLoginsCommand({
+      args,
+      codexHome,
+      config,
+      writeConfig: (nextConfig) => writeConfig(codexHome, nextConfig),
+    })
+    return
+  }
+
   const usesActiveLogin = !args.options['auth-file'] && !args.options.store
   const client = usesActiveLogin ? new StdioCodexClient({ codexHome }) : null
 
@@ -742,7 +797,7 @@ function parseArgs(rawArgs) {
 
     const key = value.slice(2)
 
-    if (key === 'watch' || key === 'restore') {
+    if (key === 'watch' || key === 'restore' || key === 'all') {
       options[key] = true
       continue
     }

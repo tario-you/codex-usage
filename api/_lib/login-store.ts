@@ -190,6 +190,7 @@ export async function revokeGrantsForAccount(accountId: string) {
     .from('codex_login_grants')
     .update({ revoked_at: new Date().toISOString(), status: 'revoked' })
     .eq('account_id', accountId)
+    .eq('scope', 'account')
     .in('status', ['pending', 'active'])
 
   if (error) {
@@ -221,7 +222,14 @@ export async function listSharesForOwner(ownerUserId: string) {
 
   const secrets = secretsResult.data ?? []
   const grants = grantsResult.data ?? []
-  const accountIds = [...new Set([...secrets, ...grants].map((row) => row.account_id))]
+  const accountIds = [
+    ...new Set(
+      [
+        ...secrets.map((secret) => secret.account_id),
+        ...grants.flatMap((grant) => [grant.account_id, grant.current_account_id]),
+      ].filter((id): id is string => Boolean(id)),
+    ),
+  ]
   const accountsById = new Map<
     string,
     { id: string; email: string | null; plan_type: string | null; source_label: string | null }
@@ -243,7 +251,12 @@ export async function listSharesForOwner(ownerUserId: string) {
   }
 
   return {
-    grants: grants.map((grant) => serializeGrant(grant)),
+    grants: grants.map((grant) => ({
+      ...serializeGrant(grant),
+      currentEmail: grant.current_account_id
+        ? accountsById.get(grant.current_account_id)?.email ?? null
+        : null,
+    })),
     publications: secrets.map((secret) => ({
       accountId: secret.account_id,
       deviceLabel: accountsById.get(secret.account_id)?.source_label ?? null,
@@ -261,6 +274,10 @@ export async function listSharesForOwner(ownerUserId: string) {
 export function serializeGrant(grant: LoginGrantRow) {
   return {
     accountId: grant.account_id,
+    currentAccountId: grant.current_account_id,
+    scope: grant.scope,
+    switchCount: grant.switch_count,
+    switchedAt: grant.switched_at,
     claimTokenPreview: grant.claim_token_preview,
     claimedAt: grant.claimed_at,
     claimedLabel: grant.claimed_label,

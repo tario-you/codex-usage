@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
-import { Ban, Check, Copy, KeyRound } from 'lucide-react'
+import { Ban, Check, Copy, KeyRound, Shuffle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -14,7 +14,11 @@ import {
 import { INVALID_SESSION_MESSAGE } from '@/lib/auth'
 import type { DashboardAccountRow } from '@/lib/dashboard'
 import { queryClient } from '@/lib/query-client'
-import { buildPublishLoginCommand, buildUseLoginWatchCommand } from '@/shared/cli'
+import {
+  buildPublishAllLoginsCommand,
+  buildPublishLoginCommand,
+  buildUseLoginWatchCommand,
+} from '@/shared/cli'
 import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
 
 interface SharedLoginPublication {
@@ -29,19 +33,24 @@ interface SharedLoginPublication {
 }
 
 interface SharedLoginGrant {
-  accountId: string
+  accountId: string | null
   claimTokenPreview: string
   claimedAt: string | null
   claimedLabel: string | null
   claimedMachineName: string | null
   createdAt: string
+  currentAccountId: string | null
+  currentEmail: string | null
   expiresAt: string
   id: string
   label: string | null
   lastPushedAt: string | null
   lastSyncedAt: string | null
   revokedAt: string | null
+  scope: 'account' | 'pool'
   status: 'active' | 'expired' | 'pending' | 'revoked'
+  switchCount: number
+  switchedAt: string | null
   syncCount: number
 }
 
@@ -51,12 +60,14 @@ interface SharedLoginShares {
 }
 
 interface LoginCommandState {
-  accountId: string
   command: string
   expiresAt: string
+  key: string
+  title: string
 }
 
 const COPY_FEEDBACK_DURATION_MS = 2000
+const POOL_KEY = 'pool'
 
 export function SharedLoginPanel({
   accounts,
@@ -97,6 +108,9 @@ export function SharedLoginPanel({
   )
   const publications = shares.publications.filter((publication) =>
     ownedAccountIds.size === 0 ? true : ownedAccountIds.has(publication.accountId),
+  )
+  const liveGrants = shares.grants.filter(
+    (grant) => grant.status === 'active' || grant.status === 'pending',
   )
 
   async function callApi<T>(path: string, body?: unknown): Promise<T> {
@@ -141,21 +155,28 @@ export function SharedLoginPanel({
     }
   }
 
-  async function handleCreateCommand(publication: SharedLoginPublication) {
-    setBusyKey(`grant:${publication.accountId}`)
+  async function handleCreateCommand(target: SharedLoginPublication | 'pool') {
+    const key = target === 'pool' ? POOL_KEY : target.accountId
+    setBusyKey(`grant:${key}`)
     setError(null)
 
     try {
       const payload = await callApi<{ command: string; expiresAt: string }>(
         '/api/login/grants/start',
-        { accountId: publication.accountId },
+        target === 'pool'
+          ? { scope: 'pool' }
+          : { accountId: target.accountId, scope: 'account' },
       )
       setLoginCommand({
-        accountId: publication.accountId,
         command: payload.command,
         expiresAt: payload.expiresAt,
+        key,
+        title:
+          target === 'pool'
+            ? 'Auto-switching login across every plan below'
+            : `Login pinned to ${target.email}`,
       })
-      await copyText(`command:${publication.accountId}`, payload.command)
+      await copyText(`command:${key}`, payload.command)
       await sharesQuery.refetch()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to create the login command.')
@@ -205,15 +226,37 @@ export function SharedLoginPanel({
     return null
   }
 
+  const hasPublications = publications.length > 0
+
   return (
     <Card>
       <CardHeader className="border-b border-border">
-        <CardTitle>Share Codex login</CardTitle>
-        <CardDescription>
-          Let someone run their local Codex on one of your plans. Their machine
-          receives your login and follows your token refreshes. Revoke it here at
-          any time.
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle>Share Codex login</CardTitle>
+            <CardDescription>
+              Let someone run their local Codex on your plans. Their machine
+              installs your login, reports its usage here, and switches to your
+              next usable plan when one runs out. Revoke anyone at any time.
+            </CardDescription>
+          </div>
+          {hasPublications ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {copiedKey === `command:${POOL_KEY}` ? <CopiedPill /> : null}
+              <Button
+                className="shrink-0"
+                disabled={Boolean(busyKey)}
+                onClick={() => void handleCreateCommand('pool')}
+                type="button"
+              >
+                <Shuffle className="mr-2 size-4" />
+                {busyKey === `grant:${POOL_KEY}`
+                  ? 'Creating command...'
+                  : 'Create login command'}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
@@ -225,13 +268,19 @@ export function SharedLoginPanel({
           <Notice tone="default">Loading shared logins...</Notice>
         ) : null}
 
-        {sharesQuery.data && publications.length === 0 ? (
+        {sharesQuery.data && !hasPublications ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               No login is published yet. On the machine paired with this
-              dashboard, run this while Codex is logged into the plan you want
-              to share. Add <span className="font-mono">--email you@example.com</span>{' '}
-              to pick an account from the Codex switcher store instead.
+              dashboard, publish every plan from the Codex switcher store:
+            </p>
+            <CommandBlock
+              command={buildPublishAllLoginsCommand()}
+              copied={copiedKey === 'publish-all'}
+              onCopy={() => void copyText('publish-all', buildPublishAllLoginsCommand())}
+            />
+            <p className="text-sm text-muted-foreground">
+              Or publish only the plan Codex is logged into right now:
             </p>
             <CommandBlock
               command={buildPublishLoginCommand()}
@@ -244,124 +293,120 @@ export function SharedLoginPanel({
           </div>
         ) : null}
 
-        {publications.map((publication) => {
-          const grants = shares.grants.filter(
-            (grant) => grant.accountId === publication.accountId,
-          )
-          const visibleGrants = grants.filter(
-            (grant) => grant.status === 'active' || grant.status === 'pending',
-          )
-          const isCreating = busyKey === `grant:${publication.accountId}`
-          const isUnpublishing = busyKey === `unpublish:${publication.accountId}`
+        {loginCommand ? (
+          <div className="space-y-2 rounded-lg border border-border px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-medium text-foreground">{loginCommand.title}</p>
+              <p className="text-xs text-muted-foreground">
+                Single use · expires {formatTimestamp(loginCommand.expiresAt)}
+              </p>
+            </div>
+            <CommandBlock
+              command={loginCommand.command}
+              copied={copiedKey === `command:${loginCommand.key}`}
+              onCopy={() => void copyText(`command:${loginCommand.key}`, loginCommand.command)}
+            />
+            {copyError ? (
+              <p className="text-xs text-muted-foreground">{copyError}</p>
+            ) : null}
+            <p className="text-xs text-muted-foreground">
+              Send this to the person. They run it once, then keep{' '}
+              <span className="font-mono">{buildUseLoginWatchCommand()}</span>{' '}
+              running so the login stays fresh and switches plans on its own.
+              Their previous Codex login is backed up.
+            </p>
+          </div>
+        ) : null}
 
-          return (
-            <div
-              key={publication.accountId}
-              className="space-y-3 rounded-lg border border-border px-3 py-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 text-sm">
-                  <p className="flex items-center gap-2 font-medium text-foreground">
-                    <KeyRound className="size-4 text-muted-foreground" />
-                    <span className="truncate">{publication.email}</span>
+        {liveGrants.length > 0 ? (
+          <ul className="divide-y divide-border rounded-md border border-border text-sm">
+            {liveGrants.map((grant) => (
+              <li
+                key={grant.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-foreground">
+                    {describeGrant(grant)}
                   </p>
-                  <p className="text-muted-foreground">
-                    {publication.planType ?? 'Unknown plan'} · login updated{' '}
-                    {formatRelativeTimestamp(publication.updatedAt)}
-                    {publication.deviceLabel ? ` from ${publication.deviceLabel}` : ''}
+                  <p className="text-xs text-muted-foreground">
+                    {describeGrantActivity(grant, publications)}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {copiedKey === `command:${publication.accountId}` ? <CopiedPill /> : null}
-                  <Button
-                    disabled={Boolean(busyKey)}
-                    onClick={() => void handleCreateCommand(publication)}
-                    size="sm"
-                    type="button"
-                  >
-                    {isCreating ? 'Creating command...' : 'Create login command'}
-                  </Button>
-                  <Button
-                    disabled={Boolean(busyKey)}
-                    onClick={() => void handleStopSharing(publication)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {isUnpublishing ? 'Stopping...' : 'Stop sharing'}
-                  </Button>
-                </div>
-              </div>
+                <Button
+                  aria-label="Revoke this login"
+                  className="text-muted-foreground hover:text-destructive"
+                  disabled={Boolean(busyKey)}
+                  onClick={() => void handleRevoke(grant)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Ban className="mr-1 size-3.5" />
+                  {busyKey === `revoke:${grant.id}` ? 'Revoking...' : 'Revoke'}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
-              {loginCommand?.accountId === publication.accountId ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-foreground">
-                      Send this to the person. They run it once.
+        {hasPublications ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Plans in the pool
+            </p>
+            <ul className="divide-y divide-border rounded-md border border-border text-sm">
+              {publications.map((publication) => (
+                <li
+                  key={publication.accountId}
+                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-medium text-foreground">
+                      <KeyRound className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{publication.email}</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Single use · expires {formatTimestamp(loginCommand.expiresAt)}
+                      {publication.planType ?? 'Unknown plan'} · login updated{' '}
+                      {formatRelativeTimestamp(publication.updatedAt)}
                     </p>
                   </div>
-                  <CommandBlock
-                    command={loginCommand.command}
-                    copied={copiedKey === `command:${publication.accountId}`}
-                    onCopy={() =>
-                      void copyText(`command:${publication.accountId}`, loginCommand.command)
-                    }
-                  />
-                  {copyError ? (
-                    <p className="text-xs text-muted-foreground">{copyError}</p>
-                  ) : null}
-                  <p className="text-xs text-muted-foreground">
-                    Their previous Codex login is backed up. To keep following
-                    your refreshes they leave{' '}
-                    <span className="font-mono">{buildUseLoginWatchCommand()}</span>{' '}
-                    running.
-                  </p>
-                </div>
-              ) : null}
-
-              {visibleGrants.length > 0 ? (
-                <ul className="divide-y divide-border rounded-md border border-border text-sm">
-                  {visibleGrants.map((grant) => (
-                    <li
-                      key={grant.id}
-                      className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+                  <div className="flex flex-wrap items-center gap-2">
+                    {copiedKey === `command:${publication.accountId}` ? <CopiedPill /> : null}
+                    <Button
+                      disabled={Boolean(busyKey)}
+                      onClick={() => void handleCreateCommand(publication)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
                     >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">
-                          {describeGrant(grant)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {describeGrantActivity(grant)}
-                        </p>
-                      </div>
-                      <Button
-                        aria-label="Revoke this login"
-                        className="text-muted-foreground hover:text-destructive"
-                        disabled={Boolean(busyKey)}
-                        onClick={() => void handleRevoke(grant)}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Ban className="mr-1 size-3.5" />
-                        {busyKey === `revoke:${grant.id}` ? 'Revoking...' : 'Revoke'}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          )
-        })}
-
-        {publications.length > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Revoking stops updates immediately. A revoked machine keeps working
-            until the tokens rotate, which happens within about ten days.
-          </p>
+                      {busyKey === `grant:${publication.accountId}`
+                        ? 'Creating...'
+                        : 'Pinned command'}
+                    </Button>
+                    <Button
+                      className="text-muted-foreground hover:text-destructive"
+                      disabled={Boolean(busyKey)}
+                      onClick={() => void handleStopSharing(publication)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      {busyKey === `unpublish:${publication.accountId}`
+                        ? 'Stopping...'
+                        : 'Stop sharing'}
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground">
+              Add more plans with{' '}
+              <span className="font-mono">{buildPublishAllLoginsCommand()}</span> on
+              the paired machine. Revoking stops updates immediately; a revoked
+              machine keeps working until the tokens rotate, within about ten days.
+            </p>
+          </div>
         ) : null}
       </CardContent>
     </Card>
@@ -391,21 +436,34 @@ async function fetchShares(accessToken: string): Promise<SharedLoginShares> {
 function describeGrant(grant: SharedLoginGrant) {
   const who = grant.claimedLabel ?? grant.claimedMachineName ?? grant.label
   if (grant.status === 'pending') {
-    return who ? `${who} · waiting to be used` : 'Login command waiting to be used'
+    return who ? `${who} · command waiting to be used` : 'Login command waiting to be used'
   }
 
   return who ?? 'Recipient'
 }
 
-function describeGrantActivity(grant: SharedLoginGrant) {
+function describeGrantActivity(
+  grant: SharedLoginGrant,
+  publications: SharedLoginPublication[],
+) {
   if (grant.status === 'pending') {
-    return `Created ${formatRelativeTimestamp(grant.createdAt)} · expires ${formatTimestamp(grant.expiresAt)}`
+    return `${grant.scope === 'pool' ? 'Auto-switching' : 'Pinned'} · created ${formatRelativeTimestamp(grant.createdAt)} · expires ${formatTimestamp(grant.expiresAt)}`
   }
 
+  const currentEmail =
+    grant.currentEmail ??
+    publications.find((publication) => publication.accountId === grant.currentAccountId)?.email ??
+    null
+  const where = currentEmail ? `on ${currentEmail}` : 'on a shared plan'
+  const mode =
+    grant.scope === 'pool'
+      ? `auto-switching${grant.switchCount > 0 ? `, switched ${grant.switchCount}×` : ''}`
+      : 'pinned'
   const synced = grant.lastSyncedAt
     ? `last synced ${formatRelativeTimestamp(grant.lastSyncedAt)}`
     : 'never synced'
-  return `Installed ${formatRelativeTimestamp(grant.claimedAt)} · ${synced}`
+
+  return `${where} · ${mode} · ${synced}`
 }
 
 function CommandBlock({

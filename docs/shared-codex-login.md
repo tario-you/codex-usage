@@ -2,8 +2,10 @@
 
 Date: 2026-09-08
 
-Status: shipped in dashboard release `0.2.0`; hosted migration
-`20260908210000_add_codex_login_sharing.sql` applied to the production Supabase
+Status: shipped in dashboard releases `0.2.0` (single logins) and `0.3.0`
+(pool logins with automatic switching); hosted migrations
+`20260908210000_add_codex_login_sharing.sql` and
+`20260908230000_add_login_pool_grants.sql` applied to the production Supabase
 project.
 
 ## Scope
@@ -155,6 +157,60 @@ Every tick reads the local `auth.json`:
 
 `--restore` does the same restore on demand.
 
+
+## Pool logins and automatic switching
+
+A **pool** login command (the card's primary button) is not pinned to one
+account. The grant row carries `scope = 'pool'`, `account_id = null`, and
+`current_account_id` for the plan the recipient is on right now.
+
+- **Claim** picks the starting plan with `chooseNextAccount` over every
+  published account of the owner and the latest row of
+  `codex_dashboard_accounts` (manual overrides included).
+- **Every sync** from a pool recipient does three things in order: records
+  the rate limits the recipient's own `codex app-server` reports for its
+  current plan (a `codex_usage_snapshots` row with `source_key =
+  grant_<id>`), re-evaluates the pool, and, when the current plan is
+  exhausted, answers `outcome: "switch"` with the next plan's login. The
+  recipient writes it exactly like a pull, restarts its app-server reader, and
+  prints `Switched to <email>`.
+- **Choice rule** (`api/_lib/login-pool-choice.ts`): stay while the current
+  plan has a known positive usable balance (minimum across its present
+  windows) or no usage data at all; otherwise take `buildResetPlan(...).current`,
+  the same ordering the dashboard's Reset plan shows (nearest upcoming reset
+  first, then the higher balance). When every plan is exhausted the recipient
+  stays put and the response carries `nextAvailableAt`.
+- **Identity of the local file wins.** The recipient sends the email its local
+  `auth.json` belongs to (or the file itself when it changed). The server
+  attributes reported usage and token pushes to that plan, so a switch the
+  client never applied cannot misfile usage.
+- **Unpublishing one plan** revokes only pinned grants for it; pool recipients
+  on that plan move to the next one on their next sync.
+
+`publish-login --all` publishes every account in the switcher store with the
+combined `switcher` source, so the owner's `sync --watch` keeps all of them
+fresh.
+
+### Verification record (2026-09-08, pool)
+
+Local dev server against the production Supabase project:
+
+- `publish-login --all`: `Published 10 of 10 logins`.
+- Pool command created, claimed into a temp `CODEX_HOME`: started on the
+  reset plan's pick.
+- Recipient syncs recorded `grant_<id>` usage snapshots for the current plan.
+- A manual usage override set the current plan to 0%. A sync without live
+  limits answered `outcome: switch` (reason `switch`) with a different
+  plan's login. The CLI, run where no Codex was available, printed
+  `Switched to <email> (pro)`, rewrote `auth.json` (shift 24.0 h), and
+  `codex login status` reported `Logged in using ChatGPT` on the new plan.
+- The grant showed `switchCount 2`; revoke removed the login.
+- Signed-in browser QA of the redesigned card was not possible in this
+  session: the automation classifier refused the one-time sign-in link. The
+  card reuses the primitives of the previously screenshotted version and
+  passes typecheck and lint; visual confirmation on the live site is still
+  owed.
+
 ## Why the newest generation wins by `iat`
 
 Ordering uses the access token's `iat` claim, never `last_refresh`, because a
@@ -228,6 +284,8 @@ Local dev server against the production Supabase project:
 - [`api/_lib/login-crypto.ts`](../api/_lib/login-crypto.ts)
 - [`api/_lib/login-reconcile.ts`](../api/_lib/login-reconcile.ts)
 - [`api/_lib/login-store.ts`](../api/_lib/login-store.ts)
+- [`api/_lib/login-pool-choice.ts`](../api/_lib/login-pool-choice.ts)
+- [`api/_lib/login-pool.ts`](../api/_lib/login-pool.ts)
 - [`api/login/[...action].ts`](../api/login/%5B...action%5D.ts) (one Vercel function for every `/api/login/*` route)
 - [`api/_lib/login/`](../api/_lib/login/)
 - [`bin/lib/login-file.js`](../bin/lib/login-file.js)
@@ -235,4 +293,5 @@ Local dev server against the production Supabase project:
 - [`src/features/dashboard/shared-login-panel.tsx`](../src/features/dashboard/shared-login-panel.tsx)
 - [`supabase/migrations/20260908210000_add_codex_login_sharing.sql`](../supabase/migrations/20260908210000_add_codex_login_sharing.sql)
 - [`tests/login-crypto.test.ts`](../tests/login-crypto.test.ts)
+- [`tests/login-pool.test.ts`](../tests/login-pool.test.ts)
 - [`tests/shared-login.test.js`](../tests/shared-login.test.js)

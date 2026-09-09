@@ -50,3 +50,7 @@ export function buildUseLoginCommand(claimUrl: string) {
 export function buildUseLoginWatchCommand() {
   return `${NPX_COMMAND} use --watch`
 }
+
+export function buildPublishAllLoginsCommand() {
+  return `${NPX_COMMAND} publish-login --all`
+}
