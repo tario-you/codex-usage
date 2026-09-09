@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/login/:action*",
+      "destination": "/api/login?action=:action*"
+    }
+  ]
+}

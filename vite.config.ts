@@ -89,7 +89,7 @@ async function resolveLoginDevHandler(
   method: string,
   pathname: string,
 ): Promise<RouteHandler | undefined> {
-  const module = await import('./api/login/[...action]')
+  const module = await import('./api/login')
   const handler = module.resolveLoginRoute(method, pathname)
   return handler ?? undefined
 }
