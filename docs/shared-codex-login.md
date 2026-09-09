@@ -54,9 +54,9 @@ copy on one generation.
 ### Owner: publish
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" publish-login
-npx --yes "github:tario-you/codex-usage#v0.3.0" publish-login --email you@example.com
-npx --yes "github:tario-you/codex-usage#v0.3.0" publish-login --auth-file /path/to/auth.json
+npx codex-usage-dashboard@latest publish-login
+npx codex-usage-dashboard@latest publish-login --email you@example.com
+npx codex-usage-dashboard@latest publish-login --auth-file /path/to/auth.json
 ```
 
 `publish-login` needs the machine's pairing config
@@ -111,7 +111,7 @@ On the dashboard, **Share Codex login** lists every published account. **Create
 login command** calls `POST /api/login/grants/start` and shows:
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" use "https://codexusage.vercel.app/api/login/claim?token=..."
+npx codex-usage-dashboard@latest use "https://codexusage.vercel.app/api/login/claim?token=..."
 ```
 
 The claim token is single use and expires after 24 hours. Each active or
@@ -123,7 +123,7 @@ device token, which is what `unpublish-login` uses.
 ### Recipient: install
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" use "<login-url>"
+npx codex-usage-dashboard@latest use "<login-url>"
 ```
 
 `use` posts the claim, then:
@@ -139,9 +139,9 @@ The recipient restarts the Codex app or starts a new `codex` session.
 ### Recipient: keep fresh, restore
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" use --watch
-npx --yes "github:tario-you/codex-usage#v0.3.0" use
-npx --yes "github:tario-you/codex-usage#v0.3.0" use --restore
+npx codex-usage-dashboard@latest use --watch
+npx codex-usage-dashboard@latest use
+npx codex-usage-dashboard@latest use --restore
 ```
 
 Every tick reads the local `auth.json`:

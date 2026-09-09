@@ -1,11 +1,10 @@
 export const NPM_PACKAGE_NAME = 'codex-usage-dashboard'
-// npm still carries 0.1.8, which has no `use`, `publish-login` or pool
-// sync. Publishing needs the maintainer's own npm login, so every generated
-// command installs the pinned release straight from GitHub. Move this back to
-// `npx codex-usage-dashboard@latest` once npm carries 0.3.0 or newer.
+// npm carries 0.3.0 (published 2026-09-09), so generated commands use the
+// short published form again. The pinned GitHub spec stays available for a
+// machine that cannot reach npm: npx --yes "github:tario-you/codex-usage#v0.3.0".
 export const CLI_RELEASE_TAG = 'v0.3.0'
 export const CLI_INSTALL_SPEC = `github:tario-you/codex-usage#${CLI_RELEASE_TAG}`
-export const NPX_COMMAND = `npx --yes "${CLI_INSTALL_SPEC}"`
+export const NPX_COMMAND = `npx ${NPM_PACKAGE_NAME}@latest`
 export const DASHBOARD_CONNECTED_QUERY_KEY = 'connected'
 
 interface DashboardAuthUrlOptions {

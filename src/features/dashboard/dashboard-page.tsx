@@ -74,6 +74,7 @@ import {
 } from '@/shared/site'
 
 import { ResetPlanPanel } from './reset-plan-panel'
+import { AccountNotesPanel } from './account-notes-panel'
 import { SharedLoginPanel } from './shared-login-panel'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 
@@ -1201,6 +1202,15 @@ export function DashboardPage() {
                   accounts={accounts}
                   onInvalidSession={handleInvalidSession}
                   session={session}
+                />
+
+                <AccountNotesPanel
+                  onInvalidSession={handleInvalidSession}
+                  session={session}
+                  suggestedEmails={accounts
+                    .filter((account) => account.access_scope === 'owned')
+                    .map((account) => account.email ?? '')
+                    .filter((email) => email.length > 0)}
                 />
 
                 <Card className="min-w-0" size="sm">

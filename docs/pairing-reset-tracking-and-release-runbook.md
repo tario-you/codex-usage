@@ -26,7 +26,7 @@ The canonical hosted dashboard is <https://codexusage.vercel.app>.
 3. Run the generated command before its token expires:
 
    ```bash
-   npx --yes "github:tario-you/codex-usage#v0.3.0" pair "https://codexusage.vercel.app/api/pair/complete?token=..."
+   npx codex-usage-dashboard@latest pair "https://codexusage.vercel.app/api/pair/complete?token=..."
    ```
 
 4. The CLI starts `codex app-server`, reads the current account and its rate
@@ -35,8 +35,8 @@ The canonical hosted dashboard is <https://codexusage.vercel.app>.
 5. Run a one-time sync or keep a watcher alive:
 
    ```bash
-   npx --yes "github:tario-you/codex-usage#v0.3.0" sync
-   npx --yes "github:tario-you/codex-usage#v0.3.0" sync --watch
+   npx codex-usage-dashboard@latest sync
+   npx codex-usage-dashboard@latest sync --watch
    ```
 
 Pairing tokens expire. Always generate a fresh command instead of repeatedly
@@ -45,7 +45,7 @@ retrying an old URL.
 ### Connect without signing in first
 
 ```bash
-npx --yes "github:tario-you/codex-usage#v0.3.0" connect --site "https://codexusage.vercel.app"
+npx codex-usage-dashboard@latest connect --site "https://codexusage.vercel.app"
 ```
 
 This creates or reopens a device-linked dashboard flow. The hosted URL must be
@@ -206,7 +206,7 @@ Use a clean npm cache to distinguish a stale `npx` installation from a current
 release:
 
 ```bash
-npm_config_cache="$(mktemp -d)" npx --yes "github:tario-you/codex-usage#v0.3.0" pair "PAIRING_URL"
+npm_config_cache="$(mktemp -d)" npx codex-usage-dashboard@latest pair "PAIRING_URL"
 ```
 
 Interpret the boundary correctly:
@@ -276,7 +276,7 @@ Then test the public artifact through a clean npm cache:
 
 ```bash
 npm_config_cache="$(mktemp -d)" \
-  npx --yes "github:tario-you/codex-usage#v0.3.0" pair \
+  npx codex-usage-dashboard@latest pair \
   "http://127.0.0.1:9/api/pair/complete?token=public-release-check"
 ```
 
