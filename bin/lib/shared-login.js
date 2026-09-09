@@ -20,7 +20,7 @@ import {
 
 export const SHARED_LOGIN_CONFIG_FILE_NAME = 'codex-usage-shared-login.json'
 const DEFAULT_POLL_MS = 60_000
-const NPX_COMMAND = 'npx codex-usage-dashboard@latest'
+const NPX_COMMAND = 'npx --yes "github:tario-you/codex-usage#v0.3.0"'
 
 export const sharedLoginUsageLines = [
   '  codex-usage publish-login [--email <email>] [--store <accounts.json>] [--auth-file <auth.json>] [--codex-home <path>]',

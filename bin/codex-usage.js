@@ -20,7 +20,7 @@ import {
 
 const DEFAULT_POLL_MS = 60_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
-const NPX_COMMAND = 'npx codex-usage-dashboard@latest'
+const NPX_COMMAND = 'npx --yes "github:tario-you/codex-usage#v0.3.0"'
 
 let codexAppServerSupportPromise = null
 
