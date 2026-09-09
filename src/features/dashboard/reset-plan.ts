@@ -2,7 +2,7 @@ import {
   getRateLimitWindows,
   type RateLimitWindowKey,
   type RateLimitWindowSource,
-} from '../../shared/rate-limit-windows'
+} from '../../shared/rate-limit-windows.js'
 
 interface NormalizedResetWindow {
   key: RateLimitWindowKey
