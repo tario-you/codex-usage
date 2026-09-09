@@ -189,8 +189,6 @@ export function DashboardPage() {
   const primaryInviter = inviters.length === 1 ? inviters[0] : null
   const isLoadingAccounts =
     Boolean(session) && accountsQuery.isPending && accounts.length === 0
-  const hasPairingDetails = Boolean(pairingError || pairingCommand)
-  const hasInviteDetails = Boolean(inviteCreateError || shareInvite)
   const hasAccountsDetails = Boolean(
     accountsQuery.error || unlinkError || isLoadingAccounts || accounts.length > 0,
   )
@@ -849,10 +847,10 @@ export function DashboardPage() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-[1240px] flex-col">
-        <header className="border-b border-border bg-card">
-          <div className="flex flex-wrap items-start justify-between gap-4 px-4 py-5 sm:items-center sm:px-6 lg:px-8">
+        <header className="border-b border-border bg-background">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
             <div className="min-w-0">
-              <h1 className="text-[1.7rem] font-semibold tracking-[-0.02em]">
+              <h1 className="text-base font-semibold tracking-[-0.01em]">
                 Codex usage
               </h1>
             </div>
@@ -882,7 +880,7 @@ export function DashboardPage() {
                       size="sm"
                       src={sessionAvatarUrl}
                     />
-                    <div className="text-right text-sm">
+                    <div className="text-right text-xs">
                       <p className="font-medium text-foreground">
                         {sessionLabel}
                       </p>
@@ -914,7 +912,7 @@ export function DashboardPage() {
           </div>
         </header>
 
-        <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex-1 px-4 py-3 sm:px-6 lg:px-8">
           {showInviteLanding ? (
             <div className="mx-auto max-w-[720px] space-y-4">
               {loginError ? (
@@ -1036,7 +1034,7 @@ export function DashboardPage() {
               </Card>
             </div>
           ) : session ? (
-            <div className="space-y-6">
+            <div className="space-y-3">
               {connectedNotice ? (
                 <InlineMessage tone="default">{connectedNotice}</InlineMessage>
               ) : null}
@@ -1047,7 +1045,7 @@ export function DashboardPage() {
                 <InlineMessage tone="error">{inviteAcceptError}</InlineMessage>
               ) : null}
 
-              <div className="space-y-6">
+              <div className="space-y-3">
                 {canLinkGoogle ? (
                   <Card>
                     <CardHeader>
@@ -1132,192 +1130,72 @@ export function DashboardPage() {
                   </Card>
                 ) : null}
 
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <Card>
-                    <CardHeader
-                      className={hasInviteDetails ? 'border-b border-border' : undefined}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <CardTitle>Invite viewers</CardTitle>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {isInviteLinkCopied ? <CopiedPill /> : null}
-                          <Button
-                            className="shrink-0"
-                            disabled={isCreatingInvite}
-                            onClick={() => void handleCreateInvite()}
-                            type="button"
-                          >
-                            <Link2 className="mr-2 size-4" />
-                            {isCreatingInvite ? 'Creating link...' : 'Create invite link'}
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    {hasInviteDetails ? (
-                      <CardContent className="space-y-4">
-                        {inviteCreateError ? (
-                          <InlineMessage tone="error">{inviteCreateError}</InlineMessage>
-                        ) : null}
-
-                        {shareInvite ? (
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <label className="block text-sm font-medium text-foreground">
-                                Share this link
-                              </label>
-                              <p className="text-xs text-muted-foreground">
-                                Expires {formatTimestamp(shareInvite.expiresAt)}
-                              </p>
-                            </div>
-                            <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
-                              <Button
-                                aria-label={
-                                  isInviteLinkCopied
-                                    ? 'Invite link copied'
-                                    : 'Copy invite link'
-                                }
-                                className="absolute top-2 right-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
-                                onClick={() => void handleCopyInviteLink()}
-                                size="icon-sm"
-                                title={
-                                  isInviteLinkCopied
-                                    ? 'Invite link copied'
-                                    : 'Copy invite link'
-                                }
-                                type="button"
-                                variant="ghost"
-                              >
-                                {isInviteLinkCopied ? (
-                                  <Check className="size-3.5" />
-                                ) : (
-                                  <Copy className="size-3.5" />
-                                )}
-                              </Button>
-                              {shareInvite.inviteUrl}
-                            </div>
-                            {inviteCopyError ? (
-                              <p className="text-xs text-muted-foreground">
-                                {inviteCopyError}
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </CardContent>
+                <Card size="sm">
+                  <CardContent className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        disabled={isGeneratingPairing}
+                        onClick={() => void handleStartPairing()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <TerminalSquare className="mr-1.5 size-3.5" />
+                        {isGeneratingPairing ? 'Creating command...' : 'Pair a machine'}
+                      </Button>
+                      <Button
+                        disabled={isCreatingInvite}
+                        onClick={() => void handleCreateInvite()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Link2 className="mr-1.5 size-3.5" />
+                        {isCreatingInvite ? 'Creating link...' : 'Invite a viewer'}
+                      </Button>
+                      {isPairingCommandCopied || isInviteLinkCopied || isSyncCommandCopied ? (
+                        <CopiedPill />
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        Pairing adds a machine's Codex usage here. Viewers see your
+                        accounts without any login.
+                      </p>
+                    </div>
+                    {pairingError ? <InlineMessage tone="error">{pairingError}</InlineMessage> : null}
+                    {inviteCreateError ? (
+                      <InlineMessage tone="error">{inviteCreateError}</InlineMessage>
                     ) : null}
-                  </Card>
-
-                  <Card>
-                    <CardHeader
-                      className={hasPairingDetails ? 'border-b border-border' : undefined}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <CardTitle>Connect Codex</CardTitle>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {isPairingCommandCopied ? <CopiedPill /> : null}
-                          <Button
-                            className="shrink-0"
-                            disabled={isGeneratingPairing}
-                            onClick={() => void handleStartPairing()}
-                            type="button"
-                          >
-                            <TerminalSquare className="mr-2 size-4" />
-                            {isGeneratingPairing
-                              ? 'Creating command...'
-                              : 'Create pairing command'}
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    {hasPairingDetails ? (
-                      <CardContent className="space-y-4">
-                        {pairingError ? (
-                          <InlineMessage tone="error">{pairingError}</InlineMessage>
-                        ) : null}
-
-                        {pairingCommand ? (
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <label className="block text-sm font-medium text-foreground">
-                                Run this on the local machine
-                              </label>
-                              <p className="text-xs text-muted-foreground">
-                                Expires {formatTimestamp(pairingCommand.expiresAt)}
-                              </p>
-                            </div>
-                            <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
-                              <Button
-                                aria-label={
-                                  isPairingCommandCopied
-                                    ? 'Command copied'
-                                    : 'Copy command'
-                                }
-                                className="absolute top-2 right-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
-                                onClick={() => void handleCopyCommand()}
-                                size="icon-sm"
-                                title={
-                                  isPairingCommandCopied
-                                    ? 'Command copied'
-                                    : 'Copy command'
-                                }
-                                type="button"
-                                variant="ghost"
-                              >
-                                {isPairingCommandCopied ? (
-                                  <Check className="size-3.5" />
-                                ) : (
-                                  <Copy className="size-3.5" />
-                                )}
-                              </Button>
-                              {pairingCommand.command}
-                            </div>
-                            {pairingCopyError ? (
-                              <p className="text-xs text-muted-foreground">
-                                {pairingCopyError}
-                              </p>
-                            ) : null}
-                            <div className="space-y-2 border-t border-border pt-3">
-                              <label className="block text-sm font-medium text-foreground">
-                                Keep this running for live updates
-                              </label>
-                              <div className="relative rounded-lg border border-border bg-muted px-3 py-3 pr-12 font-mono text-xs leading-6 text-foreground">
-                                <Button
-                                  aria-label={
-                                    isSyncCommandCopied
-                                      ? 'Command copied'
-                                      : 'Copy command'
-                                  }
-                                  className="absolute top-2 right-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
-                                  onClick={() => void handleCopySyncCommand()}
-                                  size="icon-sm"
-                                  title={
-                                    isSyncCommandCopied
-                                      ? 'Command copied'
-                                      : 'Copy command'
-                                  }
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  {isSyncCommandCopied ? (
-                                    <Check className="size-3.5" />
-                                  ) : (
-                                    <Copy className="size-3.5" />
-                                  )}
-                                </Button>
-                                {pairingCommand.syncCommand}
-                              </div>
-                              {syncCommandCopyError ? (
-                                <p className="text-xs text-muted-foreground">
-                                  {syncCommandCopyError}
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : null}
-                      </CardContent>
+                    {pairingCommand ? (
+                      <>
+                        <CommandRow
+                          copied={isPairingCommandCopied}
+                          error={pairingCopyError}
+                          label="Run on the machine"
+                          meta={`Expires ${formatTimestamp(pairingCommand.expiresAt)}`}
+                          onCopy={() => void handleCopyCommand()}
+                          value={pairingCommand.command}
+                        />
+                        <CommandRow
+                          copied={isSyncCommandCopied}
+                          error={syncCommandCopyError}
+                          label="Keep running for live updates"
+                          onCopy={() => void handleCopySyncCommand()}
+                          value={pairingCommand.syncCommand}
+                        />
+                      </>
                     ) : null}
-                  </Card>
-
-                </div>
+                    {shareInvite ? (
+                      <CommandRow
+                        copied={isInviteLinkCopied}
+                        error={inviteCopyError}
+                        label="Invite link"
+                        meta={`Expires ${formatTimestamp(shareInvite.expiresAt)}`}
+                        onCopy={() => void handleCopyInviteLink()}
+                        value={shareInvite.inviteUrl}
+                      />
+                    ) : null}
+                  </CardContent>
+                </Card>
 
                 <SharedLoginPanel
                   accounts={accounts}
@@ -1325,11 +1203,11 @@ export function DashboardPage() {
                   session={session}
                 />
 
-                <Card className="min-w-0">
+                <Card className="min-w-0" size="sm">
                   <CardHeader
                     className={hasAccountsDetails ? 'border-b border-border' : undefined}
                   >
-                    <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <CardTitle>Accounts you can view</CardTitle>
                         <CardDescription>
@@ -1347,13 +1225,14 @@ export function DashboardPage() {
                       </div>
                       <Button
                         className="shrink-0"
+                        size="sm"
                         variant="outline"
                         onClick={() => {
                           void accountsQuery.refetch()
                           void weeklyUsageHistoryQuery.refetch()
                         }}
                       >
-                        <RefreshCcw className="mr-2 size-4" />
+                        <RefreshCcw className="mr-1.5 size-3.5" />
                         Refresh
                       </Button>
                     </div>
@@ -1639,11 +1518,11 @@ function WeeklyUsageHistoryPanel({
       : `No sync history in the last ${rangeLabel}.`
 
   return (
-    <section className="border-b border-border px-4 py-4 sm:px-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium text-foreground">Weekly total remaining</p>
-          <p className="text-sm text-muted-foreground">{summaryText}</p>
+    <section className="border-b border-border px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+          <p className="font-medium text-foreground">Weekly remaining</p>
+          <p className="text-muted-foreground">{summaryText}</p>
         </div>
         <div
           aria-label="History range"
@@ -1656,7 +1535,7 @@ function WeeklyUsageHistoryPanel({
             return (
               <button
                 aria-pressed={isSelected}
-                className={`h-7 rounded-md px-2 text-sm font-medium transition-colors ${
+                className={`h-6 rounded-md px-2 text-xs font-medium transition-colors ${
                   isSelected
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
@@ -1673,13 +1552,13 @@ function WeeklyUsageHistoryPanel({
       </div>
 
       {errorMessage ? (
-        <InlineMessage className="mt-4" tone="error">
+        <InlineMessage className="mt-2" tone="error">
           {errorMessage}
         </InlineMessage>
       ) : isLoading && points.length === 0 ? (
-        <div className="mt-4 h-56 animate-pulse rounded-md bg-muted" />
+        <div className="mt-2 h-28 animate-pulse rounded-md bg-muted" />
       ) : points.length === 0 ? (
-        <div className="mt-4 flex h-56 items-center justify-center rounded-md border border-border bg-muted/40 px-4 text-sm text-muted-foreground">
+        <div className="mt-2 flex h-28 items-center justify-center rounded-md border border-border bg-muted/40 px-4 text-sm text-muted-foreground">
           No points to plot.
         </div>
       ) : (
@@ -1705,12 +1584,12 @@ function WeeklyUsageHistoryChart({
   const chart = buildWeeklyUsageChart(points, range, capacityPercent)
 
   return (
-    <div className="mt-4 overflow-hidden rounded-md border border-border bg-background">
+    <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
       <svg
         aria-label="Weekly total remaining history"
-        className="h-56 w-full"
+        className="h-auto w-full"
         role="img"
-        viewBox="0 0 760 220"
+        viewBox="0 0 760 112"
       >
         <title>Weekly total remaining history</title>
         {chart.yTicks.map((tick) => (
@@ -1725,9 +1604,9 @@ function WeeklyUsageHistoryChart({
             />
             <text
               fill="var(--muted-foreground)"
-              fontSize="11"
+              fontSize="10"
               textAnchor="end"
-              x={chart.bounds.left - 10}
+              x={chart.bounds.left - 8}
               y={tick.y + 4}
             >
               {tick.value}%
@@ -1780,11 +1659,11 @@ function WeeklyUsageHistoryChart({
         {chart.xTicks.map((tick) => (
           <text
             fill="var(--muted-foreground)"
-            fontSize="11"
+            fontSize="10"
             key={tick.label}
             textAnchor={tick.anchor}
             x={tick.x}
-            y={chart.bounds.bottom + 24}
+            y={chart.bounds.bottom + 16}
           >
             {tick.label}
           </text>
@@ -1827,15 +1706,13 @@ function AccountTable({
   unlinkingAccountId: string | null
 }) {
   return (
-    <Table className="min-w-[860px]">
-      <TableHeader className="bg-muted/70">
-        <TableRow className="hover:bg-muted/70">
-          <TableHead className="px-4 sm:px-5">Account</TableHead>
-          <TableHead>Plan, first seen</TableHead>
-          <TableHead>Snapshot</TableHead>
-          <TableHead>Limits</TableHead>
-          <TableHead>Resets</TableHead>
-          <TableHead className="w-12 px-4 sm:px-5">
+    <Table className="min-w-[720px]">
+      <TableHeader className="bg-muted/50">
+        <TableRow className="hover:bg-muted/50">
+          <TableHead className="h-8 px-4 text-xs">Account</TableHead>
+          <TableHead className="h-8 text-xs">Synced</TableHead>
+          <TableHead className="h-8 text-xs">Windows</TableHead>
+          <TableHead className="h-8 w-10 px-4">
             <span className="sr-only">Unlink</span>
           </TableHead>
         </TableRow>
@@ -1849,38 +1726,33 @@ function AccountTable({
 
           return (
             <TableRow key={account.id}>
-              <TableCell className="px-4 py-3 sm:px-5">
-                <div className="space-y-1">
+              <TableCell className="px-4 py-2">
+                <div className="space-y-0.5">
                   <p className="font-medium text-foreground">{identity.primary}</p>
-                  {identity.secondary ? (
-                    <p className="text-sm text-muted-foreground">
-                      {identity.secondary}
-                    </p>
-                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    {[identity.secondary, formatPlanLine(account)]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
                   {!isOwnedAccount ? (
                     <SharedAccessNote inviter={primaryInviter} />
                   ) : null}
                 </div>
               </TableCell>
-              <TableCell>
-                <PlanObservedAt account={account} />
+              <TableCell className="py-2">
+                <p
+                  className="text-sm text-foreground"
+                  title={formatTimestamp(account.last_snapshot_at)}
+                >
+                  {formatRelativeTimestamp(account.last_snapshot_at)}
+                </p>
               </TableCell>
-              <TableCell>
-                <div className="space-y-1">
-                  <p className="font-medium text-foreground">
-                    {formatRelativeTimestamp(account.last_snapshot_at)}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatTimestamp(account.last_snapshot_at)}
-                  </p>
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="space-y-2">
+              <TableCell className="py-2">
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
                   {limitWindows.length > 0 ? (
                     limitWindows.map((window) => (
-                      <div key={window.key}>
-                        <p className="text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2" key={window.key}>
+                        <p className="w-14 text-xs text-muted-foreground">
                           {window.label}
                         </p>
                         <RemainingPercentageEditor
@@ -1900,22 +1772,12 @@ function AccountTable({
                           value={window.remainingPercent}
                           windowLabel={window.label}
                         />
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-muted-foreground">N/A</span>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="space-y-2">
-                  {limitWindows.length > 0 ? (
-                    limitWindows.map((window) => (
-                      <div key={window.key}>
-                        <p className="text-sm text-muted-foreground">
-                          {window.label}
+                        <p
+                          className="text-xs text-muted-foreground"
+                          title={formatTimestamp(window.resetsAt)}
+                        >
+                          resets {formatResetCountdown(window.resetsAt)}
                         </p>
-                        <ResetTime value={window.resetsAt} />
                       </div>
                     ))
                   ) : (
@@ -1923,7 +1785,7 @@ function AccountTable({
                   )}
                 </div>
               </TableCell>
-              <TableCell className="px-4 text-right sm:px-5">
+              <TableCell className="px-4 py-2 text-right">
                 {isOwnedAccount ? (
                   <UnlinkAccountButton
                     disabled={Boolean(unlinkingAccountId)}
@@ -1968,7 +1830,7 @@ function AccountSummaryList({
         const isUnlinking = unlinkingAccountId === account.id
 
         return (
-          <div key={account.id} className="space-y-3 px-4 py-3">
+          <div key={account.id} className="space-y-2 px-4 py-2.5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-medium text-foreground">{identity.primary}</p>
@@ -2026,7 +1888,7 @@ function AccountSummaryList({
                   <MetaField
                     key={`${window.key}-reset`}
                     label={`${window.label} reset`}
-                    value={`${formatResetCountdown(window.resetsAt)} · ${formatTimestamp(window.resetsAt)}`}
+                    value={`${formatResetCountdown(window.resetsAt)} · ${formatTimestamp(window.resetsAt)}`.replace(/^in /, '')}
                   />,
                 ])
               ) : (
@@ -2040,17 +1902,11 @@ function AccountSummaryList({
   )
 }
 
-function PlanObservedAt({ account }: { account: DashboardAccountRow }) {
-  return (
-    <div className="space-y-1">
-      <p className="font-medium text-foreground">
-        {account.plan_type ?? 'Unknown'}
-      </p>
-      <p className="text-sm text-muted-foreground">
-        {formatPlanObservedAt(account)}
-      </p>
-    </div>
-  )
+function formatPlanLine(account: DashboardAccountRow) {
+  const plan = account.plan_type ?? 'Unknown plan'
+  return account.plan_started_at
+    ? `${plan} since ${formatTimestamp(account.plan_started_at)}`
+    : plan
 }
 
 function formatPlanObservedAt(account: DashboardAccountRow) {
@@ -2061,13 +1917,42 @@ function formatPlanObservedAt(account: DashboardAccountRow) {
   return `First seen ${formatTimestamp(account.plan_started_at)}`
 }
 
-function ResetTime({ value }: { value: Date | string | null | undefined }) {
+function CommandRow({
+  copied,
+  error,
+  label,
+  meta,
+  onCopy,
+  value,
+}: {
+  copied: boolean
+  error: string | null
+  label: string
+  meta?: string
+  onCopy: () => void
+  value: string
+}) {
   return (
     <div className="space-y-1">
-      <p className="font-medium text-foreground">{formatTimestamp(value)}</p>
-      <p className="text-sm text-muted-foreground">
-        {formatResetCountdown(value)}
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-foreground">{label}</p>
+        {meta ? <p className="text-xs text-muted-foreground">{meta}</p> : null}
+      </div>
+      <div className="relative rounded-md border border-border bg-muted px-2.5 py-2 pr-10 font-mono text-xs leading-5 break-all text-foreground">
+        <Button
+          aria-label={copied ? 'Copied' : 'Copy'}
+          className="absolute top-1 right-1 text-muted-foreground hover:bg-transparent hover:text-foreground"
+          onClick={onCopy}
+          size="icon-sm"
+          title={copied ? 'Copied' : 'Copy'}
+          type="button"
+          variant="ghost"
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        </Button>
+        {value}
+      </div>
+      {error ? <p className="text-xs text-muted-foreground">{error}</p> : null}
     </div>
   )
 }
@@ -2196,10 +2081,10 @@ function buildWeeklyUsageChart(
   capacityPercent: number,
 ) {
   const bounds: WeeklyUsageChartBounds = {
-    bottom: 176,
-    left: 54,
-    right: 744,
-    top: 16,
+    bottom: 88,
+    left: 48,
+    right: 748,
+    top: 10,
   }
   const rangeMs =
     getDashboardWeeklyUsageRangeDays(range) * 24 * 60 * 60 * 1000
@@ -2322,11 +2207,15 @@ function formatResetCountdown(value: Date | string | null | undefined) {
   const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
   const minutes = totalMinutes % 60
 
-  const dayLabel = days === 1 ? 'Day' : 'Days'
-  const hourLabel = hours === 1 ? 'Hour' : 'Hours'
-  const minuteLabel = minutes === 1 ? 'Minute' : 'Minutes'
+  if (days > 0) {
+    return `in ${days}d ${hours}h`
+  }
 
-  return `${days} ${dayLabel} ${hours} ${hourLabel} ${minutes} ${minuteLabel}`
+  if (hours > 0) {
+    return `in ${hours}h ${minutes}m`
+  }
+
+  return `in ${minutes}m`
 }
 
 function getIsGuestSession(session: Session | null) {
