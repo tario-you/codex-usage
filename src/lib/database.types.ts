@@ -244,7 +244,11 @@ export interface Database {
         Row: {
           id: string
           owner_user_id: string
-          account_id: string
+          account_id: string | null
+          scope: string
+          current_account_id: string | null
+          switched_at: string | null
+          switch_count: number
           label: string | null
           claim_token_hash: string
           claim_token_preview: string
@@ -264,7 +268,11 @@ export interface Database {
         Insert: {
           id?: string
           owner_user_id: string
-          account_id: string
+          account_id?: string | null
+          scope?: string
+          current_account_id?: string | null
+          switched_at?: string | null
+          switch_count?: number
           label?: string | null
           claim_token_hash: string
           claim_token_preview: string
@@ -284,7 +292,11 @@ export interface Database {
         Update: {
           id?: string
           owner_user_id?: string
-          account_id?: string
+          account_id?: string | null
+          scope?: string
+          current_account_id?: string | null
+          switched_at?: string | null
+          switch_count?: number
           label?: string | null
           claim_token_hash?: string
           claim_token_preview?: string
@@ -305,6 +317,13 @@ export interface Database {
           {
             foreignKeyName: 'codex_login_grants_account_id_fkey'
             columns: ['account_id']
+            isOneToOne: false
+            referencedRelation: 'codex_accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_login_grants_current_account_id_fkey'
+            columns: ['current_account_id']
             isOneToOne: false
             referencedRelation: 'codex_accounts'
             referencedColumns: ['id']

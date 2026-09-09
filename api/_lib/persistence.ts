@@ -40,8 +40,6 @@ export async function persistSnapshotForOwner({
       : null
   const accountKey = email ? `chatgpt:${email}` : `source:${device.deviceKey}`
   const nowIso = new Date().toISOString()
-  const primary = rateLimits.rateLimits.primary
-  const secondary = rateLimits.rateLimits.secondary
 
   const accountUpsert: Database['public']['Tables']['codex_accounts']['Insert'] =
     {
@@ -80,13 +78,65 @@ export async function persistSnapshotForOwner({
     throw upsertError ?? new Error('Failed to upsert the Codex account.')
   }
 
+  await insertSnapshot({
+    accountId: accountRecord.id,
+    fetchedAt: nowIso,
+    rateLimits,
+    sourceKey: device.deviceKey,
+  })
+}
+
+/**
+ * Records a usage snapshot for an account the dashboard already knows, without
+ * touching its source labels. Shared-login recipients report their real rate
+ * limits this way so the pool ordering reflects live consumption.
+ */
+export async function persistSnapshotForAccount({
+  accountId,
+  rateLimits,
+  sourceKey,
+}: {
+  accountId: string
+  rateLimits: CodexRateLimitsResponse
+  sourceKey: string
+}) {
+  const nowIso = new Date().toISOString()
+  const { error } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .update({
+      last_seen_at: nowIso,
+      last_snapshot_at: nowIso,
+      plan_type: rateLimits.rateLimits.planType ?? undefined,
+    })
+    .eq('id', accountId)
+
+  if (error) {
+    throw error
+  }
+
+  await insertSnapshot({ accountId, fetchedAt: nowIso, rateLimits, sourceKey })
+}
+
+async function insertSnapshot({
+  accountId,
+  fetchedAt,
+  rateLimits,
+  sourceKey,
+}: {
+  accountId: string
+  fetchedAt: string
+  rateLimits: CodexRateLimitsResponse
+  sourceKey: string
+}) {
+  const primary = rateLimits.rateLimits.primary
+  const secondary = rateLimits.rateLimits.secondary
   const snapshotInsert: Database['public']['Tables']['codex_usage_snapshots']['Insert'] =
     {
-      account_id: accountRecord.id,
+      account_id: accountId,
       credits_balance: parseCreditsBalance(
         rateLimits.rateLimits.credits?.balance,
       ),
-      fetched_at: nowIso,
+      fetched_at: fetchedAt,
       has_credits: rateLimits.rateLimits.credits?.hasCredits ?? null,
       primary_resets_at: unixSecondsToIso(primary?.resetsAt),
       primary_used_percent: primary?.usedPercent ?? null,
@@ -97,7 +147,7 @@ export async function persistSnapshotForOwner({
       secondary_resets_at: unixSecondsToIso(secondary?.resetsAt),
       secondary_used_percent: secondary?.usedPercent ?? null,
       secondary_window_mins: secondary?.windowDurationMins ?? null,
-      source_key: device.deviceKey,
+      source_key: sourceKey,
       unlimited_credits: rateLimits.rateLimits.credits?.unlimited ?? null,
     }
 
@@ -112,7 +162,7 @@ export async function persistSnapshotForOwner({
   const { error: overrideDeleteError } = await serviceRoleSupabase
     .from('codex_usage_percentage_overrides')
     .delete()
-    .eq('account_id', accountRecord.id)
+    .eq('account_id', accountId)
 
   if (overrideDeleteError) {
     throw overrideDeleteError

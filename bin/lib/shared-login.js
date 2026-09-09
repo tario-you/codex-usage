@@ -24,6 +24,7 @@ const NPX_COMMAND = 'npx codex-usage-dashboard@latest'
 
 export const sharedLoginUsageLines = [
   '  codex-usage publish-login [--email <email>] [--store <accounts.json>] [--auth-file <auth.json>] [--codex-home <path>]',
+  '  codex-usage publish-login --all [--store <accounts.json>] [--codex-home <path>]',
   '  codex-usage unpublish-login [--email <email>] [--codex-home <path>]',
   '  codex-usage use <login-url> [--watch] [--label <name>] [--codex-home <path>]',
   '  codex-usage use [--watch] [--codex-home <path>]',
@@ -42,6 +43,64 @@ export async function runPublishLoginCommand({
   writeConfig,
 }) {
   const source = await resolvePublishSource(args, codexHome)
+  const { identity, payload } = await publishLoginFromSource({ args, config, readSnapshot, source })
+  await writeConfig(config)
+
+  console.log(
+    `Published Codex login for ${identity.email}${identity.planType ? ` (${identity.planType})` : ''}.`,
+  )
+  console.log(`Source: ${describeSource(source)}`)
+  printPublishNextSteps(payload.shareUrl ?? resolveDashboardOrigin(config))
+}
+
+/** Publish every ChatGPT account in a Codex switcher store. */
+export async function runPublishAllLoginsCommand({ args, codexHome, config, writeConfig }) {
+  const storePath = args.options.store
+    ? path.resolve(expandHome(args.options.store))
+    : resolveDefaultSwitcherStorePath()
+  const store = await readJsonFile(storePath)
+  const accounts = Array.isArray(store?.accounts) ? store.accounts : []
+
+  if (accounts.length === 0) {
+    throw new Error(`No accounts found in the switcher store at ${storePath}.`)
+  }
+
+  let published = 0
+  for (const account of accounts) {
+    const email = typeof account?.email === 'string' ? account.email.toLowerCase() : null
+    if (!email) {
+      continue
+    }
+
+    try {
+      const { identity } = await publishLoginFromSource({
+        args,
+        config,
+        readSnapshot: null,
+        source: { codexHome, email, kind: 'switcher', path: storePath },
+      })
+      published += 1
+      console.log(`Published ${identity.email}${identity.planType ? ` (${identity.planType})` : ''}.`)
+    } catch (error) {
+      console.error(`Skipped ${email}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  await writeConfig(config)
+  console.log(`Published ${published} of ${accounts.length} logins from ${storePath}.`)
+  printPublishNextSteps(resolveDashboardOrigin(config))
+}
+
+function printPublishNextSteps(shareUrl) {
+  console.log(
+    `Next: open ${shareUrl} and use "Share Codex login" to create a login command for someone. A pool command switches them across every published plan automatically.`,
+  )
+  console.log(
+    `Keep \`${NPX_COMMAND} sync --watch\` running on this machine so recipients follow these accounts' token refreshes.`,
+  )
+}
+
+async function publishLoginFromSource({ args, config, readSnapshot, source }) {
   const authFile = await readLoginFromSource(source)
   const identity = describeSharedLogin(authFile)
 
@@ -77,18 +136,8 @@ export async function runPublishLoginCommand({
       source,
     },
   ]
-  await writeConfig(config)
 
-  console.log(
-    `Published Codex login for ${identity.email}${identity.planType ? ` (${identity.planType})` : ''}.`,
-  )
-  console.log(`Source: ${describeSource(source)}`)
-  console.log(
-    `Next: open ${payload.shareUrl ?? origin} and use "Share Codex login" to create a login command for someone.`,
-  )
-  console.log(
-    `Keep \`${NPX_COMMAND} sync --watch\` running on this machine so recipients follow this account's token refreshes.`,
-  )
+  return { identity, payload }
 }
 
 export async function runUnpublishLoginCommand({ args, codexHome, config, writeConfig }) {
@@ -321,7 +370,7 @@ function describeSource(source) {
 // Recipient side: install a shared login, keep it fresh, restore the old one.
 // ---------------------------------------------------------------------------
 
-export async function runUseCommand({ args, codexHome }) {
+export async function runUseCommand({ args, codexHome, rateLimitReader = null }) {
   if (args.options.restore) {
     await restoreSharedLogin(codexHome)
     return
@@ -330,22 +379,26 @@ export async function runUseCommand({ args, codexHome }) {
   const claimUrl = args.positionals[0]
   let config = await readSharedLoginConfig(codexHome)
 
-  if (claimUrl) {
-    config = await installSharedLogin({ args, claimUrl, codexHome })
-  } else if (!config) {
-    throw new Error(
-      `No shared login is installed here. Run \`${NPX_COMMAND} use "<login-url>"\` with a login command from the dashboard.`,
-    )
-  } else {
-    const result = await syncSharedLoginOnce({ codexHome, config })
-    reportSyncResult(result, config)
-    if (result.stopped) {
-      return
+  try {
+    if (claimUrl) {
+      config = await installSharedLogin({ args, claimUrl, codexHome })
+    } else if (!config) {
+      throw new Error(
+        `No shared login is installed here. Run \`${NPX_COMMAND} use "<login-url>"\` with a login command from the dashboard.`,
+      )
+    } else {
+      const result = await syncSharedLoginOnce({ codexHome, config, rateLimitReader })
+      reportSyncResult(result, config)
+      if (result.stopped) {
+        return
+      }
     }
-  }
 
-  if (args.options.watch) {
-    await watchSharedLogin({ codexHome, config })
+    if (args.options.watch) {
+      await watchSharedLogin({ codexHome, config, rateLimitReader })
+    }
+  } finally {
+    await rateLimitReader?.close?.()
   }
 }
 
@@ -375,6 +428,9 @@ async function installSharedLogin({ args, claimUrl, codexHome }) {
 
   const plan = payload.account?.planType ? ` (${payload.account.planType})` : ''
   console.log(`Installed the shared Codex login for ${payload.account?.email ?? 'the shared account'}${plan}.`)
+  if (payload.scope === 'pool') {
+    console.log('This is a pool login: when this plan runs out, use --watch moves you to the next usable one.')
+  }
   console.log(`Auth file: ${authPath}`)
   if (backupPath) {
     console.log(`Your previous login is saved at ${backupPath}.`)
@@ -386,7 +442,7 @@ async function installSharedLogin({ args, claimUrl, codexHome }) {
   return config
 }
 
-export async function syncSharedLoginOnce({ codexHome, config }) {
+export async function syncSharedLoginOnce({ codexHome, config, rateLimitReader = null }) {
   const authPath = resolveAuthFilePath(codexHome)
   const local = await readJsonFile(authPath)
   let localFile = null
@@ -409,13 +465,18 @@ export async function syncSharedLoginOnce({ codexHome, config }) {
   }
 
   const fingerprint = localFile ? fingerprintSharedLogin(localFile) : 'missing'
+  const rateLimits = localFile && rateLimitReader
+    ? await rateLimitReader.read().catch(() => null)
+    : null
   let payload
 
   try {
     payload = await postJson(config.syncUrl, {
       accessToken: config.accessToken,
       authFile: localFile && fingerprint !== config.fingerprint ? localFile : undefined,
+      email: localFile ? describeSharedLogin(localFile).email : undefined,
       fingerprint,
+      rateLimits: rateLimits ?? undefined,
     }, 'Unable to sync the shared login.')
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 410)) {
@@ -426,8 +487,13 @@ export async function syncSharedLoginOnce({ codexHome, config }) {
     throw error
   }
 
-  if (payload.outcome === 'pull' && payload.authFile) {
+  if ((payload.outcome === 'pull' || payload.outcome === 'switch') && payload.authFile) {
     await writeJsonFilePrivately(authPath, buildRecipientAuthFile(payload.authFile))
+  }
+
+  if (payload.outcome === 'switch') {
+    config.account = payload.account ?? config.account
+    await rateLimitReader?.reset?.()
   }
 
   config.fingerprint = payload.fingerprint ?? fingerprint
@@ -435,10 +501,10 @@ export async function syncSharedLoginOnce({ codexHome, config }) {
   config.lastSyncedAt = new Date().toISOString()
   await writeSharedLoginConfig(codexHome, config)
 
-  return { outcome: payload.outcome, stopped: false }
+  return { account: payload.account, outcome: payload.outcome, pool: payload.pool ?? null, stopped: false }
 }
 
-async function watchSharedLogin({ codexHome, config }) {
+async function watchSharedLogin({ codexHome, config, rateLimitReader = null }) {
   const pollMs = config.pollMs ?? DEFAULT_POLL_MS
   console.log(`Watching the shared login every ${Math.round(pollMs / 1000)}s. Press Ctrl+C to stop.`)
 
@@ -451,8 +517,16 @@ async function watchSharedLogin({ codexHome, config }) {
 
     running = true
     try {
-      const result = await syncSharedLoginOnce({ codexHome, config })
-      if (result.outcome === 'pull') {
+      const result = await syncSharedLoginOnce({ codexHome, config, rateLimitReader })
+      if (result.outcome === 'switch') {
+        console.log(
+          `[${new Date().toLocaleTimeString()}] Switched to ${result.account?.email ?? 'the next plan'}${result.account?.planType ? ` (${result.account.planType})` : ''}. Restart Codex if it is open.`,
+        )
+      } else if (result.pool?.reason === 'exhausted' && result.pool.nextAvailableAt) {
+        console.log(
+          `[${new Date().toLocaleTimeString()}] Every shared plan is used up. Next reset ${new Date(result.pool.nextAvailableAt).toLocaleString()}.`,
+        )
+      } else if (result.outcome === 'pull') {
         console.log(`[${new Date().toLocaleTimeString()}] Installed a newer login generation.`)
       } else if (result.outcome === 'stored') {
         console.log(`[${new Date().toLocaleTimeString()}] Sent this machine's newer login to the dashboard.`)
@@ -535,6 +609,14 @@ function reportSyncResult(result, config) {
     )
   } else if (result.outcome === 'foreign') {
     console.log(result.reason)
+  } else if (result.outcome === 'switch') {
+    console.log(
+      `Switched to ${result.account?.email ?? 'the next plan'}${result.account?.planType ? ` (${result.account.planType})` : ''}. Restart Codex if it is open.`,
+    )
+  } else if (result.pool?.reason === 'exhausted' && result.pool.nextAvailableAt) {
+    console.log(
+      `Every shared plan is used up right now. Next reset ${new Date(result.pool.nextAvailableAt).toLocaleString()}.`,
+    )
   } else if (result.outcome === 'pull') {
     console.log(`Installed a newer login generation for ${email}. Restart Codex if it complains about the token.`)
   } else if (result.outcome === 'stored') {

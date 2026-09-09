@@ -139,29 +139,32 @@ npm view codex-usage-dashboard@latest version --prefer-online
 
 ## Share a Codex login
 
-Let someone run their local Codex CLI or Codex app on one of your ChatGPT
-plans. The dashboard stores the login encrypted, hands out single-use login
-commands, and keeps every copy on the newest token generation.
+Let someone run their local Codex CLI or Codex app on your ChatGPT plans. The
+dashboard stores each login encrypted, hands out single-use login commands,
+keeps every copy on the newest token generation, and moves recipients to your
+next usable plan when the one they are on runs out.
 
 ### Owner
 
-1. Pair the machine that holds the login (see above) and keep
+1. Pair the machine that holds the logins (see above) and keep
    `npx codex-usage-dashboard@latest sync --watch` running there.
-2. Publish the login:
+2. Publish your plans:
 
    ```bash
-   npx codex-usage-dashboard@latest publish-login
+   npx codex-usage-dashboard@latest publish-login --all
    ```
 
-   That publishes the account Codex is logged into on this machine. With a
-   Codex switcher store (`~/.codex-switcher/accounts.json`), add
-   `--email you@example.com` to publish that account from the store and keep
-   it fresh whether or not it is the active login. Use
-   `--auth-file /path/to/auth.json` for any other source.
+   `--all` publishes every account in the Codex switcher store
+   (`~/.codex-switcher/accounts.json`). Without `--all`, `publish-login`
+   publishes the account Codex is logged into on this machine;
+   `--email you@example.com` publishes one store account; and
+   `--auth-file /path/to/auth.json` uses any other source.
 3. Open <https://codexusage.vercel.app>, find **Share Codex login**, and select
-   **Create login command**. Send that command to the person. It is single use
-   and expires after 24 hours.
-4. **Revoke** a person or **Stop sharing** an account from the same card.
+   **Create login command**. That command follows every published plan: the
+   recipient starts on the plan the reset plan recommends and switches when it
+   hits zero. Each plan row also offers a **Pinned command** that never
+   switches. Commands are single use and expire after 24 hours.
+4. **Revoke** a person or **Stop sharing** a plan from the same card.
    Stopping also works from the terminal with
    `npx codex-usage-dashboard@latest unpublish-login --email you@example.com`.
 
@@ -181,6 +184,11 @@ Keep the login current while it is in use:
 ```bash
 npx codex-usage-dashboard@latest use --watch
 ```
+
+The watcher reports the plan's real rate limits to the dashboard once a
+minute, pulls token refreshes, and, for a pool login, installs the next usable
+plan when the current one is exhausted. It prints `Switched to ...` when that
+happens; restart the Codex app if it is open.
 
 Switch back to your own login at any time:
 

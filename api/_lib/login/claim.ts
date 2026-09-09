@@ -3,11 +3,17 @@ import { z } from 'zod'
 import { getPreferredDashboardOrigin } from '../../../src/shared/site.js'
 import { errorResponse, jsonResponse } from '../http.js'
 import {
+  chooseNextAccount,
+  loadPoolAccounts,
+  serializePoolDecision,
+} from '../login-pool.js'
+import {
   SHARED_LOGIN_SYNC_POLL_MS,
   findSecretByAccountId,
   openSecret,
   sharedLoginDeviceSchema,
   sharedLoginErrorResponse,
+  type LoginSecretRow,
 } from '../login-store.js'
 import { createOpaqueToken, hashToken } from '../security.js'
 import { serviceRoleSupabase } from '../supabase.js'
@@ -20,6 +26,8 @@ const claimBodySchema = z.object({
 /**
  * Recipient side. A single-use claim link turns into the encrypted login plus a
  * revocable access token the recipient's `use --watch` uses to stay in sync.
+ * A pool grant starts on whichever published account the reset plan
+ * recommends right now.
  */
 export async function POST(request: Request) {
   try {
@@ -62,7 +70,18 @@ export async function POST(request: Request) {
       return errorResponse('This login link has expired.', 410)
     }
 
-    const secret = await findSecretByAccountId(grant.account_id)
+    let secret: LoginSecretRow | null = null
+    let pool: ReturnType<typeof serializePoolDecision> | null = null
+
+    if (grant.scope === 'pool') {
+      const { accounts, secretsByAccountId } = await loadPoolAccounts(grant.owner_user_id)
+      const decision = chooseNextAccount({ accounts, currentAccountId: null })
+      secret = decision.accountId ? secretsByAccountId.get(decision.accountId) ?? null : null
+      pool = serializePoolDecision(decision)
+    } else if (grant.account_id) {
+      secret = await findSecretByAccountId(grant.account_id)
+    }
+
     if (!secret) {
       return errorResponse('This login is no longer shared.', 410)
     }
@@ -79,8 +98,10 @@ export async function POST(request: Request) {
         claimed_at: nowIso,
         claimed_label: body.device?.label?.trim() || machineName,
         claimed_machine_name: machineName,
+        current_account_id: secret.account_id,
         last_synced_at: nowIso,
         status: 'active',
+        switched_at: nowIso,
         sync_count: 1,
       })
       .eq('id', grant.id)
@@ -105,6 +126,8 @@ export async function POST(request: Request) {
       issuedAt: secret.token_issued_at,
       ok: true,
       pollMs: SHARED_LOGIN_SYNC_POLL_MS,
+      pool,
+      scope: grant.scope,
       syncUrl: `${url.origin}/api/login/sync`,
     })
   } catch (error) {

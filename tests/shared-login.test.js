@@ -89,10 +89,25 @@ test('the recipient sync pulls newer generations, pushes local refreshes, and re
   const serverFile = buildAuthFile({ issuedAt: ISSUED_AT, salt: 'shared' })
   const requests = []
   let mode = 'pull'
+  const switchedGeneration = buildAuthFile({ email: 'second@example.com', issuedAt: ISSUED_AT + 10, salt: 'second' })
   const server = await startJsonServer((body) => {
     requests.push(body)
     if (mode === 'revoked') {
       return { body: { error: 'This shared login was revoked.' }, status: 401 }
+    }
+
+    if (mode === 'switch') {
+      return {
+        body: {
+          account: { email: 'second@example.com', planType: 'pro' },
+          authFile: switchedGeneration,
+          fingerprint: fingerprintSharedLogin(switchedGeneration),
+          issuedAt: describeSharedLogin(switchedGeneration).issuedAt,
+          ok: true,
+          outcome: 'switch',
+          pool: { reason: 'switch' },
+        },
+      }
     }
 
     if (
@@ -167,6 +182,24 @@ test('the recipient sync pulls newer generations, pushes local refreshes, and re
   assert.match(JSON.parse(await readFile(authPath, 'utf8')).tokens.refresh_token, /refresh-x/)
 
   await writeFile(authPath, JSON.stringify(refreshedLocally))
+  mode = 'switch'
+  let resets = 0
+  const rateLimitReader = {
+    close: async () => {},
+    read: async () => ({ rateLimits: { primary: { usedPercent: 100, resetsAt: null, windowDurationMins: 300 } } }),
+    reset: async () => {
+      resets += 1
+    },
+  }
+  const switched = await syncSharedLoginOnce({ codexHome: dir, config, rateLimitReader })
+  assert.equal(switched.outcome, 'switch')
+  assert.equal(requests.at(-1).rateLimits.rateLimits.primary.usedPercent, 100, 'real rate limits are reported')
+  assert.equal(resets, 1, 'the app-server reader restarts after a switch')
+  assert.equal(config.account.email, 'second@example.com')
+  const afterSwitch = JSON.parse(await readFile(authPath, 'utf8'))
+  assert.equal(afterSwitch.tokens.refresh_token, switchedGeneration.tokens.refresh_token)
+  assert.equal(config.fingerprint, fingerprintSharedLogin(switchedGeneration))
+
   mode = 'revoked'
   const revoked = await syncSharedLoginOnce({ codexHome: dir, config })
   assert.equal(revoked.outcome, 'revoked')
