@@ -1,4 +1,4 @@
-import { formatWindowLabel, getRemainingPercent } from './codex'
+import { formatWindowLabel, getRemainingPercent } from './codex.js'
 
 export type RateLimitWindowKey = 'primary' | 'secondary'
 
