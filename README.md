@@ -9,6 +9,8 @@ see which account to use next.
 
 ![Codex Usage dashboard](./public/codexusage.png)
 
+> The generated commands install the pinned GitHub release `v0.3.0` because npm still carries 0.1.8, which has no `use` or `publish-login`. Publishing to npm needs the maintainer's own `npm login`; once npm carries 0.3.0 or newer, `CLI_INSTALL_SPEC` in `src/shared/cli.ts` and the two `NPX_COMMAND` constants under `bin/` go back to `codex-usage-dashboard@latest`.
+
 ## What it does
 
 - Collects the rate-limit windows reported by the local Codex CLI.
@@ -27,13 +29,13 @@ see which account to use next.
 3. Run the generated command before its token expires:
 
    ```bash
-   npx codex-usage-dashboard@latest pair "https://codexusage.vercel.app/api/pair/complete?token=..."
+   npx --yes "github:tario-you/codex-usage#v0.3.0" pair "https://codexusage.vercel.app/api/pair/complete?token=..."
    ```
 
 4. Keep the dashboard updated when needed:
 
    ```bash
-   npx codex-usage-dashboard@latest sync --watch
+   npx --yes "github:tario-you/codex-usage#v0.3.0" sync --watch
    ```
 
 The CLI stores the paired-device configuration in
@@ -42,7 +44,7 @@ The CLI stores the paired-device configuration in
 ### Start without a website account
 
 ```bash
-npx codex-usage-dashboard@latest connect --site "https://codexusage.vercel.app"
+npx --yes "github:tario-you/codex-usage#v0.3.0" connect --site "https://codexusage.vercel.app"
 ```
 
 ## Weekly-only Codex limits
@@ -78,7 +80,7 @@ If pairing still reports a native Codex `ENOENT`, test through a clean npm
 cache:
 
 ```bash
-npm_config_cache="$(mktemp -d)" npx --yes codex-usage-dashboard@latest pair "PAIRING_URL"
+npm_config_cache="$(mktemp -d)" npx --yes "github:tario-you/codex-usage#v0.3.0" pair "PAIRING_URL"
 ```
 
 If automatic repair also fails, confirm the installed Codex CLI works:
@@ -147,11 +149,11 @@ next usable plan when the one they are on runs out.
 ### Owner
 
 1. Pair the machine that holds the logins (see above) and keep
-   `npx codex-usage-dashboard@latest sync --watch` running there.
+   `npx --yes "github:tario-you/codex-usage#v0.3.0" sync --watch` running there.
 2. Publish your plans:
 
    ```bash
-   npx codex-usage-dashboard@latest publish-login --all
+   npx --yes "github:tario-you/codex-usage#v0.3.0" publish-login --all
    ```
 
    `--all` publishes every account in the Codex switcher store
@@ -170,12 +172,12 @@ next usable plan when the one they are on runs out.
    revoke it.
 5. **Revoke** a person or **Stop sharing** a plan from the same card.
    Stopping also works from the terminal with
-   `npx codex-usage-dashboard@latest unpublish-login --email you@example.com`.
+   `npx --yes "github:tario-you/codex-usage#v0.3.0" unpublish-login --email you@example.com`.
 
 ### Recipient
 
 ```bash
-npx codex-usage-dashboard@latest use "https://codexusage.vercel.app/api/login/claim?token=..."
+npx --yes "github:tario-you/codex-usage#v0.3.0" use "https://codexusage.vercel.app/api/login/claim?token=..."
 ```
 
 This backs up the current `~/.codex/auth.json` to
@@ -186,7 +188,7 @@ This backs up the current `~/.codex/auth.json` to
 Keep the login current while it is in use:
 
 ```bash
-npx codex-usage-dashboard@latest use --watch
+npx --yes "github:tario-you/codex-usage#v0.3.0" use --watch
 ```
 
 The watcher reports the plan's real rate limits to the dashboard once a
@@ -197,7 +199,7 @@ happens; restart the Codex app if it is open.
 Switch back to your own login at any time:
 
 ```bash
-npx codex-usage-dashboard@latest use --restore
+npx --yes "github:tario-you/codex-usage#v0.3.0" use --restore
 ```
 
 ### How refreshes stay consistent
