@@ -9,7 +9,7 @@ const revokeGrantBodySchema = z.object({
   grantId: z.uuid(),
 })
 
-/** Owner revokes one recipient. Their next sync gets 401 and stops. */
+/** The pool owner or the person who created the command revokes it. The recipient's next sync gets 401 and stops. */
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request)
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       .from('codex_login_grants')
       .update({ revoked_at: new Date().toISOString(), status: 'revoked' })
       .eq('id', body.grantId)
-      .eq('owner_user_id', user.id)
+      .or(`owner_user_id.eq.${user.id},created_by_user_id.eq.${user.id}`)
       .select('*')
       .maybeSingle()
 

@@ -186,6 +186,14 @@ account. The grant row carries `scope = 'pool'`, `account_id = null`, and
   client never applied cannot misfile usage.
 - **Unpublishing one plan** revokes only pinned grants for it; pool recipients
   on that plan move to the next one on their next sync.
+- **Invited viewers get their own pool command.** A user with an accepted,
+  unrevoked `codex_dashboard_shares` row for an owner sees that owner's pool
+  under **Shared with you** and can call `POST /api/login/grants/start` with
+  `scope: "pool"` and the owner's `ownerUserId`. The grant belongs to the
+  owner (visible and revocable on their card) and records
+  `created_by_user_id`, so the viewer sees and can revoke it too. Viewers
+  cannot create pinned commands, and pool access follows direct shares only,
+  never transitive ones.
 
 `publish-login --all` publishes every account in the switcher store with the
 combined `switcher` source, so the owner's `sync --watch` keeps all of them

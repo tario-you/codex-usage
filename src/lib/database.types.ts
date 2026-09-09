@@ -247,6 +247,7 @@ export interface Database {
           account_id: string | null
           scope: string
           current_account_id: string | null
+          created_by_user_id: string | null
           switched_at: string | null
           switch_count: number
           label: string | null
@@ -271,6 +272,7 @@ export interface Database {
           account_id?: string | null
           scope?: string
           current_account_id?: string | null
+          created_by_user_id?: string | null
           switched_at?: string | null
           switch_count?: number
           label?: string | null
@@ -295,6 +297,7 @@ export interface Database {
           account_id?: string | null
           scope?: string
           current_account_id?: string | null
+          created_by_user_id?: string | null
           switched_at?: string | null
           switch_count?: number
           label?: string | null
@@ -319,6 +322,13 @@ export interface Database {
             columns: ['account_id']
             isOneToOne: false
             referencedRelation: 'codex_accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_login_grants_created_by_user_id_fkey'
+            columns: ['created_by_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
             referencedColumns: ['id']
           },
           {

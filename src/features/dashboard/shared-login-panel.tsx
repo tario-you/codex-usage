@@ -54,9 +54,25 @@ interface SharedLoginGrant {
   syncCount: number
 }
 
+interface SharedPool {
+  grants: SharedLoginGrant[]
+  inviter: { avatarUrl: string | null; displayName: string; email: string | null }
+  ownerUserId: string
+  planCount: number
+}
+
 interface SharedLoginShares {
   grants: SharedLoginGrant[]
   publications: SharedLoginPublication[]
+  sharedPools: SharedPool[]
+}
+
+interface CommandTarget {
+  accountId?: string
+  key: string
+  ownerUserId?: string
+  scope: 'account' | 'pool'
+  title: string
 }
 
 interface LoginCommandState {
@@ -103,7 +119,8 @@ export function SharedLoginPanel({
     return () => window.clearTimeout(timeoutId)
   }, [copiedKey])
 
-  const shares = sharesQuery.data ?? { grants: [], publications: [] }
+  const shares = sharesQuery.data ?? { grants: [], publications: [], sharedPools: [] }
+  const sharedPools = shares.sharedPools.filter((pool) => pool.planCount > 0)
   const ownedAccountIds = new Set(
     accounts.filter((account) => account.access_scope === 'owned').map((account) => account.id),
   )
@@ -156,26 +173,25 @@ export function SharedLoginPanel({
     }
   }
 
-  async function handleCreateCommand(target: SharedLoginPublication | 'pool') {
-    const key = target === 'pool' ? POOL_KEY : target.accountId
+  async function handleCreateCommand(target: CommandTarget) {
+    const key = target.key
     setBusyKey(`grant:${key}`)
     setError(null)
 
     try {
       const payload = await callApi<{ command: string; expiresAt: string }>(
         '/api/login/grants/start',
-        target === 'pool'
-          ? { scope: 'pool' }
-          : { accountId: target.accountId, scope: 'account' },
+        {
+          accountId: target.accountId,
+          ownerUserId: target.ownerUserId,
+          scope: target.scope,
+        },
       )
       setLoginCommand({
         command: payload.command,
         expiresAt: payload.expiresAt,
         key,
-        title:
-          target === 'pool'
-            ? 'Auto-switching login across every plan below'
-            : `Login pinned to ${target.email}`,
+        title: target.title,
       })
       await copyText(`command:${key}`, payload.command)
       await sharesQuery.refetch()
@@ -238,7 +254,7 @@ export function SharedLoginPanel({
             <CardDescription className="text-xs">
               One command puts someone's local Codex on your plans. Their machine
               reports usage here and moves to your next usable plan when one runs
-              out.
+              out. People you invite can get their own command below.
             </CardDescription>
           </div>
           {hasPublications ? (
@@ -247,7 +263,13 @@ export function SharedLoginPanel({
               <Button
                 className="shrink-0"
                 disabled={Boolean(busyKey)}
-                onClick={() => void handleCreateCommand('pool')}
+                onClick={() =>
+                  void handleCreateCommand({
+                    key: POOL_KEY,
+                    scope: 'pool',
+                    title: 'Auto-switching login across every plan below',
+                  })
+                }
                 size="sm"
                 type="button"
               >
@@ -270,7 +292,84 @@ export function SharedLoginPanel({
           <Notice tone="default">Loading shared logins...</Notice>
         ) : null}
 
-        {sharesQuery.data && !hasPublications ? (
+        {sharedPools.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Shared with you
+            </p>
+            <ul className="divide-y divide-border rounded-md border border-border text-sm">
+              {sharedPools.map((pool) => (
+                <li key={pool.ownerUserId} className="space-y-1.5 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-foreground">
+                        {pool.inviter.displayName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {pool.planCount} {pool.planCount === 1 ? 'plan' : 'plans'} · auto-switching
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {copiedKey === `command:pool:${pool.ownerUserId}` ? <CopiedPill /> : null}
+                      <Button
+                        disabled={Boolean(busyKey)}
+                        onClick={() =>
+                          void handleCreateCommand({
+                            key: `pool:${pool.ownerUserId}`,
+                            ownerUserId: pool.ownerUserId,
+                            scope: 'pool',
+                            title: `Auto-switching login across ${pool.inviter.displayName}'s plans`,
+                          })
+                        }
+                        size="sm"
+                        type="button"
+                      >
+                        <Shuffle className="mr-1.5 size-3.5" />
+                        {busyKey === `grant:pool:${pool.ownerUserId}`
+                          ? 'Creating command...'
+                          : 'Get login command'}
+                      </Button>
+                    </div>
+                  </div>
+                  {pool.grants.filter((grant) => grant.status === 'active' || grant.status === 'pending').length > 0 ? (
+                    <ul className="divide-y divide-border rounded-md border border-border">
+                      {pool.grants
+                        .filter((grant) => grant.status === 'active' || grant.status === 'pending')
+                        .map((grant) => (
+                          <li
+                            key={grant.id}
+                            className="flex flex-wrap items-center justify-between gap-3 px-3 py-1.5"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-foreground">
+                                {describeGrant(grant)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {describeGrantActivity(grant, [])}
+                              </p>
+                            </div>
+                            <Button
+                              className="text-muted-foreground hover:text-destructive"
+                              disabled={Boolean(busyKey)}
+                              onClick={() => void handleRevoke(grant)}
+                              size="sm"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Ban className="mr-1 size-3.5" />
+                              {busyKey === `revoke:${grant.id}` ? 'Revoking...' : 'Revoke'}
+                            </Button>
+                          </li>
+                        ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {sharesQuery.data && !hasPublications && sharedPools.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               No login is published yet. On the machine paired with this
@@ -387,7 +486,14 @@ export function SharedLoginPanel({
                     {copiedKey === `command:${publication.accountId}` ? <CopiedPill /> : null}
                     <Button
                       disabled={Boolean(busyKey)}
-                      onClick={() => void handleCreateCommand(publication)}
+                      onClick={() =>
+                        void handleCreateCommand({
+                          accountId: publication.accountId,
+                          key: publication.accountId,
+                          scope: 'account',
+                          title: `Login pinned to ${publication.email}`,
+                        })
+                      }
                       size="sm"
                       type="button"
                       variant="ghost"

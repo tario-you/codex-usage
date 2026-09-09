@@ -923,8 +923,8 @@ export function DashboardPage() {
                 <CardHeader>
                   <CardTitle>Accept shared dashboard access</CardTitle>
                   <CardDescription>
-                    Sign in with Google and this dashboard will load the same
-                    Codex accounts the inviter can see.
+                    Sign in with Google to see the inviter's Codex accounts and
+                    get a login command for their plans.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
