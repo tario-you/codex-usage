@@ -79,6 +79,8 @@ import {
 
 import { ResetPlanPanel } from './reset-plan-panel'
 import { NoteEditor, NoteSecret } from './account-notes'
+import { RepairSignInsBanner } from './repair-signins'
+import { expiredEmailSet, useRepairState } from './repair-signins-state'
 import { noteKey, useAccountNotes, type AccountNotesController } from './account-notes-state'
 import { SharedLoginPanel } from './shared-login-panel'
 import { GettingStartedPanel } from './getting-started-panel'
@@ -126,6 +128,8 @@ export function DashboardPage() {
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const accountNotes = useAccountNotes({ onInvalidSession: handleInvalidSession, session })
+  const repairState = useRepairState(session)
+  const expiredEmails = expiredEmailSet(repairState.data)
   const [guideHidden, setGuideHidden] = useState(false)
   const [hasAttemptedInviteAccept, setHasAttemptedInviteAccept] = useState(false)
   const [terminalCopyError, setTerminalCopyError] = useState<string | null>(null)
@@ -1259,6 +1263,7 @@ export function DashboardPage() {
                             ? ` · ${summary.staleAccounts} stale`
                             : ''}
                         </CardDescription>
+                        <RepairSignInsBanner devices={repairState.data} session={session} />
                       </div>
                       <Button
                         className="shrink-0"
@@ -1311,6 +1316,7 @@ export function DashboardPage() {
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={accounts}
+                              expiredEmails={expiredEmails}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
                               primaryInviter={primaryInviter}
@@ -1324,6 +1330,7 @@ export function DashboardPage() {
                           <div className="hidden md:block">
                             <AccountTable
                               accounts={accounts}
+                              expiredEmails={expiredEmails}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
                               primaryInviter={primaryInviter}
@@ -1762,6 +1769,7 @@ function formatResetCredits(account: DashboardAccountRow) {
 
 function AccountTable({
   accounts,
+  expiredEmails,
   notes,
   onSaveUsageOverride,
   primaryInviter,
@@ -1770,6 +1778,7 @@ function AccountTable({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  expiredEmails: Set<string>
   notes: AccountNotesController | null
   onSaveUsageOverride: (
     account: DashboardAccountRow,
@@ -1868,6 +1877,11 @@ function AccountTable({
                   {account.plan_type ? (
                     <span className="rounded border border-border px-1 text-[10px] uppercase leading-4 text-muted-foreground">
                       {account.plan_type}
+                    </span>
+                  ) : null}
+                  {expiredEmails.has(noteKey(account.email)) ? (
+                    <span className="rounded border border-amber-500/40 px-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400" title="This machine's saved sign-in for this account is refused; use Fix sign-ins">
+                      sign-in expired
                     </span>
                   ) : null}
                   {!isOwnedAccount ? (
@@ -2025,6 +2039,7 @@ function AccountTable({
 
 function AccountSummaryList({
   accounts,
+  expiredEmails,
   notes,
   onSaveUsageOverride,
   primaryInviter,
@@ -2033,6 +2048,7 @@ function AccountSummaryList({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  expiredEmails: Set<string>
   notes: AccountNotesController | null
   onSaveUsageOverride: (
     account: DashboardAccountRow,
@@ -2061,6 +2077,9 @@ function AccountSummaryList({
                   <p className="truncate text-sm text-muted-foreground">
                     {identity.secondary}
                   </p>
+                ) : null}
+                {expiredEmails.has(noteKey(account.email)) ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">sign-in expired</p>
                 ) : null}
                 {!isOwnedAccount ? (
                   <SharedAccessNote inviter={primaryInviter} />
