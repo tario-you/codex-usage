@@ -1753,6 +1753,13 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
   return { primary, secondary }
 }
 
+/** Usage-limit reset credits the account owns, from the latest snapshot; a dot when the sync never carried them. */
+function formatResetCredits(account: DashboardAccountRow) {
+  const raw = account.raw_rate_limits as { resetCredits?: { available?: unknown } } | null
+  const available = raw?.resetCredits?.available
+  return typeof available === 'number' ? String(available) : '·'
+}
+
 function AccountTable({
   accounts,
   notes,
@@ -1774,7 +1781,7 @@ function AccountTable({
   savingUsageOverride: string | null
   unlinkingAccountId: string | null
 }) {
-  const columnCount = notes ? 7 : 4
+  const columnCount = notes ? 9 : 6
   const accountEmails = new Set(accounts.map((account) => noteKey(account.email)).filter(Boolean))
   const noteOnly = notes ? notes.notes.filter((note) => !accountEmails.has(noteKey(note.email))) : []
   const emailSuggestions = notes
@@ -1792,12 +1799,14 @@ function AccountTable({
     ) : null
 
   return (
-    <Table className={notes ? 'min-w-[1040px]' : 'min-w-[720px]'}>
+    <Table className={notes ? 'min-w-[1120px]' : 'min-w-[800px]'}>
       <TableHeader className="bg-muted/50">
         <TableRow className="hover:bg-muted/50">
+          <TableHead className="h-8 w-8 px-3 text-right text-xs">#</TableHead>
           <TableHead className="h-8 px-4 text-xs">Account</TableHead>
           <TableHead className="h-8 text-xs">Synced</TableHead>
           <TableHead className="h-8 text-xs">Usable</TableHead>
+          <TableHead className="h-8 text-xs" title="Usage-limit reset credits the account owns">Resets</TableHead>
           {notes ? (
             <>
               <TableHead className="h-8 text-xs">ChatGPT</TableHead>
@@ -1833,7 +1842,7 @@ function AccountTable({
             </TableCell>
           </TableRow>
         ) : null}
-        {accounts.map((account) => {
+        {accounts.map((account, index) => {
           const identity = getAccountIdentityLines(account)
           const limitWindows = getRateLimitWindows(account)
           const isOwnedAccount = account.access_scope === 'owned'
@@ -1845,6 +1854,9 @@ function AccountTable({
 
           return (
             <TableRow key={account.id}>
+              <TableCell className="px-3 py-1.5 text-right text-xs text-muted-foreground tabular-nums">
+                {index + 1}
+              </TableCell>
               <TableCell className="px-4 py-1.5">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <p
@@ -1921,6 +1933,9 @@ function AccountTable({
                   )}
                 </div>
               </TableCell>
+              <TableCell className="py-1.5 text-xs tabular-nums">
+                {formatResetCredits(account)}
+              </TableCell>
               {notes ? (
                 <>
                   <TableCell className="py-1.5">
@@ -1972,12 +1987,14 @@ function AccountTable({
                 editorRow(`note:${note.email}`)
               ) : (
                 <TableRow key={`note:${note.email}`}>
+                  <TableCell className="px-3 py-1.5" />
                   <TableCell className="px-4 py-1.5">
                     <p className="truncate font-mono text-xs" title={note.email}>
                       {note.email}
                     </p>
                   </TableCell>
                   <TableCell className="py-1.5 text-xs text-muted-foreground">note only</TableCell>
+                  <TableCell className="py-1.5 text-xs text-muted-foreground">·</TableCell>
                   <TableCell className="py-1.5 text-xs text-muted-foreground">·</TableCell>
                   <TableCell className="py-1.5"><NoteSecret controller={notes} field="chatgptPassword" note={note} /></TableCell>
                   <TableCell className="py-1.5"><NoteSecret controller={notes} field="googlePassword" note={note} /></TableCell>
@@ -2063,6 +2080,7 @@ function AccountSummaryList({
                 label="Snapshot"
                 value={formatRelativeTimestamp(account.last_snapshot_at)}
               />
+              <MetaField label="Resets" value={formatResetCredits(account)} />
               <MetaField
                 label="Plan first seen"
                 value={formatPlanObservedAt(account)}

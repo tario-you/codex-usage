@@ -27,6 +27,7 @@ const usageBody = (used, extras = []) => ({
   rate_limit: { allowed: used < 100, limit_reached: used >= 100, primary_window: { used_percent: used, limit_window_seconds: 604800, reset_at: 1_789_453_355 }, secondary_window: null },
   additional_rate_limits: extras,
   credits: { has_credits: false, unlimited: false, balance: '0' },
+  rate_limit_reset_credits: { available_count: 2, applicable_available_count: 1 },
 })
 
 test('the usage endpoint response becomes a payload the dashboard sync schema accepts', () => {
@@ -38,6 +39,7 @@ test('the usage endpoint response becomes a payload the dashboard sync schema ac
   assert.equal(limits.rateLimits.secondary, null)
   assert.deepEqual(Object.keys(limits.rateLimitsByLimitId).sort(), ['codex', 'codex_spark'])
   assert.equal(limits.rateLimitsByLimitId.codex_spark.primary.windowDurationMins, 300)
+  assert.deepEqual(limits.rateLimits.resetCredits, { applicable: 1, available: 2 }, 'the reset credits ride the snapshot')
 })
 
 test('login add saves a new account with its plan and updates an existing one in place', () => {

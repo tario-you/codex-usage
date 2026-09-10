@@ -12,8 +12,14 @@ const creditsSchema = z.object({
   unlimited: z.boolean(),
 })
 
+const resetCreditsSchema = z.object({
+  applicable: z.number().int().nonnegative().nullable(),
+  available: z.number().int().nonnegative(),
+})
+
 const rateLimitSnapshotSchema = z.object({
   credits: creditsSchema.nullable(),
+  resetCredits: resetCreditsSchema.nullish(),
   limitId: z.string().nullable(),
   limitName: z.string().nullable(),
   planType: z.string().nullable(),
