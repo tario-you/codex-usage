@@ -21,6 +21,8 @@ import { uploadSwitchEvents } from './lib/switch-events.js'
 import {
   DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
   MIN_SYNC_ALL_INTERVAL_SECONDS,
+  expiredEmailsFromResults,
+  fetchUsage,
   readStore,
   resolveStorePath,
   syncAllOnce,
@@ -631,6 +633,7 @@ async function runSyncCommand(args) {
 async function runSyncAllCommand(args, config, codexHome) {
   const storePath = resolveStorePath(args.options.store)
   const device = buildDevicePayload(args, codexHome, config.label)
+  let lastExpired = []
 
   const once = async () => {
     let activeAuthFile = null
@@ -644,6 +647,7 @@ async function runSyncAllCommand(args, config, codexHome) {
       }
     }
     const summary = await syncAllOnce({ activeAuthFile, config, device, storePath })
+    lastExpired = expiredEmailsFromResults(summary.results)
     for (const email of summary.added) console.log(`Saved the login this machine is signed into: ${email}.`)
     for (const result of summary.results) {
       console.log(
@@ -669,14 +673,90 @@ async function runSyncAllCommand(args, config, codexHome) {
     Number.isFinite(requested) ? requested : DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
   )
   console.log(`Watching every ${everySeconds}s. Press Ctrl+C to stop.`)
+  // Between passes the agent asks the dashboard every REPAIR_POLL_SECONDS
+  // whether the owner clicked Fix sign-ins; a request opens one browser
+  // sign-in per expired login right here, then the next pass syncs them.
+  let sinceSync = 0
   while (true) {
-    await new Promise((resolve) => setTimeout(resolve, everySeconds * 1000))
+    await new Promise((resolve) => setTimeout(resolve, REPAIR_POLL_SECONDS * 1000))
+    sinceSync += REPAIR_POLL_SECONDS
+    try {
+      const pending = await pollRepairRequest(config, lastExpired)
+      if (pending?.emails?.length) {
+        console.log(`The dashboard asked to fix sign-ins: ${pending.emails.join(', ')}`)
+        const results = await repairLogins({ emails: pending.emails, storePath })
+        await reportRepairResults(config, results)
+        sinceSync = everySeconds
+      }
+    } catch (error) {
+      console.error(`[sign-in repair] ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (sinceSync < everySeconds) continue
+    sinceSync = 0
     try {
       await once()
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error))
     }
   }
+}
+
+const REPAIR_POLL_SECONDS = 20
+
+async function pollRepairRequest(config, expired) {
+  const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), {
+    body: JSON.stringify({ deviceToken: config.deviceToken, expired }),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  })
+  const payload = await parseResponseBody(response)
+  if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair poll failed.'))
+  return payload?.pending ?? null
+}
+
+async function reportRepairResults(config, results) {
+  const response = await fetch(new URL('/api/login/repair/done', config.syncUrl), {
+    body: JSON.stringify({ deviceToken: config.deviceToken, results }),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  })
+  const payload = await parseResponseBody(response)
+  if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair report failed.'))
+}
+
+/**
+ * Sign the given logins in again, one browser sign-in after another. With no
+ * emails, every saved login whose refresh is refused is repaired.
+ */
+async function repairLogins({ emails = null, storePath }) {
+  const store = await readStore(storePath)
+  let targets = (emails ?? []).map((email) => String(email).trim().toLowerCase()).filter(Boolean)
+  if (targets.length === 0) {
+    for (const account of store.accounts) {
+      const tokens = account.auth_data
+      if (!tokens?.access_token || !tokens?.refresh_token || !tokens?.account_id) continue
+      const usage = await fetchUsage(tokens)
+      if (usage.error && /sign-in expired/i.test(usage.error) && account.email) targets.push(account.email.toLowerCase())
+    }
+  }
+  if (targets.length === 0) {
+    console.log('Every saved sign-in still works; nothing to repair.')
+    return []
+  }
+  const results = []
+  for (const expected of targets) {
+    console.log(`Sign in as ${expected} in the browser tab that opens.`)
+    try {
+      const { account } = await addLoginInteractively({ expectedEmail: expected, storePath })
+      const got = (account.email ?? '').toLowerCase()
+      results.push(got === expected ? { email: expected, outcome: 'signed-in' } : { detail: `saved ${got}`, email: expected, outcome: 'mismatch' })
+    } catch (error) {
+      results.push({ detail: (error instanceof Error ? error.message : String(error)).slice(0, 300), email: expected, outcome: 'failed' })
+    }
+  }
+  const signedIn = results.filter((result) => result.outcome === 'signed-in').length
+  console.log(`Repaired ${signedIn} of ${targets.length} sign-in(s).`)
+  return results
 }
 
 /**
@@ -712,10 +792,25 @@ async function runLoginCommand(args) {
     return
   }
 
-  if (action !== 'add') {
-    throw new Error('Usage: login add | login list | login remove --email <email>')
+  if (action === 'repair') {
+    const emails = args.options.emails ? String(args.options.emails).split(',') : null
+    await repairLogins({ emails, storePath })
+    return
   }
 
+  if (action !== 'add') {
+    throw new Error('Usage: login add | login list | login repair [--emails a,b] | login remove --email <email>')
+  }
+
+  const { account, created, store } = await addLoginInteractively({ storePath })
+  console.log(
+    `${created ? 'Saved' : 'Updated'} ${account.email ?? account.id}. ${store.accounts.length} saved account(s) in ${storePath}.`,
+  )
+  console.log(`Next: ${NPX_COMMAND} sync --all --watch`)
+}
+
+/** One browser sign-in through a throwaway CODEX_HOME, saved into the store. */
+async function addLoginInteractively({ expectedEmail = null, storePath }) {
   const home = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-login-'))
   const client = new StdioCodexClient({ codexHome: home })
   try {
@@ -732,7 +827,11 @@ async function runLoginCommand(args) {
     })
     const started = await client.request('account/login/start', { type: 'chatgpt' })
     if (!started?.authUrl) throw new Error('Codex did not return a sign-in link.')
-    console.log('Sign in with the account you want to add. Finish in the browser, then come back here.')
+    console.log(
+      expectedEmail
+        ? `Sign in as ${expectedEmail}. Finish in the browser, then come back here.`
+        : 'Sign in with the account you want to add. Finish in the browser, then come back here.',
+    )
     const opened = await openDashboard(started.authUrl)
     if (opened === 'browser') console.log(`If the browser did not open: ${started.authUrl}`)
     await completed
@@ -743,10 +842,7 @@ async function runLoginCommand(args) {
     const store = await readStore(storePath)
     const { account, created } = upsertStoreAccount(store, authFile)
     await writeStore(storePath, store)
-    console.log(
-      `${created ? 'Saved' : 'Updated'} ${account.email ?? account.id}. ${store.accounts.length} saved account(s) in ${storePath}.`,
-    )
-    console.log(`Next: ${NPX_COMMAND} sync --all --watch`)
+    return { account, created, store }
   } finally {
     await client.close()
     await rm(home, { force: true, recursive: true })
@@ -1260,6 +1356,7 @@ function printUsage() {
   console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>]')
   console.log('  codex-usage login add [--store <accounts.json>]')
   console.log('  codex-usage login list [--store <accounts.json>]')
+  console.log('  codex-usage login repair [--emails a@x,b@y] [--store <accounts.json>]')
   console.log('  codex-usage login remove --email <email> [--store <accounts.json>]')
   for (const line of sharedLoginUsageLines) {
     console.log(line)

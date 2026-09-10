@@ -85,6 +85,18 @@ five minutes (`--every 120` for two). `login list` shows what is saved and
 `login remove --email you@example.com` forgets one. The machine still has to
 be paired once (section 1) so the dashboard knows whose accounts these are.
 
+### 1c. Expired sign-ins fix themselves from the dashboard
+
+A saved sign-in stops refreshing every so often (OpenAI refuses the refresh
+with a 401). The sync agent reports those accounts, the dashboard marks their
+rows "sign-in expired" and shows **Fix sign-ins** under the Plans title. One
+click asks the machine that holds the accounts to open one browser sign-in per
+account; you sign in there and nothing else. The same thing from the terminal:
+
+```bash
+npx codex-usage-dashboard@latest login repair
+```
+
 ### 2. Let a friend use your plans
 
 On your side, once:

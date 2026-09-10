@@ -250,3 +250,11 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
     total: store.accounts.length,
   }
 }
+
+/** Emails whose saved sign-in is dead: the only failures a fresh sign-in fixes. */
+export function expiredEmailsFromResults(results) {
+  return (results ?? [])
+    .filter((result) => !result.ok && /sign-in expired/i.test(String(result.reason ?? '')))
+    .map((result) => String(result.email ?? '').trim().toLowerCase())
+    .filter((email) => email.includes('@'))
+}
