@@ -252,9 +252,10 @@ export function SharedLoginPanel({
           <div className="min-w-0">
             <CardTitle>Share Codex login</CardTitle>
             <CardDescription className="text-xs">
-              One command puts someone's local Codex on your plans. Their machine
-              reports usage here and moves to your next usable plan when one runs
-              out. People you invite can get their own command below.
+              Let someone run their own Codex on your plans. 1. Create login command.
+              2. Send it to them. 3. They run it once in Terminal and keep that window
+              open. Their Codex signs into your next usable plan and moves on by itself
+              when one runs out. Add a machine is different: it only reports usage.
             </CardDescription>
           </div>
           {hasPublications ? (

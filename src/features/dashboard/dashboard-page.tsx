@@ -8,6 +8,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
+  CircleHelp,
   AlertTriangle,
   Check,
   Copy,
@@ -76,6 +77,7 @@ import {
 import { ResetPlanPanel } from './reset-plan-panel'
 import { AccountNotesPanel } from './account-notes-panel'
 import { SharedLoginPanel } from './shared-login-panel'
+import { GettingStartedPanel } from './getting-started-panel'
 import { SwitchHistoryPanel } from './switch-history-panel'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 
@@ -118,6 +120,8 @@ export function DashboardPage() {
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false)
   const [isCreatingInvite, setIsCreatingInvite] = useState(false)
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
+  const [guideHidden, setGuideHidden] = useState(false)
   const [hasAttemptedInviteAccept, setHasAttemptedInviteAccept] = useState(false)
   const [terminalCopyError, setTerminalCopyError] = useState<string | null>(null)
   const [isTerminalCommandCopied, setIsTerminalCommandCopied] = useState(false)
@@ -194,6 +198,8 @@ export function DashboardPage() {
   const hasAccountsDetails = Boolean(
     accountsQuery.error || unlinkError || isLoadingAccounts || accounts.length > 0,
   )
+  const guideVisible =
+    showGuide || (!isLoadingAccounts && accounts.length === 0 && !guideHidden)
   const acceptInviteOnAuth = useEffectEvent(() => {
     void handleAcceptInvite()
   })
@@ -874,21 +880,35 @@ export function DashboardPage() {
               {session && !showInviteLanding ? (
                 <div className="flex items-center gap-2">
                   <Button
+                    aria-pressed={guideVisible}
+                    onClick={() => {
+                      setGuideHidden(false)
+                      setShowGuide((value) => !value)
+                    }}
+                    size="sm"
+                    title="What each button does"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <CircleHelp className="mr-1.5 size-3.5" />
+                    How it works
+                  </Button>
+                  <Button
                     disabled={isGeneratingPairing}
                     onClick={() => void handleStartPairing()}
                     size="sm"
-                    title="Get a one-line command that adds a machine's Codex usage here"
+                    title="Show a machine's own Codex usage here. This does not sign anyone into your plans."
                     type="button"
                     variant="outline"
                   >
                     <TerminalSquare className="mr-1.5 size-3.5" />
-                    {isGeneratingPairing ? 'Creating...' : 'Pair a machine'}
+                    {isGeneratingPairing ? 'Creating...' : 'Add a machine'}
                   </Button>
                   <Button
                     disabled={isCreatingInvite}
                     onClick={() => void handleCreateInvite()}
                     size="sm"
-                    title="Get a link that lets someone view your plans without a login"
+                    title="Get a view-only link. They see your plans and cannot use them."
                     type="button"
                     variant="outline"
                   >
@@ -1162,6 +1182,17 @@ export function DashboardPage() {
                   </Card>
                 ) : null}
 
+                {guideVisible ? (
+                  <GettingStartedPanel
+                    onAddMachine={() => void handleStartPairing()}
+                    onDismiss={() => {
+                      setShowGuide(false)
+                      setGuideHidden(true)
+                    }}
+                    onInviteViewer={() => void handleCreateInvite()}
+                  />
+                ) : null}
+
                 {pairingError || inviteCreateError || pairingCommand || shareInvite ? (
                 <Card size="sm">
                   <CardContent className="space-y-2">
@@ -1171,10 +1202,14 @@ export function DashboardPage() {
                     ) : null}
                     {pairingCommand ? (
                       <>
+                        <p className="text-xs text-muted-foreground">
+                          This adds that machine's own usage to your dashboard. To let
+                          someone use your plans, use Share Codex login below.
+                        </p>
                         <CommandRow
                           copied={isPairingCommandCopied}
                           error={pairingCopyError}
-                          label="Run on the machine"
+                          label="1. Run this once, in Terminal, on the machine where you use Codex"
                           meta={`Expires ${formatTimestamp(pairingCommand.expiresAt)}`}
                           onCopy={() => void handleCopyCommand()}
                           value={pairingCommand.command}
@@ -1182,7 +1217,7 @@ export function DashboardPage() {
                         <CommandRow
                           copied={isSyncCommandCopied}
                           error={syncCommandCopyError}
-                          label="Keep running for live updates"
+                          label="2. Optional: keep this running there for live updates"
                           onCopy={() => void handleCopySyncCommand()}
                           value={pairingCommand.syncCommand}
                         />
@@ -1192,7 +1227,7 @@ export function DashboardPage() {
                       <CommandRow
                         copied={isInviteLinkCopied}
                         error={inviteCopyError}
-                        label="Invite link"
+                        label="Send this view-only link. They sign in with Google and see your plans."
                         meta={`Expires ${formatTimestamp(shareInvite.expiresAt)}`}
                         onCopy={() => void handleCopyInviteLink()}
                         value={shareInvite.inviteUrl}
@@ -1300,11 +1335,13 @@ export function DashboardPage() {
 
                 <SwitchHistoryPanel session={session} />
 
-                <SharedLoginPanel
-                  accounts={accounts}
-                  onInvalidSession={handleInvalidSession}
-                  session={session}
-                />
+                <div id="share-codex-login">
+                  <SharedLoginPanel
+                    accounts={accounts}
+                    onInvalidSession={handleInvalidSession}
+                    session={session}
+                  />
+                </div>
 
                 <AccountNotesPanel
                   onInvalidSession={handleInvalidSession}
@@ -1359,9 +1396,15 @@ function TerminalConnectView({
       {loginError ? <InlineMessage tone="error">{loginError}</InlineMessage> : null}
 
       <section className="space-y-4">
-        <h2 className="text-2xl font-semibold tracking-[-0.02em]">
-          Connect from terminal
-        </h2>
+        <h2 className="text-2xl font-semibold tracking-[-0.02em]">Start here</h2>
+        <p className="text-sm text-muted-foreground">
+          Codex usage shows how much of every Codex plan is left, plans which account to use
+          next, and switches machines to the next plan automatically.
+        </p>
+        <p className="text-sm text-foreground">
+          Run this in Terminal on the machine where you use Codex. It links that machine and
+          opens your dashboard:
+        </p>
 
         {statusMessage ? (
           <p aria-live="polite" className="text-sm text-muted-foreground" role="status">
@@ -1391,6 +1434,12 @@ function TerminalConnectView({
           </Button>
           {connectCommand}
         </div>
+
+        <p className="text-sm text-muted-foreground">
+          Got something from a friend? An invite link: sign in with Google at the top right to
+          see their dashboard. A login command (it starts with <code>npx</code> and contains{' '}
+          <code>use</code>): run it in Terminal and keep the window open. No sign-in needed.
+        </p>
 
         {terminalCopyError ? (
           <InlineMessage tone="error">{terminalCopyError}</InlineMessage>
@@ -1500,7 +1549,12 @@ function LoadingRows() {
 }
 
 function EmptyState() {
-  return null
+  return (
+    <p className="px-1 py-2 text-sm text-muted-foreground">
+      No machines yet. Choose Add a machine, then run the command in Terminal on the
+      computer where you use Codex. Its plans show up here within a minute.
+    </p>
+  )
 }
 
 function WeeklyUsageHistoryPanel({
