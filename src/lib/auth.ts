@@ -26,7 +26,7 @@ export const INVALID_SESSION_MESSAGE =
 
 const AUTH_STATE_TIMEOUT_MS = 8_000
 const AUTH_STATE_TIMEOUT_MESSAGE =
-  'Checking your sign-in timed out. Refresh or sign in again.'
+  'The sign-in service (Supabase Auth) is not responding, so your saved session could not be refreshed. Try again in a few minutes.'
 const AUTH_STATE_FAILURE_MESSAGE =
   'Unable to check your sign-in. Refresh or sign in again.'
 
@@ -111,39 +111,16 @@ async function hydrateAuthState() {
   }
 
   const redirectError = await resolveSessionFromRedirect()
+  // The saved session is trusted as long as its token is unexpired: no call
+  // to Supabase Auth on load, so an Auth outage never blanks a signed-in
+  // dashboard. A revoked session surfaces as a 401 from our own API, which
+  // signs out locally. getSession() only touches the network to refresh an
+  // expired token.
   const { data } = await supabase.auth.getSession()
-  const validatedSession = await validateSession(data.session ?? null)
 
   return {
-    error: redirectError ?? validatedSession.error,
-    session: validatedSession.session,
-  }
-}
-
-async function validateSession(session: Session | null) {
-  if (!supabase || !session) {
-    return {
-      error: null,
-      session,
-    }
-  }
-
-  const { data, error } = await supabase.auth.getUser(session.access_token)
-  if (error || !data.user) {
-    await supabase.auth.signOut({ scope: 'local' })
-
-    return {
-      error: INVALID_SESSION_MESSAGE,
-      session: null,
-    }
-  }
-
-  return {
-    error: null,
-    session: {
-      ...session,
-      user: data.user,
-    },
+    error: redirectError,
+    session: data.session ?? null,
   }
 }
 
