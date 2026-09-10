@@ -22,7 +22,7 @@ The canonical hosted dashboard is <https://codexusage.vercel.app>.
 ### Pair a local machine with a signed-in dashboard
 
 1. Sign in at <https://codexusage.vercel.app>.
-2. Select **Create pairing command**.
+2. Select **Add a machine** in the header (older builds called it **Pair a machine** or **Create pairing command**).
 3. Run the generated command before its token expires:
 
    ```bash

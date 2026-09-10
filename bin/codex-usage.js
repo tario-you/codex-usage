@@ -335,9 +335,17 @@ async function runPairCommand(args) {
     await writeConfig(codexHome, config)
     console.log('Pairing complete.')
     console.log(`Config saved to ${resolveConfigPath(codexHome)}`)
+    console.log('')
+    console.log('What this did: this machine now reports its own Codex usage to the dashboard.')
     console.log(
-      `Next: run \`${NPX_COMMAND} sync --watch\` on this machine for live updates.`,
+      'What it did not do: it did not sign this machine into anyone else\'s plan.',
     )
+    console.log(
+      '  To use someone else\'s plans, run the login command from their "Share Codex login" card:',
+    )
+    console.log(`  ${NPX_COMMAND} use "<login url>" --watch`)
+    console.log('')
+    console.log(`Next: keep \`${NPX_COMMAND} sync --watch\` running here for live updates.`)
 
     if (args.options.watch) {
       await runWatchLoop(client, config, args)

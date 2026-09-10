@@ -436,7 +436,9 @@ async function installSharedLogin({ args, claimUrl, codexHome }) {
     console.log(`Your previous login is saved at ${backupPath}.`)
   }
   console.log('Restart the Codex app or start a new `codex` session so it picks up the new login.')
-  console.log(`Keep it fresh: ${NPX_COMMAND} use --watch`)
+  console.log(
+    `Keep this running so it moves you to the next usable plan when this one runs out: ${NPX_COMMAND} use --watch`,
+  )
   console.log(`Switch back: ${NPX_COMMAND} use --restore`)
 
   return config

@@ -9,7 +9,7 @@ see which account to use next.
 
 ![Codex Usage dashboard](./public/codexusage.png)
 
-> Install the CLI from npm: `npx codex-usage-dashboard@latest <command>`. A machine that cannot reach npm can install the pinned release from GitHub instead: `npx --yes "github:tario-you/codex-usage#v0.3.0" <command>`.
+> The CLI runs with `npx codex-usage-dashboard@latest <command>`, nothing to install. A machine that cannot reach npm can use the pinned GitHub release instead: `npx --yes "github:tario-you/codex-usage#v0.3.0" <command>`.
 
 ## What it does
 
@@ -20,32 +20,83 @@ see which account to use next.
 - Projects which reset will make an exhausted account usable again.
 - Tracks historical weekly capacity across linked accounts.
 
-## Connect a machine
+## First time here?
 
-### Pair with an existing dashboard account
+Codex usage shows how much of every Codex plan is left, plans which account to
+use next, and switches machines to the next plan automatically. There are three
+things you can do, and each one has its own command. Pick the one you mean.
 
-1. Open <https://codexusage.vercel.app> and sign in.
-2. Select **Create pairing command**.
-3. Run the generated command before its token expires:
+| You want to | Do this | What runs on the other machine |
+|---|---|---|
+| See your own usage in the dashboard | Sign in, choose **Add a machine**, run the command on the machine where you use Codex | `pair` (reports usage only) |
+| Let a friend use your plans, switching when one runs out | Find **Share Codex login**, choose **Create login command**, send it to them | `use` (signs their Codex into your plan) |
+| Let a friend look at your dashboard | Choose **Invite a viewer**, send the link | nothing; they sign in with Google |
+
+The common mistake: sending a friend the **Add a machine** command. That only
+adds their usage to your dashboard. It never signs them into your plans. For
+that they need the login command from **Share Codex login**.
+
+### 1. See your own usage
+
+1. Open <https://codexusage.vercel.app> and sign in with Google.
+2. Choose **Add a machine** in the header. A command appears.
+3. Paste the command into Terminal on the machine where you use Codex. It
+   looks like this and runs once:
 
    ```bash
    npx codex-usage-dashboard@latest pair "https://codexusage.vercel.app/api/pair/complete?token=..."
    ```
 
-4. Keep the dashboard updated when needed:
+4. Your plans show up in the dashboard within a minute. For live updates keep
+   this running on that machine:
 
    ```bash
    npx codex-usage-dashboard@latest sync --watch
    ```
 
-The CLI stores the paired-device configuration in
-`~/.codex/codex-usage-sync.json` by default.
+The command expires, so create a fresh one when it fails. The CLI keeps its
+settings in `~/.codex/codex-usage-sync.json`. No browser account yet? Run
+`npx codex-usage-dashboard@latest connect --site "https://codexusage.vercel.app"`
+on the machine instead; it links the machine and opens your dashboard.
 
-### Start without a website account
+### 2. Let a friend use your plans
 
-```bash
-npx codex-usage-dashboard@latest connect --site "https://codexusage.vercel.app"
-```
+On your side, once:
+
+1. Add the machine that holds your logins (section 1) and keep
+   `sync --watch` running there.
+2. Publish your plans from that machine:
+
+   ```bash
+   npx codex-usage-dashboard@latest publish-login --all
+   ```
+
+3. In the dashboard, find **Share Codex login** and choose
+   **Create login command**. Send the command to your friend. It is single
+   use and expires after 24 hours.
+
+On their side:
+
+1. Paste the command into Terminal and add `--watch` so it keeps switching:
+
+   ```bash
+   npx codex-usage-dashboard@latest use "https://codexusage.vercel.app/api/login/claim?token=..." --watch
+   ```
+
+2. Restart the Codex app, or start a new `codex` session. Codex is now on
+   your plan.
+3. Leave that Terminal window open. When the plan runs out, the watcher moves
+   them to your next usable plan and prints `Switched to ...`. Their own login
+   is backed up; `npx codex-usage-dashboard@latest use --restore` brings it
+   back.
+
+The full owner and recipient details are under [Share a Codex login](#share-a-codex-login).
+
+### 3. Let a friend look
+
+Choose **Invite a viewer**, send the link. They sign in with Google and see
+your plans read-only. From there they can also create their own login command
+on your plans, and you see and can revoke every command they create.
 
 ## Weekly-only Codex limits
 
@@ -148,7 +199,7 @@ next usable plan when the one they are on runs out.
 
 ### Owner
 
-1. Pair the machine that holds the logins (see above) and keep
+1. Add the machine that holds the logins (see [First time here?](#first-time-here)) and keep
    `npx codex-usage-dashboard@latest sync --watch` running there.
 2. Publish your plans:
 
