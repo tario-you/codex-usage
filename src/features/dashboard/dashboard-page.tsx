@@ -76,6 +76,7 @@ import {
 import { ResetPlanPanel } from './reset-plan-panel'
 import { AccountNotesPanel } from './account-notes-panel'
 import { SharedLoginPanel } from './shared-login-panel'
+import { SwitchHistoryPanel } from './switch-history-panel'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 
 interface PairingCommandState {
@@ -870,6 +871,36 @@ export function DashboardPage() {
                 </Button>
               ) : null}
 
+              {session && !showInviteLanding ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    disabled={isGeneratingPairing}
+                    onClick={() => void handleStartPairing()}
+                    size="sm"
+                    title="Get a one-line command that adds a machine's Codex usage here"
+                    type="button"
+                    variant="outline"
+                  >
+                    <TerminalSquare className="mr-1.5 size-3.5" />
+                    {isGeneratingPairing ? 'Creating...' : 'Pair a machine'}
+                  </Button>
+                  <Button
+                    disabled={isCreatingInvite}
+                    onClick={() => void handleCreateInvite()}
+                    size="sm"
+                    title="Get a link that lets someone view your plans without a login"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Link2 className="mr-1.5 size-3.5" />
+                    {isCreatingInvite ? 'Creating...' : 'Invite a viewer'}
+                  </Button>
+                  {isPairingCommandCopied || isInviteLinkCopied || isSyncCommandCopied ? (
+                    <CopiedPill />
+                  ) : null}
+                </div>
+              ) : null}
+
               <ThemeToggle className="shrink-0" />
 
               {session ? (
@@ -1131,37 +1162,9 @@ export function DashboardPage() {
                   </Card>
                 ) : null}
 
+                {pairingError || inviteCreateError || pairingCommand || shareInvite ? (
                 <Card size="sm">
                   <CardContent className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        disabled={isGeneratingPairing}
-                        onClick={() => void handleStartPairing()}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <TerminalSquare className="mr-1.5 size-3.5" />
-                        {isGeneratingPairing ? 'Creating command...' : 'Pair a machine'}
-                      </Button>
-                      <Button
-                        disabled={isCreatingInvite}
-                        onClick={() => void handleCreateInvite()}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Link2 className="mr-1.5 size-3.5" />
-                        {isCreatingInvite ? 'Creating link...' : 'Invite a viewer'}
-                      </Button>
-                      {isPairingCommandCopied || isInviteLinkCopied || isSyncCommandCopied ? (
-                        <CopiedPill />
-                      ) : null}
-                      <p className="text-xs text-muted-foreground">
-                        Pairing adds a machine's Codex usage here. Viewers see your
-                        accounts without any login.
-                      </p>
-                    </div>
                     {pairingError ? <InlineMessage tone="error">{pairingError}</InlineMessage> : null}
                     {inviteCreateError ? (
                       <InlineMessage tone="error">{inviteCreateError}</InlineMessage>
@@ -1197,21 +1200,7 @@ export function DashboardPage() {
                     ) : null}
                   </CardContent>
                 </Card>
-
-                <SharedLoginPanel
-                  accounts={accounts}
-                  onInvalidSession={handleInvalidSession}
-                  session={session}
-                />
-
-                <AccountNotesPanel
-                  onInvalidSession={handleInvalidSession}
-                  session={session}
-                  suggestedEmails={accounts
-                    .filter((account) => account.access_scope === 'owned')
-                    .map((account) => account.email ?? '')
-                    .filter((email) => email.length > 0)}
-                />
+                ) : null}
 
                 <Card className="min-w-0" size="sm">
                   <CardHeader
@@ -1219,17 +1208,15 @@ export function DashboardPage() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <CardTitle>Accounts you can view</CardTitle>
+                        <CardTitle>Plans</CardTitle>
                         <CardDescription>
-                          Latest sync{' '}
+                          {summary.accountsTracked}{' '}
+                          {summary.accountsTracked === 1 ? 'account' : 'accounts'} · synced{' '}
                           {summary.mostRecentSync
                             ? formatRelativeTimestamp(summary.mostRecentSync)
-                            : 'has not happened yet'}
-                          .
+                            : 'never'}
                           {summary.staleAccounts > 0
-                            ? ` ${summary.staleAccounts} stale ${
-                                summary.staleAccounts === 1 ? 'account' : 'accounts'
-                              }.`
+                            ? ` · ${summary.staleAccounts} stale`
                             : ''}
                         </CardDescription>
                       </div>
@@ -1310,6 +1297,24 @@ export function DashboardPage() {
                     </CardContent>
                   ) : null}
                 </Card>
+
+                <SwitchHistoryPanel session={session} />
+
+                <SharedLoginPanel
+                  accounts={accounts}
+                  onInvalidSession={handleInvalidSession}
+                  session={session}
+                />
+
+                <AccountNotesPanel
+                  onInvalidSession={handleInvalidSession}
+                  session={session}
+                  suggestedEmails={accounts
+                    .filter((account) => account.access_scope === 'owned')
+                    .map((account) => account.email ?? '')
+                    .filter((email) => email.length > 0)}
+                />
+
               </div>
             </div>
           ) : (
@@ -1599,7 +1604,7 @@ function WeeklyUsageHistoryChart({
         aria-label="Weekly total remaining history"
         className="h-auto w-full"
         role="img"
-        viewBox="0 0 760 112"
+        viewBox="0 0 1000 112"
       >
         <title>Weekly total remaining history</title>
         {chart.yTicks.map((tick) => (
@@ -1721,7 +1726,7 @@ function AccountTable({
         <TableRow className="hover:bg-muted/50">
           <TableHead className="h-8 px-4 text-xs">Account</TableHead>
           <TableHead className="h-8 text-xs">Synced</TableHead>
-          <TableHead className="h-8 text-xs">Windows</TableHead>
+          <TableHead className="h-8 text-xs">Usable</TableHead>
           <TableHead className="h-8 w-10 px-4">
             <span className="sr-only">Unlink</span>
           </TableHead>
@@ -1736,20 +1741,25 @@ function AccountTable({
 
           return (
             <TableRow key={account.id}>
-              <TableCell className="px-4 py-2">
-                <div className="space-y-0.5">
-                  <p className="font-medium text-foreground">{identity.primary}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {[identity.secondary, formatPlanLine(account)]
-                      .filter(Boolean)
-                      .join(' · ')}
+              <TableCell className="px-4 py-1.5">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                  <p
+                    className="truncate font-medium text-foreground"
+                    title={[identity.secondary, formatPlanLine(account)].filter(Boolean).join(' · ')}
+                  >
+                    {identity.primary}
                   </p>
+                  {account.plan_type ? (
+                    <span className="rounded border border-border px-1 text-[10px] uppercase leading-4 text-muted-foreground">
+                      {account.plan_type}
+                    </span>
+                  ) : null}
                   {!isOwnedAccount ? (
                     <SharedAccessNote inviter={primaryInviter} />
                   ) : null}
                 </div>
               </TableCell>
-              <TableCell className="py-2">
+              <TableCell className="py-1.5">
                 <p
                   className="text-sm text-foreground"
                   title={formatTimestamp(account.last_snapshot_at)}
@@ -1757,12 +1767,24 @@ function AccountTable({
                   {formatRelativeTimestamp(account.last_snapshot_at)}
                 </p>
               </TableCell>
-              <TableCell className="py-2">
+              <TableCell className="py-1.5">
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
                   {limitWindows.length > 0 ? (
                     limitWindows.map((window) => (
                       <div className="flex items-center gap-2" key={window.key}>
-                        <p className="w-14 text-xs text-muted-foreground">
+                        <span
+                          aria-hidden="true"
+                          className={`size-1.5 shrink-0 rounded-full ${
+                            window.remainingPercent == null
+                              ? 'bg-muted-foreground/40'
+                              : window.remainingPercent <= 0
+                                ? 'bg-red-500'
+                                : window.remainingPercent <= 20
+                                  ? 'bg-amber-500'
+                                  : 'bg-emerald-500'
+                          }`}
+                        />
+                        <p className="w-12 text-xs text-muted-foreground">
                           {window.label}
                         </p>
                         <RemainingPercentageEditor
@@ -1795,7 +1817,7 @@ function AccountTable({
                   )}
                 </div>
               </TableCell>
-              <TableCell className="px-4 py-2 text-right">
+              <TableCell className="px-4 py-1.5 text-right">
                 {isOwnedAccount ? (
                   <UnlinkAccountButton
                     disabled={Boolean(unlinkingAccountId)}
@@ -2093,7 +2115,7 @@ function buildWeeklyUsageChart(
   const bounds: WeeklyUsageChartBounds = {
     bottom: 88,
     left: 48,
-    right: 748,
+    right: 988,
     top: 10,
   }
   const rangeMs =

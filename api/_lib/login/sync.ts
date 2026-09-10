@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { recordSwitchEvents } from '../switch-store.js'
 
 import type { CodexRateLimitsResponse } from '../../../src/shared/codex.js'
 import { errorResponse, jsonResponse } from '../http.js'
@@ -177,6 +178,21 @@ async function syncForRecipient(
         switched_at: nowIso,
         sync_count: grant.sync_count + 1,
       })
+      // The recipient's switch joins the owner's history (#switch-history).
+      try {
+        await recordSwitchEvents([{
+          ownerUserId: grant.owner_user_id,
+          source: 'grant',
+          grantId: grant.id,
+          kind: 'switched',
+          fromEmail: currentSecret?.account_email ?? null,
+          toEmail: target.account_email,
+          reason: decision.reason,
+          occurredAt: nowIso,
+        }])
+      } catch {
+        // History is a record, never a reason to withhold the login.
+      }
 
       return jsonResponse({
         account: {

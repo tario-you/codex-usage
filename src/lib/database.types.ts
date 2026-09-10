@@ -240,6 +240,73 @@ export interface Database {
           },
         ]
       }
+      codex_switch_events: {
+        Row: {
+          id: string
+          owner_user_id: string
+          source: string
+          device_id: string | null
+          grant_id: string | null
+          kind: string
+          from_email: string | null
+          to_email: string | null
+          reason: string | null
+          occurred_at: string
+          dedupe_key: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          source: string
+          device_id?: string | null
+          grant_id?: string | null
+          kind: string
+          from_email?: string | null
+          to_email?: string | null
+          reason?: string | null
+          occurred_at: string
+          dedupe_key: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          source?: string
+          device_id?: string | null
+          grant_id?: string | null
+          kind?: string
+          from_email?: string | null
+          to_email?: string | null
+          reason?: string | null
+          occurred_at?: string
+          dedupe_key?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_switch_events_device_id_fkey'
+            columns: ['device_id']
+            isOneToOne: false
+            referencedRelation: 'codex_devices'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_switch_events_grant_id_fkey'
+            columns: ['grant_id']
+            isOneToOne: false
+            referencedRelation: 'codex_login_grants'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'codex_switch_events_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       codex_account_notes: {
         Row: {
           id: string
