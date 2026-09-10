@@ -17,6 +17,7 @@ import {
   runUseCommand,
   sharedLoginUsageLines,
 } from './lib/shared-login.js'
+import { uploadSwitchEvents } from './lib/switch-events.js'
 
 const DEFAULT_POLL_MS = 60_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
@@ -677,6 +678,24 @@ async function syncOnce(client, config, args) {
   }
 
   await reconcilePublishedLoginsSafely(config, args)
+  await uploadSwitchEventsSafely(config, args)
+}
+
+async function uploadSwitchEventsSafely(config, args) {
+  try {
+    const result = await uploadSwitchEvents({ config })
+    if (result.uploaded > 0 && result.uploadedAt !== config.switchEventsUploadedAt) {
+      config.switchEventsUploadedAt = result.uploadedAt
+      await writeConfig(
+        config.codexHome ?? resolveCodexHome(args.options['codex-home']),
+        config,
+      )
+    }
+  } catch (error) {
+    console.error(
+      `[switch history] ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
 
 async function reconcilePublishedLoginsSafely(config, args) {
