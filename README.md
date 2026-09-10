@@ -9,7 +9,7 @@ see which account to use next.
 
 ![Codex Usage dashboard](./public/codexusage.png)
 
-> Install the CLI from npm: `npx codex-usage-dashboard@latest <command>`. This repository is private, so the `github:` install form only works for accounts with access to it.
+> Install the CLI from npm: `npx codex-usage-dashboard@latest <command>`. A machine that cannot reach npm can install the pinned release from GitHub instead: `npx --yes "github:tario-you/codex-usage#v0.3.0" <command>`.
 
 ## What it does
 
