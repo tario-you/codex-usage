@@ -923,6 +923,11 @@ async function readSnapshot(client, failWhenLoggedOut) {
   }
 
   const rateLimits = await client.request('account/rateLimits/read')
+  // The login's earned reset credits ride the snapshot so the dashboard can show them.
+  const credits = rateLimits?.rateLimitResetCredits
+  if (rateLimits?.rateLimits && credits && typeof credits.availableCount === 'number') {
+    rateLimits.rateLimits.resetCredits = { applicable: null, available: credits.availableCount }
+  }
   return { accountState, rateLimits }
 }
 

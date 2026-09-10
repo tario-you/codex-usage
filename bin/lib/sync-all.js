@@ -156,6 +156,11 @@ export function buildSyncPayloadFromUsage(data, email = null) {
     secondary: windowValue(rate?.secondary_window),
   })
   const main = snapshot(data.rate_limit, 'Codex', 'codex')
+  const resets = data.rate_limit_reset_credits
+  main.resetCredits = {
+    applicable: typeof resets?.applicable_available_count === 'number' ? resets.applicable_available_count : null,
+    available: Number(resets?.available_count ?? 0) || 0,
+  }
   const byLimitId = { codex: main }
   for (const extra of data.additional_rate_limits ?? []) {
     const id = extra?.metered_feature || extra?.limit_name
