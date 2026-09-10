@@ -2,7 +2,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -18,6 +18,16 @@ import {
   sharedLoginUsageLines,
 } from './lib/shared-login.js'
 import { uploadSwitchEvents } from './lib/switch-events.js'
+import {
+  DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
+  MIN_SYNC_ALL_INTERVAL_SECONDS,
+  readStore,
+  resolveStorePath,
+  syncAllOnce,
+  upsertStoreAccount,
+  writeStore,
+} from './lib/sync-all.js'
+import { readJsonFile, resolveAuthFilePath } from './lib/login-file.js'
 
 const DEFAULT_POLL_MS = 60_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
@@ -265,6 +275,11 @@ async function main() {
 
   if (command === 'sync') {
     await runSyncCommand(args)
+    return
+  }
+
+  if (command === 'login') {
+    await runLoginCommand(args)
     return
   }
 
@@ -586,6 +601,11 @@ async function runSyncCommand(args) {
     )
   }
 
+  if (args.options.all) {
+    await runSyncAllCommand(args, config, codexHome)
+    return
+  }
+
   const client = new StdioCodexClient({ codexHome })
 
   try {
@@ -600,6 +620,136 @@ async function runSyncCommand(args) {
     console.log('Sync complete.')
   } finally {
     await client.close()
+  }
+}
+
+/**
+ * Every saved account, one machine: read each login's usage from the usage
+ * endpoint and report it under this machine's pairing. No Codex app-server is
+ * involved, so it runs anywhere the store exists.
+ */
+async function runSyncAllCommand(args, config, codexHome) {
+  const storePath = resolveStorePath(args.options.store)
+  const device = buildDevicePayload(args, codexHome, config.label)
+
+  const once = async () => {
+    let activeAuthFile = null
+    const authPath = resolveAuthFilePath(codexHome)
+    if (existsSync(authPath)) {
+      try {
+        const file = await readJsonFile(authPath)
+        if (file?.auth_mode === 'chatgpt' && file.tokens?.refresh_token) activeAuthFile = file
+      } catch {
+        activeAuthFile = null
+      }
+    }
+    const summary = await syncAllOnce({ activeAuthFile, config, device, storePath })
+    for (const email of summary.added) console.log(`Saved the login this machine is signed into: ${email}.`)
+    for (const result of summary.results) {
+      console.log(
+        result.ok
+          ? `  ${result.email}: ${result.usedPercent ?? '?'}% used${result.planType ? ` (${result.planType})` : ''}`
+          : `  ${result.email}: skipped, ${result.reason}`,
+      )
+    }
+    console.log(
+      `[${new Date().toLocaleTimeString()}] Synced ${summary.synced} of ${summary.total} accounts from ${storePath}.`,
+    )
+    if (summary.total === 0) {
+      console.log(`No saved accounts yet. Add one with: ${NPX_COMMAND} login add`)
+    }
+  }
+
+  await once()
+  if (!args.options.watch) return
+
+  const requested = Number(args.options.every ?? DEFAULT_SYNC_ALL_INTERVAL_SECONDS)
+  const everySeconds = Math.max(
+    MIN_SYNC_ALL_INTERVAL_SECONDS,
+    Number.isFinite(requested) ? requested : DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
+  )
+  console.log(`Watching every ${everySeconds}s. Press Ctrl+C to stop.`)
+  while (true) {
+    await new Promise((resolve) => setTimeout(resolve, everySeconds * 1000))
+    try {
+      await once()
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
+    }
+  }
+}
+
+/**
+ * login add signs one more Codex account in through a throwaway CODEX_HOME and
+ * saves it into the store; login list and login remove manage the store.
+ */
+async function runLoginCommand(args) {
+  const action = args.positionals[0]
+  const storePath = resolveStorePath(args.options.store)
+
+  if (action === 'list') {
+    const store = await readStore(storePath)
+    if (store.accounts.length === 0) {
+      console.log(`No saved accounts in ${storePath}. Add one with: ${NPX_COMMAND} login add`)
+      return
+    }
+    for (const account of store.accounts) {
+      console.log(`  ${account.email ?? account.id}${account.plan_type ? ` (${account.plan_type})` : ''}`)
+    }
+    console.log(`${store.accounts.length} saved account(s) in ${storePath}.`)
+    return
+  }
+
+  if (action === 'remove') {
+    const email = args.options.email?.toLowerCase()
+    if (!email) throw new Error('Pass --email for the account to forget.')
+    const store = await readStore(storePath)
+    const before = store.accounts.length
+    store.accounts = store.accounts.filter((account) => account.email?.toLowerCase() !== email)
+    if (store.accounts.length === before) throw new Error(`${email} is not in ${storePath}.`)
+    await writeStore(storePath, store)
+    console.log(`Forgot ${email}. ${store.accounts.length} saved account(s) left.`)
+    return
+  }
+
+  if (action !== 'add') {
+    throw new Error('Usage: login add | login list | login remove --email <email>')
+  }
+
+  const home = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-login-'))
+  const client = new StdioCodexClient({ codexHome: home })
+  try {
+    await client.connect()
+    const completed = new Promise((resolve, reject) => {
+      client.onNotification((method) => {
+        if (method === 'account/login/completed') resolve()
+      })
+      const timer = setTimeout(
+        () => reject(new Error('Sign-in timed out after 10 minutes. Run "login add" again.')),
+        10 * 60 * 1000,
+      )
+      timer.unref?.()
+    })
+    const started = await client.request('account/login/start', { type: 'chatgpt' })
+    if (!started?.authUrl) throw new Error('Codex did not return a sign-in link.')
+    console.log('Sign in with the account you want to add. Finish in the browser, then come back here.')
+    const opened = await openDashboard(started.authUrl)
+    if (opened === 'browser') console.log(`If the browser did not open: ${started.authUrl}`)
+    await completed
+
+    const authPath = resolveAuthFilePath(home)
+    if (!existsSync(authPath)) throw new Error('Sign-in did not complete; nothing was saved.')
+    const authFile = await readJsonFile(authPath)
+    const store = await readStore(storePath)
+    const { account, created } = upsertStoreAccount(store, authFile)
+    await writeStore(storePath, store)
+    console.log(
+      `${created ? 'Saved' : 'Updated'} ${account.email ?? account.id}. ${store.accounts.length} saved account(s) in ${storePath}.`,
+    )
+    console.log(`Next: ${NPX_COMMAND} sync --all --watch`)
+  } finally {
+    await client.close()
+    await rm(home, { force: true, recursive: true })
   }
 }
 
@@ -1102,6 +1252,10 @@ function printUsage() {
   console.log('  codex-usage connect [--site <url>] [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
+  console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>]')
+  console.log('  codex-usage login add [--store <accounts.json>]')
+  console.log('  codex-usage login list [--store <accounts.json>]')
+  console.log('  codex-usage login remove --email <email> [--store <accounts.json>]')
   for (const line of sharedLoginUsageLines) {
     console.log(line)
   }

@@ -29,6 +29,7 @@ things you can do, and each one has its own command. Pick the one you mean.
 | You want to | Do this | What runs on the other machine |
 |---|---|---|
 | See your own usage in the dashboard | Sign in, choose **Add a machine**, run the command on the machine where you use Codex | `pair` (reports usage only) |
+| See every account you own from one machine | Pair once, then `login add` per account and `sync --all --watch` | `login add`, `sync --all` |
 | Let a friend use your plans, switching when one runs out | Find **Share Codex login**, choose **Create login command**, send it to them | `use` (signs their Codex into your plan) |
 | Let a friend look at your dashboard | Choose **Invite a viewer**, send the link | nothing; they sign in with Google |
 
@@ -58,6 +59,31 @@ The command expires, so create a fresh one when it fails. The CLI keeps its
 settings in `~/.codex/codex-usage-sync.json`. No browser account yet? Run
 `npx codex-usage-dashboard@latest connect --site "https://codexusage.vercel.app"`
 on the machine instead; it links the machine and opens your dashboard.
+
+### 1b. Every account you own, from one machine
+
+Have more than one Codex account? Save each one once, then one command reports
+all of them:
+
+```bash
+npx codex-usage-dashboard@latest login add
+```
+
+That opens the Codex sign-in in your browser; sign in with the account to add,
+then run it again for the next account. The logins are kept in
+`~/.codex-switcher/accounts.json` (mode 600, the same store the Codex
+Switchboard uses). Then:
+
+```bash
+npx codex-usage-dashboard@latest sync --all --watch
+```
+
+`sync --all` reads every saved account's usage straight from ChatGPT, refreshes
+an expired token on the way, includes the account this machine is signed into,
+and reports all of them under this machine's pairing. `--watch` repeats every
+five minutes (`--every 120` for two). `login list` shows what is saved and
+`login remove --email you@example.com` forgets one. The machine still has to
+be paired once (section 1) so the dashboard knows whose accounts these are.
 
 ### 2. Let a friend use your plans
 
