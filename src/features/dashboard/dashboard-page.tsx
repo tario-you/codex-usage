@@ -8,6 +8,9 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
+  Pencil,
+  Plus,
+  Trash2,
   CircleHelp,
   AlertTriangle,
   Check,
@@ -75,7 +78,8 @@ import {
 } from '@/shared/site'
 
 import { ResetPlanPanel } from './reset-plan-panel'
-import { AccountNotesPanel } from './account-notes-panel'
+import { NoteEditor, NoteSecret } from './account-notes'
+import { noteKey, useAccountNotes, type AccountNotesController } from './account-notes-state'
 import { SharedLoginPanel } from './shared-login-panel'
 import { GettingStartedPanel } from './getting-started-panel'
 import { SwitchHistoryPanel } from './switch-history-panel'
@@ -121,6 +125,7 @@ export function DashboardPage() {
   const [isCreatingInvite, setIsCreatingInvite] = useState(false)
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
+  const accountNotes = useAccountNotes({ onInvalidSession: handleInvalidSession, session })
   const [guideHidden, setGuideHidden] = useState(false)
   const [hasAttemptedInviteAccept, setHasAttemptedInviteAccept] = useState(false)
   const [terminalCopyError, setTerminalCopyError] = useState<string | null>(null)
@@ -1306,6 +1311,7 @@ export function DashboardPage() {
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={accounts}
+                              notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
                               primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
@@ -1318,6 +1324,7 @@ export function DashboardPage() {
                           <div className="hidden md:block">
                             <AccountTable
                               accounts={accounts}
+                              notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
                               primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
@@ -1342,15 +1349,6 @@ export function DashboardPage() {
                     session={session}
                   />
                 </div>
-
-                <AccountNotesPanel
-                  onInvalidSession={handleInvalidSession}
-                  session={session}
-                  suggestedEmails={accounts
-                    .filter((account) => account.access_scope === 'owned')
-                    .map((account) => account.email ?? '')
-                    .filter((email) => email.length > 0)}
-                />
 
               </div>
             </div>
@@ -1757,6 +1755,7 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
 
 function AccountTable({
   accounts,
+  notes,
   onSaveUsageOverride,
   primaryInviter,
   onUnlinkAccount,
@@ -1764,6 +1763,7 @@ function AccountTable({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  notes: AccountNotesController | null
   onSaveUsageOverride: (
     account: DashboardAccountRow,
     windowKey: RateLimitWindowKey,
@@ -1774,24 +1774,74 @@ function AccountTable({
   savingUsageOverride: string | null
   unlinkingAccountId: string | null
 }) {
+  const columnCount = notes ? 7 : 4
+  const accountEmails = new Set(accounts.map((account) => noteKey(account.email)).filter(Boolean))
+  const noteOnly = notes ? notes.notes.filter((note) => !accountEmails.has(noteKey(note.email))) : []
+  const emailSuggestions = notes
+    ? accounts
+        .filter((account) => account.access_scope === 'owned' && account.email && !notes.byEmail.has(noteKey(account.email)))
+        .map((account) => noteKey(account.email))
+    : []
+  const editorRow = (key: string) =>
+    notes ? (
+      <TableRow key={key}>
+        <TableCell className="px-4 py-2" colSpan={columnCount}>
+          <NoteEditor controller={notes} emailSuggestions={emailSuggestions} />
+        </TableCell>
+      </TableRow>
+    ) : null
+
   return (
-    <Table className="min-w-[720px]">
+    <Table className={notes ? 'min-w-[1040px]' : 'min-w-[720px]'}>
       <TableHeader className="bg-muted/50">
         <TableRow className="hover:bg-muted/50">
           <TableHead className="h-8 px-4 text-xs">Account</TableHead>
           <TableHead className="h-8 text-xs">Synced</TableHead>
           <TableHead className="h-8 text-xs">Usable</TableHead>
-          <TableHead className="h-8 w-10 px-4">
-            <span className="sr-only">Unlink</span>
+          {notes ? (
+            <>
+              <TableHead className="h-8 text-xs">ChatGPT</TableHead>
+              <TableHead className="h-8 text-xs">Google</TableHead>
+              <TableHead className="h-8 text-xs">Note</TableHead>
+            </>
+          ) : null}
+          <TableHead className="h-8 w-16 px-4 text-right">
+            {notes ? (
+              <Button
+                aria-label="Add a note for another email"
+                className="size-6"
+                disabled={notes.busy || notes.adding}
+                onClick={() => notes.startAdd(emailSuggestions[0] ?? '')}
+                size="icon"
+                title="Add a note for another email"
+                type="button"
+                variant="ghost"
+              >
+                <Plus className="size-3.5" />
+              </Button>
+            ) : (
+              <span className="sr-only">Unlink</span>
+            )}
           </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
+        {notes?.error ? (
+          <TableRow>
+            <TableCell className="px-4 py-2 text-destructive text-sm" colSpan={columnCount}>
+              {notes.error}
+            </TableCell>
+          </TableRow>
+        ) : null}
         {accounts.map((account) => {
           const identity = getAccountIdentityLines(account)
           const limitWindows = getRateLimitWindows(account)
           const isOwnedAccount = account.access_scope === 'owned'
           const isUnlinking = unlinkingAccountId === account.id
+          const note = notes && isOwnedAccount ? notes.byEmail.get(noteKey(account.email)) : undefined
+          if (notes && isOwnedAccount && account.email && notes.isEditing(account.email)) {
+            return editorRow(account.id)
+          }
 
           return (
             <TableRow key={account.id}>
@@ -1871,18 +1921,86 @@ function AccountTable({
                   )}
                 </div>
               </TableCell>
+              {notes ? (
+                <>
+                  <TableCell className="py-1.5">
+                    {isOwnedAccount ? <NoteSecret controller={notes} field="chatgptPassword" note={note} /> : null}
+                  </TableCell>
+                  <TableCell className="py-1.5">
+                    {isOwnedAccount ? <NoteSecret controller={notes} field="googlePassword" note={note} /> : null}
+                  </TableCell>
+                  <TableCell className="max-w-[16rem] py-1.5">
+                    {isOwnedAccount ? (
+                      <p className="truncate text-xs" title={note?.note ?? ''}>
+                        {note?.note ?? <span className="text-muted-foreground">·</span>}
+                      </p>
+                    ) : null}
+                  </TableCell>
+                </>
+              ) : null}
               <TableCell className="px-4 py-1.5 text-right">
                 {isOwnedAccount ? (
-                  <UnlinkAccountButton
-                    disabled={Boolean(unlinkingAccountId)}
-                    isUnlinking={isUnlinking}
-                    onClick={() => onUnlinkAccount(account)}
-                  />
+                  <span className="inline-flex items-center gap-0.5">
+                    {notes && account.email ? (
+                      <Button
+                        aria-label={`Edit passwords and note for ${account.email}`}
+                        className="size-6"
+                        disabled={notes.busy}
+                        onClick={() => notes.startEdit(account.email as string)}
+                        size="icon"
+                        title={note ? 'Edit passwords and note' : 'Add passwords and note'}
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    ) : null}
+                    <UnlinkAccountButton
+                      disabled={Boolean(unlinkingAccountId)}
+                      isUnlinking={isUnlinking}
+                      onClick={() => onUnlinkAccount(account)}
+                    />
+                  </span>
                 ) : null}
               </TableCell>
             </TableRow>
           )
         })}
+        {notes
+          ? noteOnly.map((note) =>
+              notes.isEditing(note.email) ? (
+                editorRow(`note:${note.email}`)
+              ) : (
+                <TableRow key={`note:${note.email}`}>
+                  <TableCell className="px-4 py-1.5">
+                    <p className="truncate font-mono text-xs" title={note.email}>
+                      {note.email}
+                    </p>
+                  </TableCell>
+                  <TableCell className="py-1.5 text-xs text-muted-foreground">note only</TableCell>
+                  <TableCell className="py-1.5 text-xs text-muted-foreground">·</TableCell>
+                  <TableCell className="py-1.5"><NoteSecret controller={notes} field="chatgptPassword" note={note} /></TableCell>
+                  <TableCell className="py-1.5"><NoteSecret controller={notes} field="googlePassword" note={note} /></TableCell>
+                  <TableCell className="max-w-[16rem] py-1.5">
+                    <p className="truncate text-xs" title={note.note ?? ''}>
+                      {note.note ?? <span className="text-muted-foreground">·</span>}
+                    </p>
+                  </TableCell>
+                  <TableCell className="px-4 py-1.5 text-right">
+                    <span className="inline-flex items-center gap-0.5">
+                      <Button aria-label={`Edit ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(note.email)} size="icon" type="button" variant="ghost">
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button aria-label={`Remove ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => void notes.remove(note.email)} size="icon" type="button" variant="ghost">
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ),
+            )
+          : null}
+        {notes?.adding ? editorRow('note:new') : null}
       </TableBody>
     </Table>
   )
@@ -1890,6 +2008,7 @@ function AccountTable({
 
 function AccountSummaryList({
   accounts,
+  notes,
   onSaveUsageOverride,
   primaryInviter,
   onUnlinkAccount,
@@ -1897,6 +2016,7 @@ function AccountSummaryList({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  notes: AccountNotesController | null
   onSaveUsageOverride: (
     account: DashboardAccountRow,
     windowKey: RateLimitWindowKey,
@@ -1980,10 +2100,70 @@ function AccountSummaryList({
               ) : (
                 <MetaField label="Usage limits" value="N/A" />
               )}
+              {notes && isOwnedAccount && account.email ? (
+                notes.isEditing(account.email) ? (
+                  <div className="col-span-2">
+                    <NoteEditor controller={notes} />
+                  </div>
+                ) : (
+                  <>
+                    <MetaField label="ChatGPT" value={<NoteSecret controller={notes} field="chatgptPassword" note={notes.byEmail.get(noteKey(account.email))} />} />
+                    <MetaField label="Google" value={<NoteSecret controller={notes} field="googlePassword" note={notes.byEmail.get(noteKey(account.email))} />} />
+                    <MetaField
+                      label="Note"
+                      value={
+                        <span className="inline-flex items-center gap-1">
+                          <span className="truncate">{notes.byEmail.get(noteKey(account.email))?.note ?? '·'}</span>
+                          <Button aria-label={`Edit passwords and note for ${account.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(account.email as string)} size="icon" type="button" variant="ghost">
+                            <Pencil className="size-3.5" />
+                          </Button>
+                        </span>
+                      }
+                    />
+                  </>
+                )
+              ) : null}
             </dl>
           </div>
         )
       })}
+      {notes
+        ? notes.notes
+            .filter((note) => !accounts.some((account) => noteKey(account.email) === noteKey(note.email)))
+            .map((note) => (
+              <div className="space-y-2 px-4 py-2.5" key={`note:${note.email}`}>
+                {notes.isEditing(note.email) ? (
+                  <NoteEditor controller={notes} />
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="truncate font-mono text-xs" title={note.email}>{note.email}</p>
+                      <span className="inline-flex items-center gap-0.5">
+                        <Button aria-label={`Edit ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(note.email)} size="icon" type="button" variant="ghost"><Pencil className="size-3.5" /></Button>
+                        <Button aria-label={`Remove ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => void notes.remove(note.email)} size="icon" type="button" variant="ghost"><Trash2 className="size-3.5" /></Button>
+                      </span>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <MetaField label="ChatGPT" value={<NoteSecret controller={notes} field="chatgptPassword" note={note} />} />
+                      <MetaField label="Google" value={<NoteSecret controller={notes} field="googlePassword" note={note} />} />
+                      <MetaField label="Note" value={note.note ?? '·'} />
+                    </dl>
+                  </>
+                )}
+              </div>
+            ))
+        : null}
+      {notes ? (
+        <div className="px-4 py-2.5">
+          {notes.adding ? (
+            <NoteEditor controller={notes} />
+          ) : (
+            <Button disabled={notes.busy} onClick={() => notes.startAdd()} size="sm" type="button" variant="outline">
+              <Plus className="size-3.5" /> Add a note for another email
+            </Button>
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }

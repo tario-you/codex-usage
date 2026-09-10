@@ -292,4 +292,9 @@ usual refresh. Details and the recovery steps are in
 
 ## Account notes
 
-The dashboard has an owner-only **Account notes** card: one row per account with a ChatGPT password, a Google password, and a free note (reset times, who holds the phone). Passwords show as dots until you press the eye icon. Notes are encrypted at rest with `CODEX_LOGIN_ENCRYPTION_KEY` (AES-256-GCM, bound to your user id and the email), live in a service-role-only table, and are served only to the signed-in owner by `/api/login/notes`. Invited viewers never receive them.
+Passwords and reset notes live in the Plans table itself: each of your own
+accounts has ChatGPT and Google columns (hidden behind an eye icon) and a Note
+column, with a pencil to edit them inline. Emails that have a note but no
+synced plan appear as "note only" rows at the bottom, and the plus in the table
+header adds one. Notes are encrypted at rest with the shared-login key, decrypted
+only for your own session, and never returned to people you invite.
