@@ -34,6 +34,7 @@ const loginRoutes: Record<string, RouteHandler> = {
   'POST /api/login/publish': publish.POST,
   'POST /api/login/repair': repair.POST,
   'POST /api/login/repair/done': repair.DONE,
+  'POST /api/login/repair/known': repair.KNOWN,
   'POST /api/login/repair/poll': repair.POLL,
   'POST /api/login/sync': sync.POST,
   'POST /api/login/unpublish': unpublish.POST,

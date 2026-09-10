@@ -3,7 +3,9 @@
  * machine that holds the accounts reports which logins refresh with a 401,
  * the owner clicks Fix sign-ins, the agent picks up the request on its next
  * poll and opens one browser sign-in per account, then reports back. All of
- * that state lives in the device row's metadata under `repair`.
+ * that state lives in the device row's metadata under `repair`. The agent
+ * also reports `missing`: accounts the machine has used and never saved (found
+ * by `login setup`'s discovery), so the same button offers their sign-in.
  */
 export interface RepairPending {
   emails: string[]
@@ -18,6 +20,7 @@ export interface RepairResult {
 
 export interface RepairState {
   expired: string[]
+  missing: string[]
   lastResult: { at: string; results: RepairResult[] } | null
   pending: RepairPending | null
   reportedAt: string | null
@@ -63,8 +66,10 @@ export function readRepairState(metadata: unknown, now = Date.now()): RepairStat
           outcome: entry.outcome as RepairResult['outcome'],
         }))
     : []
+  const expired = normalizeEmails(repair.expired)
   return {
-    expired: normalizeEmails(repair.expired),
+    expired,
+    missing: normalizeEmails(repair.missing).filter((email) => !expired.includes(email)),
     lastResult:
       typeof lastRaw.at === 'string' && results.length > 0 ? { at: lastRaw.at, results } : null,
     pending: pendingFresh ? { emails: pendingEmails, requestedAt: requestedAt as string } : null,
@@ -78,18 +83,22 @@ function writeRepair(metadata: unknown, patch: Record<string, unknown>) {
   return { ...base, repair: { ...repair, ...patch } }
 }
 
-/** The agent's report of which saved logins refuse to refresh. */
-export function withExpiredReport(metadata: unknown, expired: unknown, at: string) {
-  return writeRepair(metadata, { expired: normalizeEmails(expired), reportedAt: at })
+/** The agent's report: saved logins that refuse to refresh, and accounts used here but never saved. */
+export function withExpiredReport(metadata: unknown, expired: unknown, at: string, missing: unknown = []) {
+  return writeRepair(metadata, { expired: normalizeEmails(expired), missing: normalizeEmails(missing), reportedAt: at })
 }
 
-/** The owner's request: only emails the agent itself reported as expired qualify. */
+/** Every email a sign-in would fix on this machine: expired first, then never saved. */
+export function needsSignIn(state: RepairState) {
+  return [...state.expired, ...state.missing.filter((email) => !state.expired.includes(email))]
+}
+
+/** The owner's request: only emails the agent itself reported as expired or missing qualify. */
 export function withPendingRequest(metadata: unknown, emails: unknown, at: string) {
   const state = readRepairState(metadata)
+  const eligible = needsSignIn(state)
   const wanted = normalizeEmails(emails)
-  const targets = (wanted.length > 0 ? wanted : state.expired).filter((email) =>
-    state.expired.includes(email),
-  )
+  const targets = (wanted.length > 0 ? wanted : eligible).filter((email) => eligible.includes(email))
   if (targets.length === 0) return { metadata: asObject(metadata), targets }
   return {
     metadata: writeRepair(metadata, { pending: { emails: targets, requestedAt: at } }),
@@ -104,6 +113,7 @@ export function withResult(metadata: unknown, results: RepairResult[], at: strin
   return writeRepair(metadata, {
     expired: state.expired.filter((email) => !signedIn.has(email)),
     lastResult: { at, results },
+    missing: state.missing.filter((email) => !signedIn.has(email)),
     pending: null,
   })
 }

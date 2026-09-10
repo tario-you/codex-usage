@@ -30,6 +30,14 @@ import {
   writeStore,
 } from './lib/sync-all.js'
 import { readJsonFile, resolveAuthFilePath } from './lib/login-file.js'
+import {
+  checkSavedLogins,
+  describeSources,
+  discoverAccounts,
+  missingEmails,
+  setupPlan,
+} from './lib/discover.js'
+import { createInterface } from 'node:readline'
 
 const DEFAULT_POLL_MS = 60_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
@@ -634,6 +642,7 @@ async function runSyncAllCommand(args, config, codexHome) {
   const storePath = resolveStorePath(args.options.store)
   const device = buildDevicePayload(args, codexHome, config.label)
   let lastExpired = []
+  let lastMissing = []
 
   const once = async () => {
     let activeAuthFile = null
@@ -648,6 +657,9 @@ async function runSyncAllCommand(args, config, codexHome) {
     }
     const summary = await syncAllOnce({ activeAuthFile, config, device, storePath })
     lastExpired = expiredEmailsFromResults(summary.results)
+    // Accounts this machine has used but never saved ride the same report,
+    // so the dashboard can offer their sign-in beside the expired ones.
+    lastMissing = await discoverMissingQuietly({ codexHome, config, storePath })
     for (const email of summary.added) console.log(`Saved the login this machine is signed into: ${email}.`)
     for (const result of summary.results) {
       console.log(
@@ -659,8 +671,11 @@ async function runSyncAllCommand(args, config, codexHome) {
     console.log(
       `[${new Date().toLocaleTimeString()}] Synced ${summary.synced} of ${summary.total} accounts from ${storePath}.`,
     )
+    for (const email of lastMissing) console.log(`  ${email}: used on this machine, never signed in here`)
     if (summary.total === 0) {
-      console.log(`No saved accounts yet. Add one with: ${NPX_COMMAND} login add`)
+      console.log(`No saved accounts yet. Set every account up with: ${NPX_COMMAND} login setup`)
+    } else if (lastMissing.length > 0) {
+      console.log(`${lastMissing.length} account(s) still need a sign-in here: ${NPX_COMMAND} login setup`)
     }
   }
 
@@ -681,7 +696,7 @@ async function runSyncAllCommand(args, config, codexHome) {
     await new Promise((resolve) => setTimeout(resolve, REPAIR_POLL_SECONDS * 1000))
     sinceSync += REPAIR_POLL_SECONDS
     try {
-      const pending = await pollRepairRequest(config, lastExpired)
+      const pending = await pollRepairRequest(config, lastExpired, lastMissing)
       if (pending?.emails?.length) {
         console.log(`The dashboard asked to fix sign-ins: ${pending.emails.join(', ')}`)
         const results = await repairLogins({ emails: pending.emails, storePath })
@@ -703,15 +718,38 @@ async function runSyncAllCommand(args, config, codexHome) {
 
 const REPAIR_POLL_SECONDS = 20
 
-async function pollRepairRequest(config, expired) {
+async function pollRepairRequest(config, expired, missing = []) {
   const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), {
-    body: JSON.stringify({ deviceToken: config.deviceToken, expired }),
+    body: JSON.stringify({ deviceToken: config.deviceToken, expired, missing }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   })
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair poll failed.'))
   return payload?.pending ?? null
+}
+
+/** Every account the dashboard has already seen for this owner, on any machine. */
+async function fetchKnownAccounts(config) {
+  const response = await fetch(new URL('/api/login/repair/known', config.syncUrl), {
+    body: JSON.stringify({ deviceToken: config.deviceToken }),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  })
+  const payload = await parseResponseBody(response)
+  if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Known-accounts lookup failed.'))
+  return Array.isArray(payload?.accounts) ? payload.accounts : []
+}
+
+/** Discovery for the watch loop: never throws, never blocks a sync on the dashboard. */
+async function discoverMissingQuietly({ codexHome, config, storePath }) {
+  try {
+    let known = []
+    if (config?.deviceToken && config?.syncUrl) known = await fetchKnownAccounts(config).catch(() => [])
+    return missingEmails(await discoverAccounts({ codexHome, known, storePath }))
+  } catch {
+    return []
+  }
 }
 
 async function reportRepairResults(config, results) {
@@ -798,8 +836,15 @@ async function runLoginCommand(args) {
     return
   }
 
+  if (action === 'discover' || action === 'setup') {
+    await runLoginSetup({ args, storePath, walkThrough: action === 'setup' })
+    return
+  }
+
   if (action !== 'add') {
-    throw new Error('Usage: login add | login list | login repair [--emails a,b] | login remove --email <email>')
+    throw new Error(
+      'Usage: login setup | login discover | login add | login list | login repair [--emails a,b] | login remove --email <email>',
+    )
   }
 
   const { account, created, store } = await addLoginInteractively({ storePath })
@@ -809,8 +854,131 @@ async function runLoginCommand(args) {
   console.log(`Next: ${NPX_COMMAND} sync --all --watch`)
 }
 
+/**
+ * login discover lists every account this machine has used and whether its
+ * sign-in still works. login setup walks through each missing or expired one,
+ * names the account to sign in as, opens the sign-in, and ends with one sync.
+ * The person never has to remember which accounts exist.
+ */
+async function runLoginSetup({ args, storePath, walkThrough }) {
+  const codexHome = resolveCodexHome(args.options['codex-home'])
+  const config = await readConfig(codexHome).catch(() => null)
+  let known = []
+  if (config?.deviceToken && config?.syncUrl) {
+    try {
+      known = await fetchKnownAccounts(config)
+    } catch (error) {
+      console.log(`(could not ask the dashboard what it already knows: ${error instanceof Error ? error.message : error})`)
+    }
+  }
+  const candidates = await discoverAccounts({ codexHome, known, storePath })
+  if (candidates.length === 0) {
+    console.log(`No Codex account has been used on this machine yet. Sign the first one in with: ${NPX_COMMAND} login add`)
+    return
+  }
+  console.log(`Found ${candidates.length} account(s) this machine has used. Checking which sign-ins still work...`)
+  const statuses = await checkSavedLogins(candidates)
+  printDiscovery(candidates, statuses)
+  const plan = setupPlan(candidates, statuses)
+  if (!walkThrough) {
+    if (plan.length > 0) console.log(`\n${plan.length} need a sign-in. Walk through them with: ${NPX_COMMAND} login setup`)
+    else console.log('\nEvery account this machine has used is signed in and working.')
+    return
+  }
+  let leftover = []
+  if (plan.length === 0) {
+    console.log('\nEvery account this machine has used is signed in and working.')
+  } else {
+    console.log(`\n${plan.length} account(s) need a sign-in. One browser tab at a time; sign in as the account named.`)
+    const results = await walkThroughSignIns(plan, storePath)
+    const signedIn = results.filter((result) => result.outcome === 'signed-in').length
+    leftover = plan.map((step) => step.email).filter((email) => !results.some((r) => r.email === email && r.outcome === 'signed-in'))
+    console.log(`\nSigned in ${signedIn} of ${plan.length}.${leftover.length ? ` Still waiting: ${leftover.join(', ')} (run login setup again).` : ''}`)
+  }
+  if (config?.deviceToken && config?.syncUrl) {
+    console.log('\nReporting every saved account to the dashboard once...')
+    await runSyncAllCommand({ options: { store: args.options.store }, positionals: [] }, config, codexHome)
+    console.log(`Keep them updating with: ${NPX_COMMAND} sync --all --watch`)
+  } else {
+    console.log(`\nThis machine is not paired with the dashboard yet. Pair it, then keep this running:`)
+    console.log(`  ${NPX_COMMAND} connect --site https://codexusage.vercel.app`)
+    console.log(`  ${NPX_COMMAND} sync --all --watch`)
+  }
+}
+
+function printDiscovery(candidates, statuses) {
+  console.log('')
+  candidates.forEach((candidate, index) => {
+    const state = statuses.get(candidate.email) ?? { status: 'missing' }
+    const verdict =
+      state.status === 'ok'
+        ? `working, ${state.usedPercent ?? '?'}% used${state.planType ? ` (${state.planType})` : ''}`
+        : state.status === 'expired'
+          ? 'saved, sign-in expired'
+          : state.status === 'error'
+            ? `saved, ${state.detail}`
+            : 'never signed in here'
+    console.log(`  ${String(index + 1).padStart(2)}. ${candidate.email}  ${verdict}`)
+    console.log(`      seen: ${describeSources(candidate)}`)
+  })
+}
+
+/** Sign-ins one after another; Enter skips the current account, q stops the walk. */
+async function walkThroughSignIns(plan, storePath) {
+  const results = []
+  const interactive = Boolean(process.stdin.isTTY)
+  for (const [index, step] of plan.entries()) {
+    console.log(`\n[${index + 1}/${plan.length}] Sign in as ${step.email} now (${step.why}).`)
+    if (interactive) console.log('    Press Enter to skip this account, or type q then Enter to stop.')
+    const controller = new AbortController()
+    const keys = interactive ? listenForSkip(controller) : null
+    try {
+      const { account } = await addLoginInteractively({ expectedEmail: step.email, signal: controller.signal, storePath })
+      const got = (account.email ?? '').toLowerCase()
+      if (got === step.email) {
+        console.log(`    Saved ${got}.`)
+        results.push({ email: step.email, outcome: 'signed-in' })
+      } else {
+        console.log(`    That signed in ${got}, which is saved too. ${step.email} still needs its own sign-in.`)
+        results.push({ detail: `saved ${got}`, email: step.email, outcome: 'mismatch' })
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        results.push({ email: step.email, outcome: 'skipped' })
+        if (error.stop) {
+          console.log('    Stopped.')
+          break
+        }
+        console.log(`    Skipped ${step.email}.`)
+      } else {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(`    ${message}`)
+        results.push({ detail: message.slice(0, 300), email: step.email, outcome: 'failed' })
+      }
+    } finally {
+      keys?.release()
+    }
+  }
+  return results
+}
+
+function listenForSkip(controller) {
+  const rl = createInterface({ input: process.stdin, terminal: false })
+  const onLine = (line) => {
+    const stop = line.trim().toLowerCase() === 'q'
+    controller.abort(Object.assign(new Error(stop ? 'stopped' : 'skipped'), { name: 'AbortError', stop }))
+  }
+  rl.on('line', onLine)
+  return {
+    release() {
+      rl.off('line', onLine)
+      rl.close()
+    },
+  }
+}
+
 /** One browser sign-in through a throwaway CODEX_HOME, saved into the store. */
-async function addLoginInteractively({ expectedEmail = null, storePath }) {
+async function addLoginInteractively({ expectedEmail = null, signal = null, storePath }) {
   const home = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-login-'))
   const client = new StdioCodexClient({ codexHome: home })
   try {
@@ -824,6 +992,11 @@ async function addLoginInteractively({ expectedEmail = null, storePath }) {
         10 * 60 * 1000,
       )
       timer.unref?.()
+      signal?.addEventListener(
+        'abort',
+        () => reject(signal.reason ?? Object.assign(new Error('skipped'), { name: 'AbortError' })),
+        { once: true },
+      )
     })
     const started = await client.request('account/login/start', { type: 'chatgpt' })
     if (!started?.authUrl) throw new Error('Codex did not return a sign-in link.')
@@ -1354,6 +1527,8 @@ function printUsage() {
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>]')
+  console.log('  codex-usage login setup [--store <accounts.json>]      find every account this machine used, sign each in')
+  console.log('  codex-usage login discover [--store <accounts.json>]   list them without signing in')
   console.log('  codex-usage login add [--store <accounts.json>]')
   console.log('  codex-usage login list [--store <accounts.json>]')
   console.log('  codex-usage login repair [--emails a@x,b@y] [--store <accounts.json>]')

@@ -8,6 +8,7 @@ export interface RepairDevice {
   lastResult: { at: string; results: { email: string; outcome: string; detail?: string | null }[] } | null
   lastSeenAt: string
   machineName: string | null
+  missing: string[]
   pending: { emails: string[]; requestedAt: string } | null
   reportedAt: string | null
 }

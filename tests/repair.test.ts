@@ -4,6 +4,7 @@ import test from 'node:test'
 import { expiredEmailsFromResults } from '../bin/lib/sync-all.js'
 import {
   REPAIR_PENDING_MAX_AGE_MS,
+  needsSignIn,
   readRepairState,
   withExpiredReport,
   withPendingRequest,
@@ -41,4 +42,27 @@ test('a request only targets emails the agent reported as expired, and a fresh r
   assert.equal(state.pending, null)
   assert.deepEqual(state.expired, ['b@x.com'])
   assert.equal(state.lastResult?.results.length, 2)
+})
+
+test('accounts the machine used but never saved ride the report and qualify for the same request', () => {
+  const at = '2026-09-10T21:00:00.000Z'
+  const reported = withExpiredReport({}, ['old@x.com'], at, ['New@x.com', 'old@x.com', 'nope'])
+  const state = readRepairState(reported, Date.parse(at))
+  assert.deepEqual(state.expired, ['old@x.com'])
+  assert.deepEqual(state.missing, ['new@x.com'], 'an expired login is never also missing')
+  assert.deepEqual(needsSignIn(state), ['old@x.com', 'new@x.com'])
+
+  const all = withPendingRequest(reported, undefined, at)
+  assert.deepEqual(all.targets, ['old@x.com', 'new@x.com'])
+  const one = withPendingRequest(reported, ['new@x.com'], at)
+  assert.deepEqual(one.targets, ['new@x.com'])
+
+  const done = withResult(all.metadata, [{ email: 'new@x.com', outcome: 'signed-in' }, { email: 'old@x.com', outcome: 'skipped' }], at)
+  const after = readRepairState(done, Date.parse(at))
+  assert.deepEqual(after.missing, [])
+  assert.deepEqual(after.expired, ['old@x.com'])
+  assert.equal(after.pending, null)
+
+  const legacy = readRepairState({ repair: { expired: ['a@x.com'] } }, Date.parse(at))
+  assert.deepEqual(legacy.missing, [], 'a report written before this field reads as none missing')
 })

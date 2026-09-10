@@ -29,7 +29,7 @@ things you can do, and each one has its own command. Pick the one you mean.
 | You want to | Do this | What runs on the other machine |
 |---|---|---|
 | See your own usage in the dashboard | Sign in, choose **Add a machine**, run the command on the machine where you use Codex | `pair` (reports usage only) |
-| See every account you own from one machine | Pair once, then `login add` per account and `sync --all --watch` | `login add`, `sync --all` |
+| See every account you own from one machine | Pair once, then `login setup` and `sync --all --watch` | `login setup`, `sync --all` |
 | Let a friend use your plans, switching when one runs out | Find **Share Codex login**, choose **Create login command**, send it to them | `use` (signs their Codex into your plan) |
 | Let a friend look at your dashboard | Choose **Invite a viewer**, send the link | nothing; they sign in with Google |
 
@@ -62,17 +62,19 @@ on the machine instead; it links the machine and opens your dashboard.
 
 ### 1b. Every account you own, from one machine
 
-Have more than one Codex account? Save each one once, then one command reports
-all of them:
+You do not need to remember which accounts you have. The machine does:
 
 ```bash
-npx codex-usage-dashboard@latest login add
+npx codex-usage-dashboard@latest login setup
 ```
 
-That opens the Codex sign-in in your browser; sign in with the account to add,
-then run it again for the next account. The logins are kept in
-`~/.codex-switcher/accounts.json` (mode 600, the same store the Codex
-Switchboard uses). Then:
+It lists every Codex account this machine has ever used (the current login,
+earlier logins Codex left behind, the Switchboard store, its switch records,
+and whatever the dashboard already saw), checks which sign-ins still work, then
+walks you through the rest one at a time: "Sign in as a@example.com now", a
+browser tab opens, you sign in, next. Press Enter to skip one, `q` to stop.
+It ends with one sync, so the dashboard shows all of them. Then keep this
+running:
 
 ```bash
 npx codex-usage-dashboard@latest sync --all --watch
@@ -81,7 +83,10 @@ npx codex-usage-dashboard@latest sync --all --watch
 `sync --all` reads every saved account's usage straight from ChatGPT, refreshes
 an expired token on the way, includes the account this machine is signed into,
 and reports all of them under this machine's pairing. `--watch` repeats every
-five minutes (`--every 120` for two). `login list` shows what is saved and
+five minutes (`--every 120` for two). The logins are kept in
+`~/.codex-switcher/accounts.json` (mode 600, the same store the Codex
+Switchboard uses). `login discover` prints the list without signing anything
+in, `login add` adds one account by hand, `login list` shows what is saved, and
 `login remove --email you@example.com` forgets one. The machine still has to
 be paired once (section 1) so the dashboard knows whose accounts these are.
 
@@ -91,7 +96,9 @@ A saved sign-in stops refreshing every so often (OpenAI refuses the refresh
 with a 401). The sync agent reports those accounts, the dashboard marks their
 rows "sign-in expired" and shows **Fix sign-ins** under the Plans title. One
 click asks the machine that holds the accounts to open one browser sign-in per
-account; you sign in there and nothing else. The same thing from the terminal:
+account; you sign in there and nothing else. Accounts the machine has used but
+never signed in through the dashboard show up in the same line, with
+**Sign them in**. The same thing from the terminal:
 
 ```bash
 npx codex-usage-dashboard@latest login repair

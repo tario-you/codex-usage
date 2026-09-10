@@ -9,14 +9,17 @@ import { queryClient } from '@/lib/query-client'
 import type { RepairDevice } from './repair-signins-state'
 
 /**
- * One line under the Plans title: which machine holds expired sign-ins and a
- * button that makes that machine open the sign-ins. The person only clicks
- * through the browser tabs that appear there.
+ * One line under the Plans title: which machine holds expired sign-ins, or
+ * accounts it has used and never signed in, and a button that makes that
+ * machine open the sign-ins. The person only clicks through the browser tabs
+ * that appear there.
  */
 export function RepairSignInsBanner({ devices, session }: { devices: RepairDevice[] | undefined; session: Session }) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const relevant = (devices ?? []).filter((device) => device.expired.length > 0 || device.pending)
+  const relevant = (devices ?? []).filter(
+    (device) => device.expired.length > 0 || (device.missing ?? []).length > 0 || device.pending,
+  )
   if (relevant.length === 0) return null
 
   async function requestRepair(device: RepairDevice) {
@@ -42,6 +45,15 @@ export function RepairSignInsBanner({ devices, session }: { devices: RepairDevic
     <div className="mt-2 grid gap-1.5 text-xs">
       {relevant.map((device) => {
         const machine = device.label || device.machineName || 'this machine'
+        const missing = device.missing ?? []
+        const parts: string[] = []
+        if (device.expired.length > 0) {
+          parts.push(`${device.expired.length} sign-in${device.expired.length === 1 ? '' : 's'} expired: ${device.expired.join(', ')}`)
+        }
+        if (missing.length > 0) {
+          parts.push(`${missing.length} account${missing.length === 1 ? '' : 's'} used there but never signed in: ${missing.join(', ')}`)
+        }
+        const total = device.expired.length + missing.length
         return (
           <div className="flex flex-wrap items-center gap-2" key={device.id}>
             {device.pending ? (
@@ -56,18 +68,17 @@ export function RepairSignInsBanner({ devices, session }: { devices: RepairDevic
               <>
                 <KeyRound className="size-3.5 text-amber-500" />
                 <span>
-                  {device.expired.length} sign-in{device.expired.length === 1 ? '' : 's'} expired on{' '}
-                  <span className="font-medium">{machine}</span>: {device.expired.join(', ')}
+                  On <span className="font-medium">{machine}</span>: {parts.join('; ')}
                 </span>
                 <Button
                   disabled={busyId === device.id}
                   onClick={() => void requestRepair(device)}
                   size="sm"
-                  title={`${machine} opens one sign-in tab per account; you only sign in`}
+                  title={`${machine} opens one sign-in tab per account, ${total} in all; you only sign in`}
                   type="button"
                   variant="outline"
                 >
-                  {busyId === device.id ? 'Asking…' : 'Fix sign-ins'}
+                  {busyId === device.id ? 'Asking…' : missing.length > 0 && device.expired.length === 0 ? 'Sign them in' : 'Fix sign-ins'}
                 </Button>
               </>
             )}
