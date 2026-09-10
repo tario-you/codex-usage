@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       requested += targets.length
     }
     if (requested === 0) {
-      return errorResponse('No expired sign-in is waiting on that machine right now.', 409)
+      return errorResponse('No sign-in is waiting on that machine right now.', 409)
     }
     return jsonResponse({ devices: devices.map(serializeDevice), requested })
   } catch (error) {
@@ -98,20 +98,66 @@ export async function POST(request: Request) {
 const pollSchema = z.object({
   deviceToken: z.string().min(1),
   expired: z.array(z.string()).max(64).default([]),
+  missing: z.array(z.string()).max(64).default([]),
 })
 
-/** The agent reports its expired logins and learns whether the owner asked for a fix. */
+/** The agent reports its expired and never-saved logins and learns whether the owner asked for a fix. */
 export async function POLL(request: Request) {
   try {
     const parsed = pollSchema.safeParse(await request.json().catch(() => null))
     if (!parsed.success) return errorResponse('Send the device token and the expired emails.')
     const device = await findActiveDeviceByToken(parsed.data.deviceToken)
     if (!device) throw new SharedLoginError('Unknown or revoked device token.', 401)
-    const metadata = withExpiredReport(device.metadata, parsed.data.expired, new Date().toISOString())
+    const metadata = withExpiredReport(
+      device.metadata,
+      parsed.data.expired,
+      new Date().toISOString(),
+      parsed.data.missing,
+    )
     await saveMetadata(device.id, metadata)
     return jsonResponse({ pending: readRepairState(metadata).pending })
   } catch (error) {
     return sharedLoginErrorResponse(error, 'Unable to report sign-in state.')
+  }
+}
+
+const knownSchema = z.object({ deviceToken: z.string().min(1) })
+
+/**
+ * Every account the dashboard has seen for this device's owner, on any
+ * machine. `login setup` merges it with the machine's own traces, so a
+ * reinstalled Mac still learns which accounts to sign in as.
+ */
+export async function KNOWN(request: Request) {
+  try {
+    const parsed = knownSchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) return errorResponse('Send the device token.')
+    const device = await findActiveDeviceByToken(parsed.data.deviceToken)
+    if (!device) throw new SharedLoginError('Unknown or revoked device token.', 401)
+    const { data, error } = await serviceRoleSupabase
+      .from('codex_accounts')
+      .select('email, plan_type, source_key, source_label, last_seen_at')
+      .eq('owner_user_id', device.owner_user_id)
+      .not('email', 'is', null)
+      .order('last_seen_at', { ascending: false })
+    if (error) throw new SharedLoginError('Unable to load the known accounts.', 500)
+    const seen = new Set<string>()
+    const accounts: { email: string; lastSeenAt: string; planType: string | null; sourceLabel: string | null; thisDevice: boolean }[] = []
+    for (const row of data ?? []) {
+      const email = row.email?.trim().toLowerCase()
+      if (!email || seen.has(email)) continue
+      seen.add(email)
+      accounts.push({
+        email,
+        lastSeenAt: row.last_seen_at,
+        planType: row.plan_type,
+        sourceLabel: row.source_label,
+        thisDevice: row.source_key === device.device_key,
+      })
+    }
+    return jsonResponse({ accounts })
+  } catch (error) {
+    return sharedLoginErrorResponse(error, 'Unable to load the known accounts.')
   }
 }
 
