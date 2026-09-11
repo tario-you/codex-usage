@@ -41,6 +41,11 @@ export interface ClaudeAccount {
   type: 'claude'
 }
 
+/** A dashboard row keyed `claude:<email>` is a Claude login, never a Codex plan to switch to. */
+export function isClaudeAccountKey(accountKey: string | null | undefined) {
+  return typeof accountKey === 'string' && accountKey.startsWith('claude:')
+}
+
 export interface CodexAccountReadResponse {
   account: ClaudeAccount | CodexApiKeyAccount | CodexChatGptAccount | null
   requiresOpenaiAuth: boolean

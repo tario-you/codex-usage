@@ -1,3 +1,4 @@
+import { isClaudeAccountKey } from '../../shared/codex.js'
 import {
   getRateLimitWindows,
   type RateLimitWindowKey,
@@ -53,9 +54,11 @@ export function buildResetPlan(
   accounts: ResetPlanAccount[],
   now = Date.now(),
 ): ResetPlan {
-  const normalizedAccounts = accounts.map((account) =>
-    normalizeAccount(account, now),
-  )
+  // The plan answers "which Codex login now"; a Claude row is a different
+  // product and never a switch target, so it stays out of the ordering.
+  const normalizedAccounts = accounts
+    .filter((account) => !isClaudeAccountKey(account.account_key))
+    .map((account) => normalizeAccount(account, now))
   const recommendations = normalizedAccounts
     .map(buildRecommendation)
     .filter(

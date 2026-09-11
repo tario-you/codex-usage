@@ -5,6 +5,7 @@ import { clientEnvError } from './env'
 import { supabase } from './supabase'
 import {
   getRemainingPercent,
+  isClaudeAccountKey,
   isFreshTimestamp,
   type CodexRateLimitSnapshot,
 } from '@/shared/codex'
@@ -149,7 +150,7 @@ export async function fetchDashboardWeeklyUsageHistory(
 
 /** A Claude login reported beside the Codex ones; its key is `claude:<email>`. */
 export function isClaudeAccount(row: Pick<DashboardAccountRow, 'account_key'>) {
-  return row.account_key.startsWith('claude:')
+  return isClaudeAccountKey(row.account_key)
 }
 
 const MAIN_LIMIT_IDS = new Set(['codex', 'claude'])
