@@ -107,6 +107,20 @@ test('treats a weekly primary with no secondary as one weekly-only limit', () =>
   assert.equal(plan.upcomingResets[0]?.windowLabel, 'Weekly')
 })
 
+test('a Claude login is never the next Codex plan, even with the most left', () => {
+  const plan = buildResetPlan(
+    [
+      account({ id: 'codex', label: 'Codex', primary_remaining_percent: 10, primary_resets_at: isoAfterHours(1) }),
+      account({ account_key: 'claude:me@example.com', id: 'claude', label: 'Claude', primary_remaining_percent: 95, primary_resets_at: isoAfterHours(2) }),
+    ],
+    NOW,
+  )
+
+  assert.equal(plan.current?.accountId, 'codex')
+  assert.deepEqual(plan.fallbacks, [])
+  assert.ok(plan.upcomingResets.every((event) => event.accountId !== 'claude'), 'the reset schedule is Codex-only too')
+})
+
 function account(overrides: Partial<ResetPlanAccount>): ResetPlanAccount {
   const primaryRemaining = overrides.primary_remaining_percent ?? 100
   const secondaryRemaining = overrides.secondary_remaining_percent ?? 100
