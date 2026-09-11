@@ -35,10 +35,14 @@ export async function persistSnapshotForOwner({
   }
 
   const email =
-    account.type === 'chatgpt' && account.email
+    (account.type === 'chatgpt' || account.type === 'claude') && account.email
       ? account.email.toLowerCase()
       : null
-  const accountKey = email ? `chatgpt:${email}` : `source:${device.deviceKey}`
+  const accountKey = email
+    ? `${account.type === 'claude' ? 'claude' : 'chatgpt'}:${email}`
+    : account.type === 'claude'
+      ? `claude-source:${device.deviceKey}`
+      : `source:${device.deviceKey}`
   const nowIso = new Date().toISOString()
 
   const accountUpsert: Database['public']['Tables']['codex_accounts']['Insert'] =
@@ -61,7 +65,9 @@ export async function persistSnapshotForOwner({
       owner_user_id: ownerUserId,
       plan_type:
         rateLimits.rateLimits.planType ??
-        (account.type === 'chatgpt' ? account.planType ?? null : null),
+        (account.type === 'chatgpt' || account.type === 'claude'
+          ? account.planType ?? null
+          : null),
       source_key: device.deviceKey,
       source_label: device.label,
     }

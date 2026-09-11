@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/tooltip'
 import { INVALID_SESSION_MESSAGE, useAuthSession } from '@/lib/auth'
 import {
+  isClaudeAccount,
   buildSummary,
   dashboardAccountsQueryOptions,
   dashboardInvitersQueryOptions,
@@ -1818,7 +1819,7 @@ function AccountTable({
           <TableHead className="h-8 text-xs" title="Usage-limit reset credits the account owns">Resets</TableHead>
           {notes ? (
             <>
-              <TableHead className="h-8 text-xs">ChatGPT</TableHead>
+              <TableHead className="h-8 text-xs" title="The ChatGPT or Claude password for this login">Password</TableHead>
               <TableHead className="h-8 text-xs">Google</TableHead>
               <TableHead className="h-8 text-xs">Note</TableHead>
             </>
@@ -1874,6 +1875,7 @@ function AccountTable({
                   >
                     {identity.primary}
                   </p>
+                  {isClaudeAccount(account) ? <ClaudeBadge /> : null}
                   {account.plan_type ? (
                     <span className="rounded border border-border px-1 text-[10px] uppercase leading-4 text-muted-foreground">
                       {account.plan_type}
@@ -2072,7 +2074,10 @@ function AccountSummaryList({
           <div key={account.id} className="space-y-2 px-4 py-2.5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-medium text-foreground">{identity.primary}</p>
+                <p className="flex flex-wrap items-baseline gap-x-2 font-medium text-foreground">
+                  <span>{identity.primary}</span>
+                  {isClaudeAccount(account) ? <ClaudeBadge /> : null}
+                </p>
                 {identity.secondary ? (
                   <p className="truncate text-sm text-muted-foreground">
                     {identity.secondary}
@@ -2202,6 +2207,17 @@ function AccountSummaryList({
         </div>
       ) : null}
     </div>
+  )
+}
+
+function ClaudeBadge() {
+  return (
+    <span
+      className="rounded border border-orange-500/40 px-1 text-[10px] uppercase leading-4 text-orange-700 dark:text-orange-300"
+      title="A Claude login reported by sync --all"
+    >
+      Claude
+    </span>
   )
 }
 

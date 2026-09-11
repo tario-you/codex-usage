@@ -37,8 +37,19 @@ const apiKeyAccountSchema = z.object({
   type: z.literal('apiKey'),
 })
 
+const claudeAccountSchema = z.object({
+  email: z.string().optional(),
+  planType: z.string().optional(),
+  type: z.literal('claude'),
+})
+
 export const accountStateSchema = z.object({
-  account: z.union([chatgptAccountSchema, apiKeyAccountSchema, z.null()]),
+  account: z.union([
+    chatgptAccountSchema,
+    claudeAccountSchema,
+    apiKeyAccountSchema,
+    z.null(),
+  ]),
   requiresOpenaiAuth: z.boolean(),
 })
 

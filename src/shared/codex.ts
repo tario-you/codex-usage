@@ -34,8 +34,15 @@ export interface CodexApiKeyAccount {
   type: 'apiKey'
 }
 
+/** A Claude login reported by `sync --all`; its key is `claude:<email>`. */
+export interface ClaudeAccount {
+  email?: string
+  planType?: string
+  type: 'claude'
+}
+
 export interface CodexAccountReadResponse {
-  account: CodexApiKeyAccount | CodexChatGptAccount | null
+  account: ClaudeAccount | CodexApiKeyAccount | CodexChatGptAccount | null
   requiresOpenaiAuth: boolean
 }
 

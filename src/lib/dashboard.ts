@@ -147,6 +147,13 @@ export async function fetchDashboardWeeklyUsageHistory(
   return (data ?? []).map(mapWeeklyUsageHistoryRow)
 }
 
+/** A Claude login reported beside the Codex ones; its key is `claude:<email>`. */
+export function isClaudeAccount(row: Pick<DashboardAccountRow, 'account_key'>) {
+  return row.account_key.startsWith('claude:')
+}
+
+const MAIN_LIMIT_IDS = new Set(['codex', 'claude'])
+
 export function getModelBuckets(row: DashboardAccountRow) {
   const rawBuckets = row.raw_rate_limits_by_limit_id
   if (!rawBuckets || typeof rawBuckets !== 'object' || Array.isArray(rawBuckets)) {
@@ -156,7 +163,7 @@ export function getModelBuckets(row: DashboardAccountRow) {
   return Object.entries(
     rawBuckets as Record<string, CodexRateLimitSnapshot | undefined>,
   )
-    .filter(([, snapshot]) => snapshot && snapshot.limitId !== 'codex')
+    .filter(([, snapshot]) => snapshot && !MAIN_LIMIT_IDS.has(snapshot.limitId ?? ''))
     .map(([key, snapshot]) => ({
       key,
       label: snapshot?.limitName ?? key,
