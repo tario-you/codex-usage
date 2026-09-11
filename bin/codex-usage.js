@@ -30,6 +30,7 @@ import {
   writeStore,
 } from './lib/sync-all.js'
 import { readJsonFile, resolveAuthFilePath } from './lib/login-file.js'
+import { syncClaudeOnce } from './lib/claude-logins.js'
 import {
   checkSavedLogins,
   describeSources,
@@ -643,6 +644,7 @@ async function runSyncAllCommand(args, config, codexHome) {
   const device = buildDevicePayload(args, codexHome, config.label)
   let lastExpired = []
   let lastMissing = []
+  let claudeHintShown = false
 
   const once = async () => {
     let activeAuthFile = null
@@ -657,6 +659,16 @@ async function runSyncAllCommand(args, config, codexHome) {
     }
     const summary = await syncAllOnce({ activeAuthFile, config, device, storePath })
     lastExpired = expiredEmailsFromResults(summary.results)
+    // Claude plans ride the same pass: every Claude login this machine holds
+    // (Claude Code sign-in, saved switcher logins, the running desktop app).
+    let claude = { results: [], synced: 0, total: 0 }
+    if (!args.options['skip-claude']) {
+      try {
+        claude = await syncClaudeOnce({ config, device })
+      } catch (error) {
+        console.error(`[claude] ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     // Accounts this machine has used but never saved ride the same report,
     // so the dashboard can offer their sign-in beside the expired ones.
     lastMissing = await discoverMissingQuietly({ codexHome, config, storePath })
@@ -668,9 +680,21 @@ async function runSyncAllCommand(args, config, codexHome) {
           : `  ${result.email}: skipped, ${result.reason}`,
       )
     }
+    for (const result of claude.results) {
+      const who = `${result.email ?? result.source} (Claude)`
+      console.log(
+        result.ok
+          ? `  ${who}: ${result.usedPercent ?? '?'}% used${result.weeklyUsedPercent != null ? `, ${result.weeklyUsedPercent}% of the week` : ''}${result.planType ? ` (${result.planType})` : ''}`
+          : `  ${who}: skipped, ${result.reason}`,
+      )
+    }
     console.log(
-      `[${new Date().toLocaleTimeString()}] Synced ${summary.synced} of ${summary.total} accounts from ${storePath}.`,
+      `[${new Date().toLocaleTimeString()}] Synced ${summary.synced} of ${summary.total} Codex accounts from ${storePath}${claude.total > 0 ? ` and ${claude.synced} of ${claude.total} Claude logins` : ''}.`,
     )
+    if (claude.total === 0 && !args.options['skip-claude'] && !claudeHintShown) {
+      claudeHintShown = true
+      console.log('  No Claude login found here. Sign in to Claude Code once (or save logins with claude-auto-switch) and this pass reports its plan too.')
+    }
     for (const email of lastMissing) console.log(`  ${email}: used on this machine, never signed in here`)
     if (summary.total === 0) {
       console.log(`No saved accounts yet. Set every account up with: ${NPX_COMMAND} login setup`)
@@ -1248,7 +1272,7 @@ function parseArgs(rawArgs) {
 
     const key = value.slice(2)
 
-    if (key === 'watch' || key === 'restore' || key === 'all') {
+    if (key === 'watch' || key === 'restore' || key === 'all' || key === 'skip-claude') {
       options[key] = true
       continue
     }
@@ -1526,7 +1550,7 @@ function printUsage() {
   console.log('  codex-usage connect [--site <url>] [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
-  console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>]')
+  console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>] [--skip-claude]')
   console.log('  codex-usage login setup [--store <accounts.json>]      find every account this machine used, sign each in')
   console.log('  codex-usage login discover [--store <accounts.json>]   list them without signing in')
   console.log('  codex-usage login add [--store <accounts.json>]')

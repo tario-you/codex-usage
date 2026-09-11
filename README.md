@@ -90,6 +90,15 @@ in, `login add` adds one account by hand, `login list` shows what is saved, and
 `login remove --email you@example.com` forgets one. The machine still has to
 be paired once (section 1) so the dashboard knows whose accounts these are.
 
+**Claude plans too.** The same `sync --all` pass reports every Claude login
+this machine holds: the Claude Code sign-in (macOS Keychain, or
+`~/.claude/.credentials.json` elsewhere), every login saved by
+`claude-auto-switch` in `~/.claude-switcher/accounts.json`, and the Claude
+desktop app's live login while it is running. They appear in the Plans table
+with a Claude badge; the 5-hour and weekly windows land in the same Usable
+columns. Nothing to sign in separately: sign in to Claude Code once and the
+next pass picks it up. `--skip-claude` leaves them out.
+
 ### 1c. Expired sign-ins fix themselves from the dashboard
 
 A saved sign-in stops refreshing every so often (OpenAI refuses the refresh

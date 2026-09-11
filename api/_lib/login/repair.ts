@@ -139,6 +139,7 @@ export async function KNOWN(request: Request) {
       .select('email, plan_type, source_key, source_label, last_seen_at')
       .eq('owner_user_id', device.owner_user_id)
       .not('email', 'is', null)
+      .like('account_key', 'chatgpt:%')
       .order('last_seen_at', { ascending: false })
     if (error) throw new SharedLoginError('Unable to load the known accounts.', 500)
     const seen = new Set<string>()
