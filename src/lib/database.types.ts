@@ -725,6 +725,7 @@ export interface Database {
       }
       list_dashboard_weekly_usage_history: {
         Args: {
+          bucket_seconds?: number
           range_start: string
         }
         Returns: {
