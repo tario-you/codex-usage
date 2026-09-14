@@ -91,4 +91,9 @@ test('the next weekly reset is the earliest future 10080-minute window across th
   )
   assert.deepEqual(next, { at: at(30), label: 'soonest' })
   assert.equal(nextWeeklyReset([row('past', at(-1))], T0), null)
+  assert.deepEqual(
+    nextWeeklyReset([{ ...row('geoffery@example.com', at(96)), account_key: 'claude:geoffery@example.com' }, row('geoffery@example.com', at(143))], T0),
+    { at: at(96), label: 'geoffery@example.com (Claude)' },
+    'a Claude login resets under its own name',
+  )
 })

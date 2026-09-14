@@ -83,6 +83,8 @@ export function projectedRemainingAt(projection: UsageProjection, atMs: number) 
 }
 
 export interface NextWeeklyResetSource {
+  /** `claude:<email>` names a Claude login, which the chart sums too; its reset is named as such. */
+  account_key?: string | null
   label: string | null
   primary_remaining_percent: number | null
   primary_resets_at: string | null
@@ -116,7 +118,9 @@ export function nextWeeklyReset(
       if (window.mins !== WEEKLY_WINDOW_MINS || !window.resetsAt) continue
       const atMs = Date.parse(window.resetsAt)
       if (!Number.isFinite(atMs) || atMs <= nowMs) continue
-      if (!best || atMs < Date.parse(best.at)) best = { at: window.resetsAt, label: row.label ?? 'a plan' }
+      const name = row.label ?? 'a plan'
+      const label = row.account_key?.startsWith('claude:') ? `${name} (Claude)` : name
+      if (!best || atMs < Date.parse(best.at)) best = { at: window.resetsAt, label }
     }
   }
   return best
