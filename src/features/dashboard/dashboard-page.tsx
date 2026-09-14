@@ -5,6 +5,12 @@ import {
   type ComponentProps,
   type ReactNode,
 } from 'react'
+import {
+  nextWeeklyReset,
+  projectRunOut,
+  projectedRemainingAt,
+  type UsageProjection,
+} from './usage-projection'
 import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
@@ -1304,6 +1310,7 @@ export function DashboardPage() {
                       {accounts.length > 0 ? (
                         <>
                           <WeeklyUsageHistoryPanel
+                            accounts={accounts}
                             accountsTracked={summary.accountsTracked}
                             errorMessage={
                               weeklyUsageHistoryQuery.error?.message ?? null
@@ -1564,6 +1571,7 @@ function EmptyState() {
 }
 
 function WeeklyUsageHistoryPanel({
+  accounts,
   accountsTracked,
   errorMessage,
   isLoading,
@@ -1571,6 +1579,7 @@ function WeeklyUsageHistoryPanel({
   points,
   range,
 }: {
+  accounts: DashboardAccountRow[]
   accountsTracked: number
   errorMessage: string | null
   isLoading: boolean
@@ -1579,6 +1588,20 @@ function WeeklyUsageHistoryPanel({
   range: DashboardWeeklyUsageRange
 }) {
   const latestPoint = points[points.length - 1] ?? null
+  // #33: the run-out at the recent spend pace, and the next weekly reset that would add allowance back.
+  const projection = latestPoint ? projectRunOut(points) : null
+  const nextReset = nextWeeklyReset(accounts, Date.now())
+  const projectionText = projection
+    ? projection.runsOutAt
+      ? ` · at this pace (${projection.percentPerHour}%/h) it runs out ${formatResetCountdown(projection.runsOutAt)}, ${formatHistoryTooltipTimestamp(projection.runsOutAt)}${
+          nextReset
+            ? Date.parse(nextReset.at) < Date.parse(projection.runsOutAt)
+              ? `; ${nextReset.label} resets ${formatResetCountdown(nextReset.at)} before that`
+              : `; next reset ${formatResetCountdown(nextReset.at)} (${nextReset.label})`
+            : ''
+        }`
+      : ' · no spend in the last 24h'
+    : ''
   const capacityPercent = Math.max(
     accountsTracked * 100,
     latestPoint?.totalCapacityPercent ?? 0,
@@ -1587,7 +1610,7 @@ function WeeklyUsageHistoryPanel({
     dashboardWeeklyUsageRanges.find((option) => option.value === range)?.label ??
     '7 day'
   const summaryText = latestPoint
-    ? `${latestPoint.totalRemainingPercent}% left of ${capacityPercent}% - Updated ${formatRelativeTimestamp(latestPoint.fetchedAt)}`
+    ? `${latestPoint.totalRemainingPercent}% left of ${capacityPercent}% - Updated ${formatRelativeTimestamp(latestPoint.fetchedAt)}${projectionText}`
     : isLoading
       ? 'Loading sync history...'
       : `No sync history in the last ${rangeLabel}.`
@@ -1640,6 +1663,7 @@ function WeeklyUsageHistoryPanel({
         <WeeklyUsageHistoryChart
           capacityPercent={capacityPercent}
           points={points}
+          projection={projection}
           range={range}
         />
       )}
@@ -1650,13 +1674,15 @@ function WeeklyUsageHistoryPanel({
 function WeeklyUsageHistoryChart({
   capacityPercent,
   points,
+  projection,
   range,
 }: {
   capacityPercent: number
   points: DashboardWeeklyUsageHistoryPoint[]
+  projection: UsageProjection | null
   range: DashboardWeeklyUsageRange
 }) {
-  const chart = buildWeeklyUsageChart(points, range, capacityPercent)
+  const chart = buildWeeklyUsageChart(points, range, capacityPercent, projection)
 
   return (
     <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
@@ -1715,6 +1741,41 @@ function WeeklyUsageHistoryChart({
           strokeLinejoin="round"
           strokeWidth="2"
         />
+        {chart.nowX != null ? (
+          <line
+            stroke="var(--border)"
+            strokeDasharray="2 4"
+            strokeWidth="1"
+            x1={chart.nowX}
+            x2={chart.nowX}
+            y1={chart.bounds.top}
+            y2={chart.bounds.bottom}
+          />
+        ) : null}
+        {chart.projectionPath ? (
+          <path
+            d={chart.projectionPath}
+            fill="none"
+            opacity="0.75"
+            stroke="var(--chart-1)"
+            strokeDasharray="5 5"
+            strokeLinecap="round"
+            strokeWidth="2"
+          />
+        ) : null}
+        {chart.runOutDot ? (
+          <circle
+            cx={chart.runOutDot.x}
+            cy={chart.runOutDot.y}
+            fill="var(--background)"
+            r="3.5"
+            stroke="var(--chart-1)"
+            strokeDasharray="2 2"
+            strokeWidth="2"
+          >
+            <title>Runs out at {chart.runOutDot.label} at the current pace</title>
+          </circle>
+        ) : null}
         {chart.pointsForDots.map((point) => (
           <circle
             cx={point.x}
@@ -2398,6 +2459,7 @@ function buildWeeklyUsageChart(
   points: DashboardWeeklyUsageHistoryPoint[],
   range: DashboardWeeklyUsageRange,
   capacityPercent: number,
+  projection: UsageProjection | null = null,
 ) {
   const bounds: WeeklyUsageChartBounds = {
     bottom: 88,
@@ -2409,6 +2471,14 @@ function buildWeeklyUsageChart(
     getDashboardWeeklyUsageRangeDays(range) * 24 * 60 * 60 * 1000
   const endMs = Date.now()
   const startMs = endMs - rangeMs
+  // #33: the run-out sits past now; the axis follows it up to half a range ahead.
+  const runsOutAtMs = projection?.runsOutAt ? Date.parse(projection.runsOutAt) : null
+  const horizonMs =
+    runsOutAtMs != null && Number.isFinite(runsOutAtMs)
+      ? Math.min(Math.max(runsOutAtMs - endMs, 0), rangeMs / 2)
+      : 0
+  const domainEndMs = endMs + horizonMs
+  const domainMs = domainEndMs - startMs
   const plotWidth = bounds.right - bounds.left
   const plotHeight = bounds.bottom - bounds.top
   const parsedPoints = points
@@ -2425,8 +2495,8 @@ function buildWeeklyUsageChart(
   )
   const yMax = Math.max(100, Math.ceil(maxPointValue / 100) * 100)
   const coordinates: WeeklyUsageChartPoint[] = parsedPoints.map((point) => {
-    const clampedTime = Math.min(Math.max(point.fetchedAtMs, startMs), endMs)
-    const x = bounds.left + ((clampedTime - startMs) / rangeMs) * plotWidth
+    const clampedTime = Math.min(Math.max(point.fetchedAtMs, startMs), domainEndMs)
+    const x = bounds.left + ((clampedTime - startMs) / domainMs) * plotWidth
     const y =
       bounds.bottom -
       (Math.min(Math.max(point.totalRemainingPercent, 0), yMax) / yMax) *
@@ -2447,17 +2517,52 @@ function buildWeeklyUsageChart(
       ? `${linePath} L ${coordinates[coordinates.length - 1].x} ${bounds.bottom} L ${coordinates[0].x} ${bounds.bottom} Z`
       : null
   const middleTick = Math.round(yMax / 2)
-  const xTickValues = [
-    { anchor: 'start' as const, time: startMs },
-    { anchor: 'middle' as const, time: startMs + rangeMs / 2 },
-    { anchor: 'end' as const, time: endMs },
-  ]
+  const timeToX = (time: number) =>
+    roundChartCoordinate(
+      bounds.left +
+        ((Math.min(Math.max(time, startMs), domainEndMs) - startMs) / domainMs) *
+          plotWidth,
+    )
+  const valueToY = (value: number) =>
+    roundChartCoordinate(
+      bounds.bottom - (Math.min(Math.max(value, 0), yMax) / yMax) * plotHeight,
+    )
+  const latestCoordinate = coordinates[coordinates.length - 1] ?? null
+  const projectionEndMs =
+    runsOutAtMs != null && horizonMs > 0 ? Math.min(runsOutAtMs, domainEndMs) : null
+  const projectionPath =
+    projection && latestCoordinate && projectionEndMs != null
+      ? `M ${latestCoordinate.x} ${latestCoordinate.y} L ${timeToX(projectionEndMs)} ${valueToY(projectedRemainingAt(projection, projectionEndMs))}`
+      : null
+  const runOutDot =
+    projection && runsOutAtMs != null && projectionPath && runsOutAtMs <= domainEndMs
+      ? {
+          label: formatHistoryTooltipTimestamp(projection.runsOutAt ?? ''),
+          x: timeToX(runsOutAtMs),
+          y: valueToY(0),
+        }
+      : null
+  const xTickValues =
+    horizonMs > 0
+      ? [
+          { anchor: 'start' as const, time: startMs },
+          { anchor: 'middle' as const, time: endMs },
+          { anchor: 'end' as const, time: domainEndMs },
+        ]
+      : [
+          { anchor: 'start' as const, time: startMs },
+          { anchor: 'middle' as const, time: startMs + rangeMs / 2 },
+          { anchor: 'end' as const, time: endMs },
+        ]
 
   return {
     areaPath,
     bounds,
     linePath,
+    nowX: horizonMs > 0 ? timeToX(endMs) : null,
     pointsForDots: coordinates.length <= 80 ? coordinates : [],
+    projectionPath,
+    runOutDot,
     xTicks: xTickValues.map((tick) => ({
       anchor: tick.anchor,
       label: formatHistoryAxisTimestamp(tick.time, range),
@@ -2466,7 +2571,7 @@ function buildWeeklyUsageChart(
           ? bounds.left
           : tick.anchor === 'end'
             ? bounds.right
-            : bounds.left + plotWidth / 2,
+            : timeToX(tick.time),
     })),
     yTicks: [yMax, middleTick, 0].map((value) => ({
       value,
