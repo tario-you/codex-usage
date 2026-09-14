@@ -3,6 +3,7 @@ import {
   useEffectEvent,
   useState,
   type ComponentProps,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
 import {
@@ -11,6 +12,13 @@ import {
   projectedRemainingAt,
   type UsageProjection,
 } from './usage-projection'
+import {
+  formatSpanShort,
+  inactivityStretches,
+  readingAtX,
+  stretchAt,
+  type ChartHoverDomain,
+} from './usage-history-hover'
 import { useQuery } from '@tanstack/react-query'
 import type { Session, UserIdentity } from '@supabase/supabase-js'
 import {
@@ -1683,12 +1691,35 @@ function WeeklyUsageHistoryChart({
   range: DashboardWeeklyUsageRange
 }) {
   const chart = buildWeeklyUsageChart(points, range, capacityPercent, projection)
+  // #35: the pointer's x in viewBox units names the nearest point, or the projection past the newest one.
+  const [hoverX, setHoverX] = useState<number | null>(null)
+  const reading =
+    hoverX == null
+      ? null
+      : readingAtX(hoverX, {
+          coordinates: chart.coordinates,
+          domain: chart.domain,
+          projection,
+          projectionEndMs: chart.projectionEndMs,
+        })
+  const pause =
+    reading?.kind === 'history'
+      ? stretchAt(chart.inactivity, Date.parse(reading.at))
+      : null
+  const readPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0) return
+    setHoverX(((event.clientX - rect.left) / rect.width) * 1000)
+  }
 
   return (
-    <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
+    <div className="relative mt-2 overflow-hidden rounded-md border border-border bg-background">
       <svg
         aria-label="Weekly total remaining history"
         className="h-auto w-full"
+        onPointerDown={readPointer}
+        onPointerLeave={() => setHoverX(null)}
+        onPointerMove={readPointer}
         role="img"
         viewBox="0 0 1000 112"
       >
@@ -1730,6 +1761,34 @@ function WeeklyUsageHistoryChart({
           y1={chart.bounds.bottom}
           y2={chart.bounds.bottom}
         />
+        {chart.inactivity.map((stretch) => (
+          <rect
+            fill="var(--muted-foreground)"
+            height={chart.bounds.bottom - chart.bounds.top}
+            key={stretch.fromAt}
+            opacity="0.1"
+            width={stretch.width}
+            x={stretch.x}
+            y={chart.bounds.top}
+          >
+            <title>
+              No spend from {formatHistoryTooltipTimestamp(stretch.fromAt)} to{' '}
+              {formatHistoryTooltipTimestamp(stretch.toAt)} (
+              {formatSpanShort(stretch.durationMs)})
+            </title>
+          </rect>
+        ))}
+        {chart.inactivity.length > 0 ? (
+          <text
+            fill="var(--muted-foreground)"
+            fontSize="9"
+            textAnchor="end"
+            x={chart.bounds.right}
+            y={chart.bounds.top - 2}
+          >
+            shaded: no spend
+          </text>
+        ) : null}
         {chart.areaPath ? (
           <path d={chart.areaPath} fill="var(--chart-1)" opacity="0.12" />
         ) : null}
@@ -1792,6 +1851,27 @@ function WeeklyUsageHistoryChart({
             </title>
           </circle>
         ))}
+        {reading ? (
+          <g>
+            <line
+              stroke="var(--muted-foreground)"
+              strokeDasharray="3 3"
+              strokeWidth="1"
+              x1={reading.x}
+              x2={reading.x}
+              y1={chart.bounds.top}
+              y2={chart.bounds.bottom}
+            />
+            <circle
+              cx={reading.x}
+              cy={reading.y}
+              fill="var(--chart-1)"
+              r="4"
+              stroke="var(--background)"
+              strokeWidth="2"
+            />
+          </g>
+        ) : null}
         {chart.xTicks.map((tick) => (
           <text
             fill="var(--muted-foreground)"
@@ -1805,6 +1885,31 @@ function WeeklyUsageHistoryChart({
           </text>
         ))}
       </svg>
+      {reading ? (
+        <div
+          className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-border bg-background px-2 py-1 text-xs shadow-md"
+          style={{
+            left: `${(reading.x / 1000) * 100}%`,
+            top: `${(reading.y / 112) * 100}%`,
+            transform: `translate(${reading.x > 720 ? 'calc(-100% - 8px)' : '8px'}, ${reading.y < 45 ? '12px' : '-110%'})`,
+          }}
+        >
+          <p className="font-medium text-foreground">
+            {reading.kind === 'projection'
+              ? `~${reading.remainingPercent}% left (projected)`
+              : `${reading.remainingPercent}% left of ${capacityPercent}%`}
+          </p>
+          <p className="text-muted-foreground">
+            {formatHistoryTooltipTimestamp(reading.at)}
+          </p>
+          {pause ? (
+            <p className="text-muted-foreground">
+              no spend for{' '}
+              {formatSpanShort(Date.parse(reading.at) - Date.parse(pause.fromAt))}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -2542,6 +2647,24 @@ function buildWeeklyUsageChart(
           y: valueToY(0),
         }
       : null
+  // #36: stretches of no spend, shaded behind the line.
+  const inactivity = inactivityStretches(parsedPoints).map((stretch) => {
+    const x = timeToX(Date.parse(stretch.fromAt))
+    return {
+      ...stretch,
+      width: Math.max(1, timeToX(Date.parse(stretch.toAt)) - x),
+      x,
+    }
+  })
+  const domain: ChartHoverDomain = {
+    bottom: bounds.bottom,
+    domainEndMs,
+    left: bounds.left,
+    right: bounds.right,
+    startMs,
+    top: bounds.top,
+    yMax,
+  }
   const xTickValues =
     horizonMs > 0
       ? [
@@ -2559,8 +2682,12 @@ function buildWeeklyUsageChart(
     areaPath,
     bounds,
     linePath,
+    coordinates,
+    domain,
+    inactivity,
     nowX: horizonMs > 0 ? timeToX(endMs) : null,
     pointsForDots: coordinates.length <= 80 ? coordinates : [],
+    projectionEndMs,
     projectionPath,
     runOutDot,
     xTicks: xTickValues.map((tick) => ({
