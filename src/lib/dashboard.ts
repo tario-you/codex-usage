@@ -1,6 +1,11 @@
 import { queryOptions } from '@tanstack/react-query'
 
 import type { Database } from './database.types'
+import {
+  getDashboardWeeklyUsageBucketSeconds,
+  getDashboardWeeklyUsageRangeDays,
+  type DashboardWeeklyUsageRange,
+} from '../features/dashboard/usage-history-ranges'
 import { clientEnvError } from './env'
 import { supabase } from './supabase'
 import {
@@ -19,14 +24,13 @@ export type DashboardInviterRow =
 type DashboardWeeklyUsageHistoryRpcRow =
   Database['public']['Functions']['list_dashboard_weekly_usage_history']['Returns'][number]
 
-export const dashboardWeeklyUsageRanges = [
-  { days: 1, label: '1 day', value: '1d' },
-  { days: 7, label: '7 day', value: '7d' },
-  { days: 30, label: '30 day', value: '30d' },
-] as const
-
-export type DashboardWeeklyUsageRange =
-  (typeof dashboardWeeklyUsageRanges)[number]['value']
+export {
+  POSTGREST_MAX_ROWS,
+  dashboardWeeklyUsageRanges,
+  getDashboardWeeklyUsageBucketSeconds,
+  getDashboardWeeklyUsageRangeDays,
+  type DashboardWeeklyUsageRange,
+} from '../features/dashboard/usage-history-ranges'
 
 export interface DashboardWeeklyUsageHistoryPoint {
   accountCount: number
@@ -137,6 +141,7 @@ export async function fetchDashboardWeeklyUsageHistory(
 
   const { data, error } = await supabase
     .rpc('list_dashboard_weekly_usage_history', {
+      bucket_seconds: getDashboardWeeklyUsageBucketSeconds(range),
       range_start: rangeStart,
     })
     .returns<DashboardWeeklyUsageHistoryRpcRow[]>()
@@ -183,13 +188,6 @@ export function getModelBuckets(row: DashboardAccountRow) {
     })
 }
 
-export function getDashboardWeeklyUsageRangeDays(
-  range: DashboardWeeklyUsageRange,
-) {
-  return (
-    dashboardWeeklyUsageRanges.find((option) => option.value === range)?.days ?? 7
-  )
-}
 
 export function buildSummary(rows: DashboardAccountRow[]): DashboardSummary {
   const mostRecentSync = rows
