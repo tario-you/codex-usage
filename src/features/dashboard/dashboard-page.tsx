@@ -94,7 +94,7 @@ import {
 
 import { ResetPlanPanel } from './reset-plan-panel'
 import { NoteEditor, NoteSecret } from './account-notes'
-import { RepairSignInsBanner } from './repair-signins'
+import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
 import { expiredEmailSet, useRepairState } from './repair-signins-state'
 import { noteKey, useAccountNotes, type AccountNotesController } from './account-notes-state'
 import { SharedLoginPanel } from './shared-login-panel'
@@ -1279,6 +1279,7 @@ export function DashboardPage() {
                             : ''}
                         </CardDescription>
                         <RepairSignInsBanner devices={repairState.data} session={session} />
+                        <ConnectPlanForm devices={repairState.data} session={session} />
                       </div>
                       <Button
                         className="shrink-0"

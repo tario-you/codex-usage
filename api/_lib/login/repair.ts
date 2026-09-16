@@ -9,6 +9,7 @@ import { serviceRoleSupabase } from '../supabase.js'
 import {
   readRepairState,
   withExpiredReport,
+  withConnectRequest,
   withPendingRequest,
   withResult,
   type RepairResult,
@@ -65,11 +66,16 @@ export async function GET(request: Request) {
 }
 
 const requestSchema = z.object({
+  connect: z.string().trim().email().max(320).optional(),
   deviceId: z.string().uuid().optional(),
   emails: z.array(z.string()).max(64).optional(),
 })
 
-/** Ask one machine (or every machine) to open sign-ins for its expired logins. */
+/**
+ * Ask one machine (or every machine) to open sign-ins for its expired logins.
+ * With `connect`, one machine (the chosen one, else the most recently seen)
+ * opens a sign-in for that email even though it never reported it.
+ */
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request)
@@ -77,6 +83,17 @@ export async function POST(request: Request) {
     if (!parsed.success) return errorResponse('Pick a machine and, optionally, the emails to fix.')
     const now = new Date().toISOString()
     const devices = await ownerDevices(user.id)
+    if (parsed.data.connect) {
+      const device = parsed.data.deviceId
+        ? devices.find((entry) => entry.id === parsed.data.deviceId)
+        : devices[0]
+      if (!device) return errorResponse('Add a machine first; the sign-in opens there.', 409)
+      const { metadata, targets } = withConnectRequest(device.metadata, parsed.data.connect, now)
+      if (targets.length === 0) return errorResponse('Enter a complete email address.')
+      await saveMetadata(device.id, metadata)
+      device.metadata = metadata as unknown as Json
+      return jsonResponse({ devices: devices.map(serializeDevice), requested: 1 })
+    }
     let requested = 0
     for (const device of devices) {
       if (parsed.data.deviceId && device.id !== parsed.data.deviceId) continue

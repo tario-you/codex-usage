@@ -6,6 +6,7 @@ import {
   REPAIR_PENDING_MAX_AGE_MS,
   needsSignIn,
   readRepairState,
+  withConnectRequest,
   withExpiredReport,
   withPendingRequest,
   withResult,
@@ -65,4 +66,31 @@ test('accounts the machine used but never saved ride the report and qualify for 
 
   const legacy = readRepairState({ repair: { expired: ['a@x.com'] } }, Date.parse(at))
   assert.deepEqual(legacy.missing, [], 'a report written before this field reads as none missing')
+})
+
+test('an email typed on the dashboard is signed in even though the machine never reported it', () => {
+  const at = '2026-09-16T09:00:00.000Z'
+  const reported = withExpiredReport({}, ['old@x.com'], at)
+  assert.deepEqual(withPendingRequest(reported, ['brand-new@x.com'], at).targets, [], 'Fix sign-ins still refuses unknown emails')
+
+  const none = withConnectRequest(reported, 'not-an-email', at)
+  assert.deepEqual(none.targets, [])
+  assert.equal(readRepairState(none.metadata, Date.parse(at)).pending, null)
+
+  const one = withConnectRequest(reported, ' Brand-New@x.com ', at)
+  assert.deepEqual(one.targets, ['brand-new@x.com'])
+  assert.deepEqual(readRepairState(one.metadata, Date.parse(at)).pending, { emails: ['brand-new@x.com'], requestedAt: at })
+
+  const joined = withConnectRequest(withPendingRequest(reported, undefined, at).metadata, 'brand-new@x.com', at)
+  assert.deepEqual(joined.targets, ['old@x.com', 'brand-new@x.com'], 'joins a fresh request instead of dropping it')
+  const again = withConnectRequest(joined.metadata, 'brand-new@x.com', at)
+  assert.deepEqual(again.targets, ['old@x.com', 'brand-new@x.com'], 'no duplicate tab for a repeated click')
+
+  const stale = withConnectRequest(withPendingRequest(reported, undefined, at).metadata, 'brand-new@x.com', new Date(Date.parse(at) + REPAIR_PENDING_MAX_AGE_MS + 1).toISOString())
+  assert.deepEqual(stale.targets, ['brand-new@x.com'], 'an expired request does not ride along')
+
+  const done = withResult(one.metadata, [{ email: 'brand-new@x.com', outcome: 'signed-in' }], at)
+  const state = readRepairState(done, Date.parse(at))
+  assert.equal(state.pending, null)
+  assert.deepEqual(state.expired, ['old@x.com'])
 })
