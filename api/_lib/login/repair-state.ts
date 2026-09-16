@@ -106,6 +106,22 @@ export function withPendingRequest(metadata: unknown, emails: unknown, at: strin
   }
 }
 
+/**
+ * The owner typed an email on the dashboard: the machine signs that account
+ * in even though it never reported it, so a brand-new plan can be connected
+ * from the website. It joins any request still fresh on that machine.
+ */
+export function withConnectRequest(metadata: unknown, email: unknown, at: string) {
+  const [target] = normalizeEmails([email])
+  if (!target) return { metadata: asObject(metadata), targets: [] as string[] }
+  const state = readRepairState(metadata, Date.parse(at))
+  const targets = [...(state.pending?.emails ?? []).filter((e) => e !== target), target]
+  return {
+    metadata: writeRepair(metadata, { pending: { emails: targets, requestedAt: at } }),
+    targets,
+  }
+}
+
 /** The agent's report after running the sign-ins; clears the request. */
 export function withResult(metadata: unknown, results: RepairResult[], at: string) {
   const state = readRepairState(metadata)
