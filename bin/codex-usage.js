@@ -21,7 +21,9 @@ import { uploadSwitchEvents } from './lib/switch-events.js'
 import {
   DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
   MIN_SYNC_ALL_INTERVAL_SECONDS,
+  accountsFromKnown,
   expiredEmailsFromResults,
+  pendingFromPoll,
   fetchUsage,
   readStore,
   resolveStorePath,
@@ -750,7 +752,7 @@ async function pollRepairRequest(config, expired, missing = []) {
   })
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair poll failed.'))
-  return payload?.pending ?? null
+  return pendingFromPoll(payload)
 }
 
 /** Every account the dashboard has already seen for this owner, on any machine. */
@@ -762,7 +764,7 @@ async function fetchKnownAccounts(config) {
   })
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Known-accounts lookup failed.'))
-  return Array.isArray(payload?.accounts) ? payload.accounts : []
+  return accountsFromKnown(payload)
 }
 
 /** Discovery for the watch loop: never throws, never blocks a sync on the dashboard. */

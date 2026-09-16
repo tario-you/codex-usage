@@ -258,3 +258,30 @@ export function expiredEmailsFromResults(results) {
     .map((result) => String(result.email ?? '').trim().toLowerCase())
     .filter((email) => email.includes('@'))
 }
+
+/**
+ * The dashboard's repair endpoints answer with JSON that the CLI reads through
+ * parseResponseBody, which wraps the body as { data, text }. Both readers take
+ * that wrapper (or a bare body) so a wrapper change can never silence the
+ * owner's request again: until 0.4.1 the poll read `payload.pending` off the
+ * wrapper and always saw nothing.
+ */
+function bodyOf(payload) {
+  if (!payload || typeof payload !== 'object') return {}
+  const inner = payload.data
+  return inner && typeof inner === 'object' && !Array.isArray(inner) ? inner : payload
+}
+
+/** The pending sign-in request from /api/login/repair/poll, or null. */
+export function pendingFromPoll(payload) {
+  const pending = bodyOf(payload).pending
+  if (!pending || typeof pending !== 'object') return null
+  const emails = Array.isArray(pending.emails) ? pending.emails.filter((e) => typeof e === 'string' && e.includes('@')) : []
+  return emails.length > 0 ? { ...pending, emails } : null
+}
+
+/** The owner's known emails from /api/login/repair/known. */
+export function accountsFromKnown(payload) {
+  const accounts = bodyOf(payload).accounts
+  return Array.isArray(accounts) ? accounts : []
+}
