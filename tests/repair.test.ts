@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { expiredEmailsFromResults } from '../bin/lib/sync-all.js'
+import { accountsFromKnown, expiredEmailsFromResults, pendingFromPoll } from '../bin/lib/sync-all.js'
 import {
   REPAIR_PENDING_MAX_AGE_MS,
   needsSignIn,
@@ -93,4 +93,15 @@ test('an email typed on the dashboard is signed in even though the machine never
   const state = readRepairState(done, Date.parse(at))
   assert.equal(state.pending, null)
   assert.deepEqual(state.expired, ['old@x.com'])
+})
+
+test('the agent reads the pending request through parseResponseBody\'s { data, text } wrapper', () => {
+  const pending = { emails: ['new@x.com'], requestedAt: '2026-09-16T17:37:57.427Z' }
+  assert.deepEqual(pendingFromPoll({ data: { pending }, text: '{}' }), pending, 'the wrapped shape the CLI actually receives')
+  assert.deepEqual(pendingFromPoll({ pending }), pending, 'a bare body still works')
+  assert.equal(pendingFromPoll({ data: { pending: null }, text: '' }), null)
+  assert.equal(pendingFromPoll({ data: {}, text: '' }), null)
+  assert.equal(pendingFromPoll({ data: { pending: { emails: [], requestedAt: 'x' } }, text: '' }), null, 'no emails means nothing to open')
+  assert.deepEqual(accountsFromKnown({ data: { accounts: ['a@x.com'] }, text: '' }), ['a@x.com'])
+  assert.deepEqual(accountsFromKnown({ data: {}, text: '' }), [])
 })
