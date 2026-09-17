@@ -1,3 +1,4 @@
+import { dashboardRequest } from './dashboard-request.js'
 import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -75,11 +76,10 @@ export async function uploadSwitchEvents({ config, fetcher = fetch }) {
     uploadedAt: config.switchEventsUploadedAt ?? null,
   })
   if (events.length === 0) return { uploaded: 0, uploadedAt: config.switchEventsUploadedAt ?? null }
-  const response = await fetcher(new URL('/api/login/switches', config.syncUrl), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deviceToken: config.deviceToken, events }),
-  })
+  const response = await fetcher(
+    new URL('/api/login/switches', config.syncUrl),
+    dashboardRequest({ deviceToken: config.deviceToken, events }),
+  )
   if (!response.ok) {
     throw new Error(`Switch history upload failed (HTTP ${response.status}).`)
   }

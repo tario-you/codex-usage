@@ -657,6 +657,7 @@ async function postJson(url, body, fallbackMessage) {
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
+    signal: AbortSignal.timeout(30_000),
   })
   const text = (await response.text().catch(() => '')).trim()
   let data = {}

@@ -31,6 +31,7 @@ import {
   upsertStoreAccount,
   writeStore,
 } from './lib/sync-all.js'
+import { DASHBOARD_UPLOAD_TIMEOUT_MS, dashboardRequest } from './lib/dashboard-request.js'
 import { readJsonFile, resolveAuthFilePath } from './lib/login-file.js'
 import { syncClaudeOnce } from './lib/claude-logins.js'
 import {
@@ -751,11 +752,7 @@ async function runSyncAllCommand(args, config, codexHome) {
 const REPAIR_POLL_SECONDS = 20
 
 async function pollRepairRequest(config, expired, missing = []) {
-  const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), {
-    body: JSON.stringify({ deviceToken: config.deviceToken, expired, missing }),
-    headers: { 'Content-Type': 'application/json' },
-    method: 'POST',
-  })
+  const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, expired, missing }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair poll failed.'))
   return pendingFromPoll(payload)
@@ -763,11 +760,7 @@ async function pollRepairRequest(config, expired, missing = []) {
 
 /** Every account the dashboard has already seen for this owner, on any machine. */
 async function fetchKnownAccounts(config) {
-  const response = await fetch(new URL('/api/login/repair/known', config.syncUrl), {
-    body: JSON.stringify({ deviceToken: config.deviceToken }),
-    headers: { 'Content-Type': 'application/json' },
-    method: 'POST',
-  })
+  const response = await fetch(new URL('/api/login/repair/known', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Known-accounts lookup failed.'))
   return accountsFromKnown(payload)
@@ -786,21 +779,13 @@ async function discoverMissingQuietly({ codexHome, config, storePath }) {
 
 /** The dashboard shows this link so the owner can open or copy it instead of hunting for the tab. */
 async function reportSignInLink(config, email, url) {
-  const response = await fetch(new URL('/api/login/repair/link', config.syncUrl), {
-    body: JSON.stringify({ deviceToken: config.deviceToken, email, url }),
-    headers: { 'Content-Type': 'application/json' },
-    method: 'POST',
-  })
+  const response = await fetch(new URL('/api/login/repair/link', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, email, url }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Sign-in link report failed.'))
 }
 
 async function reportRepairResults(config, results) {
-  const response = await fetch(new URL('/api/login/repair/done', config.syncUrl), {
-    body: JSON.stringify({ deviceToken: config.deviceToken, results }),
-    headers: { 'Content-Type': 'application/json' },
-    method: 'POST',
-  })
+  const response = await fetch(new URL('/api/login/repair/done', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, results }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair report failed.'))
 }
@@ -1132,6 +1117,7 @@ async function syncOnce(client, config, args) {
 
   const response = await fetch(config.syncUrl, {
     method: 'POST',
+    signal: AbortSignal.timeout(DASHBOARD_UPLOAD_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
     },

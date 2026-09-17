@@ -1,3 +1,4 @@
+import { DASHBOARD_UPLOAD_TIMEOUT_MS, dashboardRequest } from './dashboard-request.js'
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import os from 'node:os'
@@ -92,6 +93,7 @@ export async function refreshTokens(tokens, fetcher = fetch) {
   const response = await fetcher(OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
+    signal: AbortSignal.timeout(20_000),
     body: JSON.stringify({
       grant_type: 'refresh_token',
       client_id: CODEX_OAUTH_CLIENT_ID,
@@ -216,11 +218,10 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
       changedIds.add(account.id)
     }
     const payload = buildSyncPayloadFromUsage(usage.data, account.email)
-    const response = await fetcher(config.syncUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...payload, device, deviceToken: config.deviceToken }),
-    })
+    const response = await fetcher(
+      config.syncUrl,
+      dashboardRequest({ ...payload, device, deviceToken: config.deviceToken }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
+    )
     if (!response.ok) {
       results.push({ email: label, ok: false, reason: `dashboard rejected the sync (HTTP ${response.status})` })
       continue

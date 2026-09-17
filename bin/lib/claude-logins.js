@@ -1,3 +1,4 @@
+import { DASHBOARD_UPLOAD_TIMEOUT_MS, dashboardRequest } from './dashboard-request.js'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
@@ -261,11 +262,10 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       if (login.source === 'switcher') await writeBackSwitcherOauth(storePath, login).catch(() => {})
     }
     const payload = buildClaudeSyncPayload(usage.data, { email, planType: profile.planType })
-    const response = await fetcher(config.syncUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...payload, device, deviceToken: config.deviceToken }),
-    })
+    const response = await fetcher(
+      config.syncUrl,
+      dashboardRequest({ ...payload, device, deviceToken: config.deviceToken }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
+    )
     if (!response.ok) {
       results.push({ email, source: login.source, ok: false, reason: `dashboard rejected the sync (HTTP ${response.status})` })
       continue

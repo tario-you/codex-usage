@@ -118,3 +118,18 @@ test('a missing store reads as empty instead of failing', async (t) => {
   t.after(() => rm(dir, { force: true, recursive: true }))
   assert.deepEqual((await readStore(path.join(dir, 'none.json'))).accounts, [])
 })
+
+test('every dashboard request the agent makes is bounded by a timeout', async () => {
+  const { DASHBOARD_REQUEST_TIMEOUT_MS, dashboardRequest } = await import('../bin/lib/dashboard-request.js')
+  const init = dashboardRequest({ deviceToken: 't', expired: [] })
+  assert.equal(init.method, 'POST')
+  assert.equal(init.headers['Content-Type'], 'application/json')
+  assert.deepEqual(JSON.parse(init.body), { deviceToken: 't', expired: [] })
+  assert.ok(init.signal instanceof AbortSignal, 'a stalled socket must not hang the watch loop')
+  assert.equal(init.signal.aborted, false)
+  assert.ok(DASHBOARD_REQUEST_TIMEOUT_MS <= 60_000, 'well under the five-minute sync cadence')
+
+  const short = dashboardRequest({}, { timeoutMs: 5 })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(short.aborted ?? short.signal.aborted, true, 'the signal fires once the timeout passes')
+})
