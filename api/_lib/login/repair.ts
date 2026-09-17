@@ -12,6 +12,7 @@ import {
   withConnectRequest,
   withPendingRequest,
   withResult,
+  withSignInLink,
   type RepairResult,
 } from './repair-state.js'
 
@@ -176,6 +177,28 @@ export async function KNOWN(request: Request) {
     return jsonResponse({ accounts })
   } catch (error) {
     return sharedLoginErrorResponse(error, 'Unable to load the known accounts.')
+  }
+}
+
+const linkSchema = z.object({
+  deviceToken: z.string().min(1),
+  email: z.string().min(3).max(320),
+  url: z.string().max(2048),
+})
+
+/** The agent opened a sign-in for a pending email; the dashboard shows this link. */
+export async function LINK(request: Request) {
+  try {
+    const parsed = linkSchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) return errorResponse('Send the device token, the email, and the sign-in URL.')
+    const device = await findActiveDeviceByToken(parsed.data.deviceToken)
+    if (!device) throw new SharedLoginError('Unknown or revoked device token.', 401)
+    const { metadata, link } = withSignInLink(device.metadata, parsed.data.email, parsed.data.url, new Date().toISOString())
+    if (!link) return errorResponse('Only an OpenAI sign-in link can be shown.')
+    await saveMetadata(device.id, metadata)
+    return jsonResponse({ ok: true, link })
+  } catch (error) {
+    return sharedLoginErrorResponse(error, 'Unable to record the sign-in link.')
   }
 }
 

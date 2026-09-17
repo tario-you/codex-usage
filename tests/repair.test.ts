@@ -6,10 +6,13 @@ import {
   REPAIR_PENDING_MAX_AGE_MS,
   needsSignIn,
   readRepairState,
+  REPAIR_LINK_MAX_AGE_MS,
+  isSignInUrl,
   withConnectRequest,
   withExpiredReport,
   withPendingRequest,
   withResult,
+  withSignInLink,
 } from '../api/_lib/login/repair-state.ts'
 
 test('only sign-in-expired failures become repair targets', () => {
@@ -104,4 +107,30 @@ test('the agent reads the pending request through parseResponseBody\'s { data, t
   assert.equal(pendingFromPoll({ data: { pending: { emails: [], requestedAt: 'x' } }, text: '' }), null, 'no emails means nothing to open')
   assert.deepEqual(accountsFromKnown({ data: { accounts: ['a@x.com'] }, text: '' }), ['a@x.com'])
   assert.deepEqual(accountsFromKnown({ data: {}, text: '' }), [])
+})
+
+test('the sign-in link the agent opened rides the state until the sign-in ends or the link expires', () => {
+  const at = '2026-09-17T07:00:00.000Z'
+  const url = 'https://auth.openai.com/oauth/authorize?response_type=code&client_id=x&state=y'
+  const pending = withConnectRequest({}, 'new@x.com', at).metadata
+  assert.equal(readRepairState(pending, Date.parse(at)).link, null)
+
+  assert.equal(isSignInUrl(url), true)
+  assert.equal(isSignInUrl('http://auth.openai.com/x'), false, 'plain http is refused')
+  assert.equal(isSignInUrl('https://evil.example/auth.openai.com'), false, 'a look-alike host is refused')
+  assert.equal(withSignInLink(pending, 'new@x.com', 'javascript:alert(1)', at).link, null)
+  assert.equal(withSignInLink(pending, 'nope', url, at).link, null)
+
+  const linked = withSignInLink(pending, 'New@x.com', url, at)
+  assert.deepEqual(linked.link, { at, email: 'new@x.com', url })
+  const state = readRepairState(linked.metadata, Date.parse(at))
+  assert.deepEqual(state.link, { at, email: 'new@x.com', url })
+  assert.deepEqual(state.pending?.emails, ['new@x.com'], 'the request itself is untouched')
+
+  const expired = readRepairState(linked.metadata, Date.parse(at) + REPAIR_LINK_MAX_AGE_MS + 1)
+  assert.equal(expired.link, null, 'a ten-minute-old link is no longer offered')
+
+  const done = withResult(linked.metadata, [{ email: 'new@x.com', outcome: 'signed-in' }], at)
+  assert.equal(readRepairState(done, Date.parse(at)).link, null, 'the result clears the link')
+  assert.equal(readRepairState({ repair: { expired: [] } }, Date.parse(at)).link, null, 'older rows read as no link')
 })

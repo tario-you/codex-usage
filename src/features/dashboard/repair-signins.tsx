@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { KeyRound, Loader2, Plus } from 'lucide-react'
+import { Check, Copy, ExternalLink, KeyRound, Loader2, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,13 +28,9 @@ async function postRepair(session: Session, body: Record<string, unknown>) {
  */
 export function ConnectPlanForm({ devices, session }: { devices: RepairDevice[] | undefined; session: Session }) {
   const [email, setEmail] = useState('')
-  const [deviceId, setDeviceId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const machines = devices ?? []
-  if (machines.length === 0) return null
-  const chosen = machines.find((device) => device.id === deviceId) ?? machines[0]
-  const machine = chosen.label || chosen.machineName || 'your machine'
+  if ((devices ?? []).length === 0) return null
   const ready = email.includes('@') && !busy
 
   async function connect(event: React.FormEvent) {
@@ -43,7 +39,7 @@ export function ConnectPlanForm({ devices, session }: { devices: RepairDevice[] 
     setBusy(true)
     setError(null)
     try {
-      await postRepair(session, { connect: email.trim(), deviceId: chosen.id })
+      await postRepair(session, { connect: email.trim() })
       setEmail('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to request the sign-in.')
@@ -64,28 +60,45 @@ export function ConnectPlanForm({ devices, session }: { devices: RepairDevice[] 
         type="email"
         value={email}
       />
-      {machines.length > 1 ? (
-        <select
-          aria-label="Machine that opens the sign-in"
-          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-          disabled={busy}
-          onChange={(event) => setDeviceId(event.target.value)}
-          value={chosen.id}
-        >
-          {machines.map((device) => (
-            <option key={device.id} value={device.id}>
-              {device.label || device.machineName || device.id}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      <Button disabled={!ready} size="sm" title={`${machine} opens the OpenAI sign-in for this email; you only sign in`} type="submit" variant="outline">
+      <Button disabled={!ready} size="sm" title="A sign-in link appears here within about 20 seconds; you only sign in" type="submit" variant="outline">
         <Plus className="size-3.5" />
         {busy ? 'Asking…' : 'Connect a plan'}
       </Button>
-      <span className="text-muted-foreground">Opens the sign-in on {machine}.</span>
+      <span className="text-muted-foreground">A sign-in link appears here in about 20 seconds.</span>
       {error ? <span className="text-destructive">{error}</span> : null}
     </form>
+  )
+}
+
+/** The sign-in the machine opened: open it here, or copy it. It works on that machine's browser. */
+function SignInLink({ link, machine }: { link: NonNullable<RepairDevice['link']>; machine: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span>
+        Sign in as <span className="font-medium">{link.email}</span>:
+      </span>
+      <Button asChild size="sm" variant="outline">
+        <a href={link.url} rel="noreferrer" target="_blank">
+          <ExternalLink className="size-3.5" />
+          Open sign-in
+        </a>
+      </Button>
+      <Button onClick={() => void copy()} size="sm" type="button" variant="outline">
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        {copied ? 'Copied' : 'Copy link'}
+      </Button>
+      <span className="text-muted-foreground">Open it in a browser on {machine}; the link expires 10 minutes after it was made.</span>
+    </span>
   )
 }
 
@@ -133,10 +146,14 @@ export function RepairSignInsBanner({ devices, session }: { devices: RepairDevic
             {device.pending ? (
               <>
                 <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-                <span>
-                  Sign-in tabs are opening on <span className="font-medium">{machine}</span> for{' '}
-                  {device.pending.emails.join(', ')}. Finish them there.
-                </span>
+                {device.link ? (
+                  <SignInLink link={device.link} machine={machine} />
+                ) : (
+                  <span>
+                    <span className="font-medium">{machine}</span> is preparing the sign-in for{' '}
+                    {device.pending.emails.join(', ')}. The link appears here within about 20 seconds.
+                  </span>
+                )}
               </>
             ) : (
               <>

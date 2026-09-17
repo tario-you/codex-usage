@@ -5,6 +5,7 @@ export interface RepairDevice {
   expired: string[]
   id: string
   label: string
+  link: { at: string; email: string; url: string } | null
   lastResult: { at: string; results: { email: string; outcome: string; detail?: string | null }[] } | null
   lastSeenAt: string
   machineName: string | null
