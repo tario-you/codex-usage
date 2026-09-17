@@ -725,7 +725,13 @@ async function runSyncAllCommand(args, config, codexHome) {
       const pending = await pollRepairRequest(config, lastExpired, lastMissing)
       if (pending?.emails?.length) {
         console.log(`The dashboard asked to fix sign-ins: ${pending.emails.join(', ')}`)
-        const results = await repairLogins({ emails: pending.emails, storePath })
+        const results = await repairLogins({
+          emails: pending.emails,
+          onLink: (email, url) => reportSignInLink(config, email, url).catch((error) => {
+            console.error(`[sign-in link] ${error instanceof Error ? error.message : String(error)}`)
+          }),
+          storePath,
+        })
         await reportRepairResults(config, results)
         sinceSync = everySeconds
       }
@@ -778,6 +784,17 @@ async function discoverMissingQuietly({ codexHome, config, storePath }) {
   }
 }
 
+/** The dashboard shows this link so the owner can open or copy it instead of hunting for the tab. */
+async function reportSignInLink(config, email, url) {
+  const response = await fetch(new URL('/api/login/repair/link', config.syncUrl), {
+    body: JSON.stringify({ deviceToken: config.deviceToken, email, url }),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  })
+  const payload = await parseResponseBody(response)
+  if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Sign-in link report failed.'))
+}
+
 async function reportRepairResults(config, results) {
   const response = await fetch(new URL('/api/login/repair/done', config.syncUrl), {
     body: JSON.stringify({ deviceToken: config.deviceToken, results }),
@@ -792,7 +809,7 @@ async function reportRepairResults(config, results) {
  * Sign the given logins in again, one browser sign-in after another. With no
  * emails, every saved login whose refresh is refused is repaired.
  */
-async function repairLogins({ emails = null, storePath }) {
+async function repairLogins({ emails = null, onLink = null, storePath }) {
   const store = await readStore(storePath)
   let targets = (emails ?? []).map((email) => String(email).trim().toLowerCase()).filter(Boolean)
   if (targets.length === 0) {
@@ -811,7 +828,7 @@ async function repairLogins({ emails = null, storePath }) {
   for (const expected of targets) {
     console.log(`Sign in as ${expected} in the browser tab that opens.`)
     try {
-      const { account } = await addLoginInteractively({ expectedEmail: expected, storePath })
+      const { account } = await addLoginInteractively({ expectedEmail: expected, onLink, storePath })
       const got = (account.email ?? '').toLowerCase()
       results.push(got === expected ? { email: expected, outcome: 'signed-in' } : { detail: `saved ${got}`, email: expected, outcome: 'mismatch' })
     } catch (error) {
@@ -1004,7 +1021,7 @@ function listenForSkip(controller) {
 }
 
 /** One browser sign-in through a throwaway CODEX_HOME, saved into the store. */
-async function addLoginInteractively({ expectedEmail = null, signal = null, storePath }) {
+async function addLoginInteractively({ expectedEmail = null, onLink = null, signal = null, storePath }) {
   const home = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-login-'))
   const client = new StdioCodexClient({ codexHome: home })
   try {
@@ -1026,6 +1043,7 @@ async function addLoginInteractively({ expectedEmail = null, signal = null, stor
     })
     const started = await client.request('account/login/start', { type: 'chatgpt' })
     if (!started?.authUrl) throw new Error('Codex did not return a sign-in link.')
+    if (onLink && expectedEmail) await onLink(expectedEmail, started.authUrl)
     console.log(
       expectedEmail
         ? `Sign in as ${expectedEmail}. Finish in the browser, then come back here.`

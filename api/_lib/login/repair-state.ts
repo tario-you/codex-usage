@@ -18,8 +18,16 @@ export interface RepairResult {
   outcome: 'signed-in' | 'mismatch' | 'failed' | 'skipped'
 }
 
+/** The OpenAI sign-in the agent opened for a pending email, so the dashboard can show it. */
+export interface RepairLink {
+  at: string
+  email: string
+  url: string
+}
+
 export interface RepairState {
   expired: string[]
+  link: RepairLink | null
   missing: string[]
   lastResult: { at: string; results: RepairResult[] } | null
   pending: RepairPending | null
@@ -27,6 +35,19 @@ export interface RepairState {
 }
 
 export const REPAIR_PENDING_MAX_AGE_MS = 30 * 60 * 1000
+/** Codex sign-in links stop working ten minutes after they are issued. */
+export const REPAIR_LINK_MAX_AGE_MS = 10 * 60 * 1000
+
+/** Only a Codex sign-in on OpenAI's own host is ever shown as a link to click. */
+export function isSignInUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 2048) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === 'auth.openai.com'
+  } catch {
+    return false
+  }
+}
 
 export function normalizeEmails(list: unknown): string[] {
   if (!Array.isArray(list)) return []
@@ -67,8 +88,18 @@ export function readRepairState(metadata: unknown, now = Date.now()): RepairStat
         }))
     : []
   const expired = normalizeEmails(repair.expired)
+  const linkRaw = asObject(repair.link)
+  const [linkEmail] = normalizeEmails([linkRaw.email])
+  const linkAt = typeof linkRaw.at === 'string' ? linkRaw.at : null
+  const linkFresh =
+    linkEmail !== undefined &&
+    isSignInUrl(linkRaw.url) &&
+    linkAt !== null &&
+    Number.isFinite(Date.parse(linkAt)) &&
+    now - Date.parse(linkAt) <= REPAIR_LINK_MAX_AGE_MS
   return {
     expired,
+    link: linkFresh ? { at: linkAt as string, email: linkEmail, url: linkRaw.url as string } : null,
     missing: normalizeEmails(repair.missing).filter((email) => !expired.includes(email)),
     lastResult:
       typeof lastRaw.at === 'string' && results.length > 0 ? { at: lastRaw.at, results } : null,
@@ -122,13 +153,26 @@ export function withConnectRequest(metadata: unknown, email: unknown, at: string
   }
 }
 
-/** The agent's report after running the sign-ins; clears the request. */
+/**
+ * The agent opened a sign-in for one pending email and reports its URL, so
+ * the dashboard can show a link to open or copy instead of hunting for the
+ * tab. Anything but an OpenAI sign-in URL is dropped.
+ */
+export function withSignInLink(metadata: unknown, email: unknown, url: unknown, at: string) {
+  const [target] = normalizeEmails([email])
+  if (!target || !isSignInUrl(url)) return { metadata: asObject(metadata), link: null }
+  const link: RepairLink = { at, email: target, url }
+  return { metadata: writeRepair(metadata, { link }), link }
+}
+
+/** The agent's report after running the sign-ins; clears the request and its link. */
 export function withResult(metadata: unknown, results: RepairResult[], at: string) {
   const state = readRepairState(metadata)
   const signedIn = new Set(results.filter((r) => r.outcome === 'signed-in').map((r) => r.email))
   return writeRepair(metadata, {
     expired: state.expired.filter((email) => !signedIn.has(email)),
     lastResult: { at, results },
+    link: null,
     missing: state.missing.filter((email) => !signedIn.has(email)),
     pending: null,
   })
