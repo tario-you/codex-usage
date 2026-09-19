@@ -113,6 +113,21 @@ never signed in through the dashboard show up in the same line, with
 npx codex-usage-dashboard@latest login repair
 ```
 
+### 1d. Switch your Codex to another plan with one click
+
+Once the sync agent on a machine reports which login its Codex is on, that
+row in Plans shows **active** and every other Codex row shows **Use**. One
+click asks that machine to switch; its agent hands the request to the local
+Codex Switchboard (the menu-bar service that owns the desktop app's login),
+which makes the switch the same guarded way the menu bar does: never while a
+task is running, never without a saved sign-in for that account. The row
+shows "switching…" until the machine reports back, then flips to **active**;
+a refusal (for example "Codex has active tasks") shows next to the button.
+The agent polls every 15 seconds, so a switch lands within about half a
+minute. A click nobody picks up within three minutes is dropped, never
+replayed later. Machines that only sync a store (no Codex desktop) never
+report an active login and are never switched.
+
 ### 2. Let a friend use your plans
 
 On your side, once:

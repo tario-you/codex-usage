@@ -3,6 +3,7 @@ import * as claim from './_lib/login/claim.js'
 import * as grantsRevoke from './_lib/login/grants-revoke.js'
 import * as grantsStart from './_lib/login/grants-start.js'
 import * as notes from './_lib/login/notes.js'
+import * as planSwitch from './_lib/login/plan-switch.js'
 import * as switches from './_lib/login/switches.js'
 import * as publish from './_lib/login/publish.js'
 import * as repair from './_lib/login/repair.js'
@@ -24,12 +25,16 @@ const loginRoutes: Record<string, RouteHandler> = {
   'GET /api/login/notes': notes.GET,
   'GET /api/login/repair': repair.GET,
   'GET /api/login/shares': shares.GET,
+  'GET /api/login/switch': planSwitch.GET,
   'GET /api/login/switches': switches.GET,
   'POST /api/login/claim': claim.POST,
   'POST /api/login/grants/revoke': grantsRevoke.POST,
   'POST /api/login/grants/start': grantsStart.POST,
   'POST /api/login/notes': notes.POST,
   'POST /api/login/notes/delete': notes.DELETE,
+  'POST /api/login/switch': planSwitch.POST,
+  'POST /api/login/switch/done': planSwitch.DONE,
+  'POST /api/login/switch/poll': planSwitch.POLL,
   'POST /api/login/switches': switches.POST,
   'POST /api/login/publish': publish.POST,
   'POST /api/login/repair': repair.POST,

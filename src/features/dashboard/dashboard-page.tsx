@@ -94,6 +94,8 @@ import {
 
 import { ResetPlanPanel } from './reset-plan-panel'
 import { NoteEditor, NoteSecret } from './account-notes'
+import { UsePlanControl } from './plan-switch'
+import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
 import { expiredEmailSet, useRepairState } from './repair-signins-state'
 import { noteKey, useAccountNotes, type AccountNotesController } from './account-notes-state'
@@ -145,6 +147,8 @@ export function DashboardPage() {
   const accountNotes = useAccountNotes({ onInvalidSession: handleInvalidSession, session })
   const repairState = useRepairState(session)
   const expiredEmails = expiredEmailSet(repairState.data)
+  const planSwitchState = usePlanSwitchState(session)
+  const planSwitchDevice = planSwitchTarget(planSwitchState.data)
   const [guideHidden, setGuideHidden] = useState(false)
   const [hasAttemptedInviteAccept, setHasAttemptedInviteAccept] = useState(false)
   const [terminalCopyError, setTerminalCopyError] = useState<string | null>(null)
@@ -1336,10 +1340,12 @@ export function DashboardPage() {
                               expiredEmails={expiredEmails}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
+                              planSwitchDevice={planSwitchDevice}
                               primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
                                 void handleUnlinkAccount(account)
                               }
+                              session={session}
                               unlinkingAccountId={unlinkingAccountId}
                               savingUsageOverride={savingUsageOverride}
                             />
@@ -1350,10 +1356,12 @@ export function DashboardPage() {
                               expiredEmails={expiredEmails}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
+                              planSwitchDevice={planSwitchDevice}
                               primaryInviter={primaryInviter}
                               onUnlinkAccount={(account) =>
                                 void handleUnlinkAccount(account)
                               }
+                              session={session}
                               unlinkingAccountId={unlinkingAccountId}
                               savingUsageOverride={savingUsageOverride}
                             />
@@ -1940,9 +1948,11 @@ function AccountTable({
   expiredEmails,
   notes,
   onSaveUsageOverride,
+  planSwitchDevice,
   primaryInviter,
   onUnlinkAccount,
   savingUsageOverride,
+  session,
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
@@ -1953,9 +1963,11 @@ function AccountTable({
     windowKey: RateLimitWindowKey,
     remainingPercent: number,
   ) => Promise<boolean>
+  planSwitchDevice: PlanSwitchDevice | null
   primaryInviter: DashboardInviterRow | null
   onUnlinkAccount: (account: DashboardAccountRow) => void
   savingUsageOverride: string | null
+  session: Session
   unlinkingAccountId: string | null
 }) {
   const columnCount = notes ? 9 : 6
@@ -2052,6 +2064,9 @@ function AccountTable({
                     <span className="rounded border border-amber-500/40 px-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400" title="This machine's saved sign-in for this account is refused; use Fix sign-ins">
                       sign-in expired
                     </span>
+                  ) : null}
+                  {isOwnedAccount && !isClaudeAccount(account) ? (
+                    <UsePlanControl device={planSwitchDevice} email={account.email} session={session} />
                   ) : null}
                   {!isOwnedAccount ? (
                     <SharedAccessNote inviter={primaryInviter} />
@@ -2211,9 +2226,11 @@ function AccountSummaryList({
   expiredEmails,
   notes,
   onSaveUsageOverride,
+  planSwitchDevice,
   primaryInviter,
   onUnlinkAccount,
   savingUsageOverride,
+  session,
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
@@ -2224,9 +2241,11 @@ function AccountSummaryList({
     windowKey: RateLimitWindowKey,
     remainingPercent: number,
   ) => Promise<boolean>
+  planSwitchDevice: PlanSwitchDevice | null
   primaryInviter: DashboardInviterRow | null
   onUnlinkAccount: (account: DashboardAccountRow) => void
   savingUsageOverride: string | null
+  session: Session
   unlinkingAccountId: string | null
 }) {
   return (
@@ -2252,6 +2271,11 @@ function AccountSummaryList({
                 ) : null}
                 {expiredEmails.has(noteKey(account.email)) ? (
                   <p className="text-xs text-amber-600 dark:text-amber-400">sign-in expired</p>
+                ) : null}
+                {isOwnedAccount && !isClaudeAccount(account) ? (
+                  <p className="mt-1">
+                    <UsePlanControl device={planSwitchDevice} email={account.email} session={session} />
+                  </p>
                 ) : null}
                 {!isOwnedAccount ? (
                   <SharedAccessNote inviter={primaryInviter} />

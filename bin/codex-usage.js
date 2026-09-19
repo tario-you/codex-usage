@@ -18,6 +18,7 @@ import {
   sharedLoginUsageLines,
 } from './lib/shared-login.js'
 import { uploadSwitchEvents } from './lib/switch-events.js'
+import { PLAN_SWITCH_POLL_SECONDS, runPlanSwitchPass } from './lib/plan-switch.js'
 import {
   DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
   MIN_SYNC_ALL_INTERVAL_SECONDS,
@@ -722,6 +723,8 @@ async function runSyncAllCommand(args, config, codexHome) {
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, REPAIR_POLL_SECONDS * 1000))
     sinceSync += REPAIR_POLL_SECONDS
+    // A "Use" click on a Plans row lands here too: switch through Switchboard, then sync at once.
+    if (await runPlanSwitchPass({ codexHome, config, storePath })) sinceSync = everySeconds
     try {
       const pending = await pollRepairRequest(config, lastExpired, lastMissing)
       if (pending?.emails?.length) {
@@ -1096,8 +1099,26 @@ async function runWatchLoop(client, config, args) {
     void run()
   }, config.pollMs ?? DEFAULT_POLL_MS)
 
+  // Every PLAN_SWITCH_POLL_SECONDS the agent reports the active login and
+  // runs any "Use" click from the dashboard through Switchboard; a completed
+  // switch syncs right away so the row flips without waiting for the poll.
+  const codexHome = config.codexHome ?? resolveCodexHome(args.options['codex-home'])
+  let switchPassRunning = false
+  const switchInterval = setInterval(() => {
+    if (switchPassRunning) return
+    switchPassRunning = true
+    void runPlanSwitchPass({ codexHome, config })
+      .then((switched) => {
+        if (switched) void run()
+      })
+      .finally(() => {
+        switchPassRunning = false
+      })
+  }, PLAN_SWITCH_POLL_SECONDS * 1000)
+
   await waitForTermination(async () => {
     clearInterval(interval)
+    clearInterval(switchInterval)
 
     if (scheduledRefresh) {
       clearTimeout(scheduledRefresh)
