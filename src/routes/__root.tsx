@@ -4,11 +4,13 @@ import { TanStackRouterDevtools } from '@tanstack/router-devtools'
 
 import { ThemeProvider } from '@/components/theme/theme-provider'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { AppUpdateNotice } from '@/components/app-update-notice'
 
 function RootLayout() {
   return (
     <ThemeProvider>
       <TooltipProvider>
+        <AppUpdateNotice />
         <Outlet />
         {import.meta.env.DEV ? (
           <>

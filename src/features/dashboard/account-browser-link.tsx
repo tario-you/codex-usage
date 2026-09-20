@@ -56,7 +56,7 @@ export function AccountBrowserLink({ account, session, children }: {
   if (account.access_scope !== 'owned' || !account.email) return <span>{children}</span>
   return (
     <span className="inline-flex min-w-0 flex-col items-start">
-      <button type="button" className="max-w-full truncate text-left font-medium text-foreground underline-offset-2 hover:underline disabled:opacity-60"
+      <button type="button" className="max-w-full truncate text-left font-medium text-foreground underline underline-offset-2 disabled:opacity-60"
         title={`Open ${provider} in the Chrome session for ${account.email}. Sign in once on first use.`}
         aria-label={`Open ${provider} as ${account.email}`} disabled={busy} onClick={() => void click()}>{children}</button>
       {message ? <span role="status" className="mt-1 max-w-sm whitespace-normal text-xs font-normal text-muted-foreground">{message}</span> : null}
