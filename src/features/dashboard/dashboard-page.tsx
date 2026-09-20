@@ -1697,7 +1697,7 @@ function AccountTable({
               <TableCell className="px-4 py-1.5">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <span title={[identity.secondary, formatPlanLine(account)].filter(Boolean).join(' · ')}>
-                    <AccountBrowserLink account={account} session={session}>
+                    <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(note?.googlePassword)}>
                       {identity.primary}
                     </AccountBrowserLink>
                   </span>
@@ -1908,7 +1908,7 @@ function AccountSummaryList({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="flex flex-wrap items-baseline gap-x-2 font-medium text-foreground">
-                  <AccountBrowserLink account={account} session={session}>{identity.primary}</AccountBrowserLink>
+                  <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(notes?.byEmail.get(noteKey(account.email))?.googlePassword)}>{identity.primary}</AccountBrowserLink>
                   {isClaudeAccount(account) ? <ClaudeBadge /> : null}
                 </p>
                 {identity.secondary ? (

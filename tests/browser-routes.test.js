@@ -39,7 +39,7 @@ test('unauthenticated launches are rejected before any database access', async (
 })
 
 test('owner click resolves provider and email server-side and scopes machine and account to the owner', async () => {
-  const { response, calls } = await mockDb(() => routes.POST(request('', { deviceId: device, accountId: account, provider: 'codex', email: 'injected@example.com' })), call => {
+  const { response, calls } = await mockDb(() => routes.POST(request('', { deviceId: device, accountId: account, provider: 'codex', email: 'injected@example.com', loginMethod: 'google' })), call => {
     if (call.table === 'codex_accounts') return [{ id: account, email: 'fixture@example.com', account_key: 'claude:fixture@example.com' }]
     if (call.table === 'codex_devices') return [{ id: device }]
     if (call.method === 'POST') return [{ id: requestId }]
@@ -54,6 +54,7 @@ test('owner click resolves provider and email server-side and scopes machine and
   assert.match(machine.query.get('browser_agent_seen_at'), /^gte\./)
   const inserted = calls.find(c => c.method === 'POST').body
   assert.equal(inserted.provider, 'claude')
+  assert.equal(inserted.login_method, 'google')
   assert.equal(inserted.email, 'fixture@example.com')
   assert.equal(inserted.owner_user_id, owner)
 })
@@ -75,10 +76,11 @@ test('device poll claims only its live request and a competing claimant gets no 
     const { response, calls } = await mockDb(() => routes.POLL(request('/poll', { deviceToken: 'fixture-device' }, false)), call => {
       if (call.table === 'codex_devices') return call.method === 'GET' ? [{ id: device, owner_user_id: owner }] : []
       if (call.method === 'GET') return [{ id: requestId }]
-      return claimWins ? [{ id: requestId, provider: 'codex', email: 'fixture@example.com', expires_at: new Date(Date.now() + 60000).toISOString() }] : []
+      return claimWins ? [{ id: requestId, provider: 'codex', email: 'fixture@example.com', login_method: 'google', expires_at: new Date(Date.now() + 60000).toISOString() }] : []
     })
     const payload = await response.json()
     assert.equal(Boolean(payload.pending), claimWins)
+    if (claimWins) assert.equal(payload.pending.login_method, 'google')
     const selected = calls.find(c => c.table === 'codex_browser_launches' && c.method === 'GET')
     assert.equal(selected.query.get('device_id'), `eq.${device}`)
     assert.equal(selected.query.get('owner_user_id'), `eq.${owner}`)
@@ -88,6 +90,7 @@ test('device poll claims only its live request and a competing claimant gets no 
     assert.equal(claim.query.get('state'), 'eq.queued')
     assert.equal(claim.query.get('id'), `eq.${requestId}`)
     assert.equal(claim.body.state, 'opening')
+    assert.ok(claim.query.get('select').split(',').includes('login_method'))
   }
 })
 
@@ -101,4 +104,11 @@ test('request receipts and results cannot cross account owners or machines', asy
   assert.equal(update.query.get('owner_user_id'), `eq.${owner}`)
   assert.equal(update.query.get('id'), `eq.${requestId}`)
   assert.equal(update.query.get('state'), 'eq.opening')
+})
+
+
+test('unsupported login methods are rejected before database access', async () => {
+  const { response, calls } = await mockDb(() => routes.POST(request('', { deviceId: device, accountId: account, loginMethod: 'evil' })), () => { throw new Error('must not query') })
+  assert.equal(response.status, 400)
+  assert.equal(calls.length, 0)
 })

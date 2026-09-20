@@ -87,7 +87,7 @@ test('a valid click opens only its provider/email and acknowledges its exact req
   const opens = []
   const { result, calls } = await pass(pending, async (...args) => opens.push(args))
   assert.equal(result, true)
-  assert.deepEqual(opens, [['codex', pending.email]])
+  assert.deepEqual(opens, [['codex', pending.email, { loginMethod: 'email' }]])
   assert.deepEqual(calls[1].body, { deviceToken: config.deviceToken, requestId: id, outcome: 'opened' })
 })
 
@@ -106,4 +106,27 @@ test('idle, expired, malformed, or failed requests never claim a successful brow
     assert.equal(calls[1].body.outcome, 'failed')
   }
   assert.equal((await pass(pending, async () => { throw new Error('cannot open') })).result, false)
+})
+
+
+test('Google opens ChatGPT social login with the email hint and reuses the same profile', () => {
+  const regular = browserSessionTarget('codex', pending.email)
+  const google = browserSessionTarget('codex', pending.email, undefined, 'google')
+  const url = new URL(google.url)
+  assert.equal(url.searchParams.get('connection'), 'google-oauth2')
+  assert.equal(url.searchParams.get('login_hint'), pending.email)
+  assert.equal(google.directory, regular.directory)
+  assert.equal(new URL(regular.url).searchParams.has('connection'), false)
+  const claude = new URL(browserSessionTarget('claude', pending.email, undefined, 'google').url)
+  assert.equal(claude.origin + claude.pathname, 'https://claude.ai/login')
+  assert.equal(claude.searchParams.get('email'), pending.email)
+  assert.equal(claude.searchParams.has('force_login'), false)
+  assert.throws(() => browserSessionTarget('codex', pending.email, undefined, 'injected'))
+})
+
+test('device launches carry the requested sign-in method and reject invalid methods', async () => {
+  const opens = []
+  assert.equal((await pass({ ...pending, login_method: 'google' }, async (...args) => opens.push(args))).result, true)
+  assert.deepEqual(opens, [['codex', pending.email, { loginMethod: 'google' }]])
+  assert.equal((await pass({ ...pending, login_method: 'evil' }, async () => { throw new Error('must not open') })).result, false)
 })

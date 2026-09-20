@@ -24,3 +24,21 @@ test('shared accounts and unidentified rows cannot launch another owner browser 
     assert.doesNotMatch(html, /<button/)
   }
 })
+
+
+test('saved Google credentials suggest Google, but an explicit account choice wins', async () => {
+  const { resolveBrowserLoginMethod } = await import('../src/features/dashboard/browser-login-method.ts')
+  assert.equal(resolveBrowserLoginMethod(null, true), 'google')
+  assert.equal(resolveBrowserLoginMethod(null, false), 'email')
+  assert.equal(resolveBrowserLoginMethod('email', true), 'email')
+  assert.equal(resolveBrowserLoginMethod('google', false), 'google')
+  assert.equal(resolveBrowserLoginMethod('invalid', true), 'google')
+  for (const hasGoogleCredential of [true, false]) {
+    const html = renderToStaticMarkup(createElement(AccountBrowserLink, {
+      account: { id: 'fixture', account_key: 'codex:fixture', email: 'fixture@example.com', access_scope: 'owned' },
+      session: {}, children: 'fixture@example.com', hasGoogleCredential,
+    }))
+    assert.match(html, /Sign-in method for ChatGPT fixture@example.com/)
+    assert.match(html, new RegExp('value="' + (hasGoogleCredential ? 'google' : 'email') + '" selected=""'))
+  }
+})

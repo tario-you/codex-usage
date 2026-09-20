@@ -347,7 +347,7 @@ only for your own session, and never returned to people you invite.
 
 ### Open an account on the web
 
-Click an owned account's email to bring its dedicated Chrome profile window to the front on your paired Mac. ChatGPT opens its sign-in flow with the email supplied; Claude opens its login page with the email prefilled. Finish the provider's password, Google/Apple, or verification step if prompted. Later clicks reuse the same profile and saved sign-in. This does not convert CLI tokens into website cookies or change your everyday Chrome profile.
+Click an owned account's email to bring its dedicated Chrome profile window to the front on your paired Mac. Use the Google / Email selector beside each email to choose its sign-in method; the choice is remembered per account on this dashboard browser. Accounts with a saved Google credential default to Google (you can override it). ChatGPT opens Google sign-in directly with the email hint when Google is selected, or its email sign-in flow otherwise. Claude opens its prefilled login page; choose Continue with Google there for Google accounts. Finish the provider's password, Google/Apple, or verification step if prompted. Later clicks reuse the same profile and saved sign-in. This does not convert CLI tokens into website cookies or change your everyday Chrome profile.
 
 The Mac needs Google Chrome and the browser helper from a checkout containing this feature:
 
