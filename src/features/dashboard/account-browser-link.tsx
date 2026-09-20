@@ -3,6 +3,8 @@ import type { Session } from '@supabase/supabase-js'
 import type { DashboardAccountRow } from '../../lib/dashboard'
 import { isClaudeAccountKey } from '../../shared/codex'
 import { resolveBrowserLoginMethod } from './browser-login-method'
+import { browserLoginUrl } from './browser-login-url'
+import { useBrowserSessionMode } from './browser-session-mode'
 
 const methodChanged = 'browser-login-method-changed'
 function subscribeMethod(onChange: () => void) {
@@ -16,6 +18,7 @@ type BrowserDevice = { id: string; label: string; machine_name: string | null }
 export function AccountBrowserLink({ account, session, children, hasGoogleCredential = false }: {
   account: DashboardAccountRow; session: Session; children: ReactNode; hasGoogleCredential?: boolean
 }) {
+  const [browserMode] = useBrowserSessionMode(session.user?.id)
   const storageKey = `browser-login-method:${session.user?.id}:${account.id}`
   const savedMethod = useSyncExternalStore(subscribeMethod, () => {
     try { return localStorage.getItem(storageKey) } catch { return null }
@@ -70,12 +73,16 @@ export function AccountBrowserLink({ account, session, children, hasGoogleCreden
     finally { setBusy(false) }
   }
   if (account.access_scope !== 'owned' || !account.email) return <span>{children}</span>
+  const currentBrowserUrl = browserLoginUrl(isClaudeAccountKey(account.account_key) ? 'claude' : 'codex', account.email, loginMethod)
   return (
     <span className="inline-flex min-w-0 flex-col items-start">
       <span className="inline-flex max-w-full items-baseline gap-2">
-      <button type="button" className="min-w-0 truncate text-left font-medium text-foreground underline underline-offset-2 disabled:opacity-60"
+      {browserMode === 'current' ? <a href={currentBrowserUrl} target="_blank" rel="noopener noreferrer"
+        className="min-w-0 truncate text-left font-medium text-foreground underline underline-offset-2"
+        title={`Open ${provider} sign-in for ${account.email} in this browser profile.${provider === 'Claude' && loginMethod === 'google' ? ' Choose Continue with Google on Claude.' : ''} The provider may keep its current account.`}
+        aria-label={`Open ${provider} sign-in for ${account.email}`}>{children}</a> : <button type="button" className="min-w-0 truncate text-left font-medium text-foreground underline underline-offset-2 disabled:opacity-60"
         title={`Open ${provider} in the Chrome session for ${account.email} using ${loginMethod === 'google' ? 'Google' : 'email'}. Sign in once on first use.`}
-        aria-label={`Open ${provider} as ${account.email}`} disabled={busy} onClick={() => void click()}>{children}</button>
+        aria-label={`Open ${provider} as ${account.email}`} disabled={busy} onClick={() => void click()}>{children}</button>}
       <select aria-label={`Sign-in method for ${provider} ${account.email}`} value={loginMethod} disabled={busy}
         title="Sign-in method; your choice is remembered on this browser. Google is the default when a Google credential is saved."
         className="shrink-0 bg-background text-xs font-normal text-muted-foreground"
