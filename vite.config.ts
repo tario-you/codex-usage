@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
@@ -194,8 +195,15 @@ async function writeNodeResponse(res: ServerResponse, response: Response) {
   res.end(Buffer.from(body))
 }
 
+const appVersion = randomUUID()
 export default defineConfig({
-  plugins: [localApiRoutesPlugin(), tanstackRouter(), react(), tailwindcss()],
+  define: { 'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion) },
+  plugins: [localApiRoutesPlugin(), tanstackRouter(), react(), tailwindcss(), {
+    name: 'dashboard-version',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: appVersion }) })
+    },
+  }],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
