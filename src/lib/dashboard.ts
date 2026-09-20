@@ -22,7 +22,7 @@ export type DashboardInviterRow =
   Database['public']['Functions']['list_dashboard_inviters']['Returns'][number]
 
 type DashboardWeeklyUsageHistoryRpcRow =
-  Database['public']['Functions']['list_dashboard_weekly_usage_history']['Returns'][number]
+  Database['public']['Functions']['list_dashboard_provider_weekly_usage_history']['Returns'][number]
 
 export {
   POSTGREST_MAX_ROWS,
@@ -32,7 +32,10 @@ export {
   type DashboardWeeklyUsageRange,
 } from '../features/dashboard/usage-history-ranges'
 
+export type UsageProvider = 'codex' | 'claude'
+
 export interface DashboardWeeklyUsageHistoryPoint {
+  provider: UsageProvider
   accountCount: number
   fetchedAt: string
   totalCapacityPercent: number
@@ -79,7 +82,7 @@ export function dashboardWeeklyUsageHistoryQueryOptions(
   range: DashboardWeeklyUsageRange,
 ) {
   return queryOptions({
-    queryKey: ['dashboard-weekly-usage-history', userId, range],
+    queryKey: ['dashboard-provider-weekly-usage-history', userId, range],
     queryFn: () => fetchDashboardWeeklyUsageHistory(range),
     refetchInterval: 30_000,
   })
@@ -139,18 +142,19 @@ export async function fetchDashboardWeeklyUsageHistory(
     Date.now() - getDashboardWeeklyUsageRangeDays(range) * 24 * 60 * 60 * 1000,
   ).toISOString()
 
-  const { data, error } = await supabase
-    .rpc('list_dashboard_weekly_usage_history', {
-      bucket_seconds: getDashboardWeeklyUsageBucketSeconds(range),
-      range_start: rangeStart,
-    })
-    .returns<DashboardWeeklyUsageHistoryRpcRow[]>()
-
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  return (data ?? []).map(mapWeeklyUsageHistoryRow)
+  const client = supabase
+  const histories = await Promise.all((['codex', 'claude'] as const).map(async (provider) => {
+    const { data, error } = await client
+      .rpc('list_dashboard_provider_weekly_usage_history', {
+        bucket_seconds: getDashboardWeeklyUsageBucketSeconds(range),
+        range_start: rangeStart,
+        usage_provider: provider,
+      })
+      .returns<DashboardWeeklyUsageHistoryRpcRow[]>()
+    if (error) throw new Error(error.message)
+    return (data ?? []).map((row) => mapWeeklyUsageHistoryRow(row, provider))
+  }))
+  return histories.flat()
 }
 
 /** A Claude login reported beside the Codex ones; its key is `claude:<email>`. */
@@ -225,8 +229,10 @@ function normalizeDashboardAccountRow(row: DashboardAccountRow) {
 
 function mapWeeklyUsageHistoryRow(
   row: DashboardWeeklyUsageHistoryRpcRow,
+  provider: UsageProvider,
 ): DashboardWeeklyUsageHistoryPoint {
   return {
+    provider,
     accountCount: row.account_count,
     fetchedAt: row.fetched_at,
     totalCapacityPercent: row.total_capacity_percent,
