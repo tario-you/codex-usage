@@ -78,6 +78,7 @@ import {
 
 import { ResetPlanPanel } from './reset-plan-panel'
 import { NoteEditor, NoteSecret } from './account-notes'
+import { AccountBrowserLink } from './account-browser-link'
 import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
@@ -1695,12 +1696,11 @@ function AccountTable({
               </TableCell>
               <TableCell className="px-4 py-1.5">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                  <p
-                    className="truncate font-medium text-foreground"
-                    title={[identity.secondary, formatPlanLine(account)].filter(Boolean).join(' · ')}
-                  >
-                    {identity.primary}
-                  </p>
+                  <span title={[identity.secondary, formatPlanLine(account)].filter(Boolean).join(' · ')}>
+                    <AccountBrowserLink account={account} session={session}>
+                      {identity.primary}
+                    </AccountBrowserLink>
+                  </span>
                   {isClaudeAccount(account) ? <ClaudeBadge /> : null}
                   {account.plan_type ? (
                     <span className="rounded border border-border px-1 text-[10px] uppercase leading-4 text-muted-foreground">
@@ -1908,7 +1908,7 @@ function AccountSummaryList({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="flex flex-wrap items-baseline gap-x-2 font-medium text-foreground">
-                  <span>{identity.primary}</span>
+                  <AccountBrowserLink account={account} session={session}>{identity.primary}</AccountBrowserLink>
                   {isClaudeAccount(account) ? <ClaudeBadge /> : null}
                 </p>
                 {identity.secondary ? (

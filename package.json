@@ -22,7 +22,7 @@
     "sync": "node ./bin/codex-usage.js sync",
     "setup:hosted": "tsx scripts/setup-hosted.ts",
     "setup:local": "tsx scripts/setup-local.ts",
-    "test": "tsx --tsconfig tsconfig.app.json --test tests/usage-provider-series.test.js tests/provider-history-sql.test.js tests/reset-plan.test.ts tests/usage-history-buckets.test.ts tests/usage-projection.test.ts tests/usage-forecast.test.ts tests/usage-history-hover.test.ts tests/codex-resolver.test.js tests/login-crypto.test.ts tests/login-pool.test.ts tests/shared-login.test.js tests/account-notes.test.ts tests/switch-history.test.ts tests/sync-all.test.js tests/claude-logins.test.js tests/auth-jwt.test.ts tests/repair.test.ts tests/discover.test.js tests/plan-switch.test.ts",
+    "test": "tsx --tsconfig tsconfig.app.json --test tests/browser-schema.test.js tests/browser-sessions.test.js tests/browser-routes.test.js tests/browser-link.test.js tests/usage-provider-series.test.js tests/provider-history-sql.test.js tests/reset-plan.test.ts tests/usage-history-buckets.test.ts tests/usage-projection.test.ts tests/usage-forecast.test.ts tests/usage-history-hover.test.ts tests/codex-resolver.test.js tests/login-crypto.test.ts tests/login-pool.test.ts tests/shared-login.test.js tests/account-notes.test.ts tests/switch-history.test.ts tests/sync-all.test.js tests/claude-logins.test.js tests/auth-jwt.test.ts tests/repair.test.ts tests/discover.test.js tests/plan-switch.test.ts",
     "collector": "tsx scripts/codex-collector.ts",
     "collector:once": "tsx scripts/codex-collector.ts --once",
     "release:check": "node ./scripts/check-publish.mjs",

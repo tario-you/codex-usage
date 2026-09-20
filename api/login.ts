@@ -1,4 +1,5 @@
 import { errorResponse } from './_lib/http.js'
+import * as browser from './_lib/login/browser.js'
 import * as claim from './_lib/login/claim.js'
 import * as grantsRevoke from './_lib/login/grants-revoke.js'
 import * as grantsStart from './_lib/login/grants-start.js'
@@ -22,6 +23,10 @@ type RouteHandler = (request: Request) => Promise<Response>
  * reads the action from either the query string or the path.
  */
 const loginRoutes: Record<string, RouteHandler> = {
+  'GET /api/login/browser': browser.GET,
+  'POST /api/login/browser': browser.POST,
+  'POST /api/login/browser/poll': browser.POLL,
+  'POST /api/login/browser/done': browser.DONE,
   'GET /api/login/notes': notes.GET,
   'GET /api/login/repair': repair.GET,
   'GET /api/login/shares': shares.GET,
