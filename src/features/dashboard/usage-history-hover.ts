@@ -69,7 +69,7 @@ export function readingAtX(
     return {
       kind: 'projection',
       at: new Date(time).toISOString(),
-      remainingPercent: Math.round(remaining),
+      remainingPercent: Math.round(remaining * 100) / 100,
       x: xAtTime(time, domain),
       y: yAtValue(remaining, domain),
     }

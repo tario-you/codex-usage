@@ -22,7 +22,7 @@ export type DashboardInviterRow =
   Database['public']['Functions']['list_dashboard_inviters']['Returns'][number]
 
 type DashboardWeeklyUsageHistoryRpcRow =
-  Database['public']['Functions']['list_dashboard_provider_weekly_usage_history']['Returns'][number]
+  Database['public']['Functions']['list_dashboard_weighted_weekly_usage_history']['Returns'][number]
 
 export {
   POSTGREST_MAX_ROWS,
@@ -82,7 +82,7 @@ export function dashboardWeeklyUsageHistoryQueryOptions(
   range: DashboardWeeklyUsageRange,
 ) {
   return queryOptions({
-    queryKey: ['dashboard-provider-weekly-usage-history', userId, range],
+    queryKey: ['dashboard-weighted-weekly-usage-history', userId, range],
     queryFn: () => fetchDashboardWeeklyUsageHistory(range),
     refetchInterval: 30_000,
   })
@@ -145,7 +145,7 @@ export async function fetchDashboardWeeklyUsageHistory(
   const client = supabase
   const histories = await Promise.all((['codex', 'claude'] as const).map(async (provider) => {
     const { data, error } = await client
-      .rpc('list_dashboard_provider_weekly_usage_history', {
+      .rpc('list_dashboard_weighted_weekly_usage_history', {
         bucket_seconds: getDashboardWeeklyUsageBucketSeconds(range),
         range_start: rangeStart,
         usage_provider: provider,

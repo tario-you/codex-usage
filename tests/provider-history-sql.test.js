@@ -41,6 +41,22 @@ test('provider history SQL separates real balances and preserves owner access an
     assert.equal(sql("select count(*) from list_dashboard_provider_weekly_usage_history(now() - interval '2 hours', 'invalid', 300);"), '0')
     assert.equal(sql("select prosecdef from pg_proc where proname = 'list_dashboard_provider_weekly_usage_history';"), 'f', 'security invoker retained')
     assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_provider_weekly_usage_history(timestamptz,text,integer)', 'execute');"), 't')
+    sql(`alter table codex_accounts add column plan_type text;
+      alter table codex_usage_snapshots add column raw_rate_limits jsonb not null default '{}'::jsonb;
+      update codex_accounts set plan_type='pro';
+      insert into codex_accounts values (5,'allowed','codex:lite','prolite');
+      insert into codex_usage_snapshots(id,account_id,fetched_at,secondary_used_percent,secondary_window_mins)
+        values (7,5,now() - interval '1 minute',25,10080);`)
+    sql(readFileSync(new URL('../supabase/migrations/20260920150000_weighted_weekly_usage_history.sql', import.meta.url), 'utf8'))
+    const weighted = (provider) => JSON.parse(sql(`select row_to_json(r) from (select total_remaining_percent, account_count, total_capacity_percent from list_dashboard_weighted_weekly_usage_history(now() - interval '2 hours', '${provider}', 300) order by fetched_at desc limit 1) r;`))
+    assert.deepEqual(weighted('codex'), { total_remaining_percent: 78.75, account_count: 2, total_capacity_percent: 125 }, '60 Pro + 75% of a 25-unit ProLite; retain fractional precision')
+    assert.deepEqual(weighted('claude'), latest('claude'), 'Claude stays unchanged')
+    sql("update codex_usage_snapshots set raw_rate_limits='{\"planType\":\"pro\"}' where id=7;")
+    assert.deepEqual(weighted('codex'), { total_remaining_percent: 135, account_count: 2, total_capacity_percent: 200 }, 'snapshot plan type takes precedence over current plan label')
+    sql("update codex_usage_snapshots set raw_rate_limits='{\"planType\":\" PROLITE \"}' where id=7;")
+    assert.equal(weighted('codex').total_remaining_percent, 78.75)
+    assert.equal(sql("select prosecdef from pg_proc where proname = 'list_dashboard_weighted_weekly_usage_history';"), 'f')
+    assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_weighted_weekly_usage_history(timestamptz,text,integer)', 'execute');"), 't')
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(root, { recursive: true, force: true })

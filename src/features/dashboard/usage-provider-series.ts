@@ -1,5 +1,6 @@
 import type { DashboardAccountRow, DashboardWeeklyUsageHistoryPoint, UsageProvider } from '../../lib/dashboard'
 import { isClaudeAccountKey } from '../../shared/codex'
+import { weeklyPlanCapacity } from './usage-plan-capacity'
 import { forecastWeeklyUsage } from './usage-forecast'
 
 export const USAGE_PROVIDERS = [
@@ -21,7 +22,7 @@ export function buildProviderSeries(
     return {
       ...provider,
       points: history,
-      capacityPercent: Math.max(plans.length * 100, history.at(-1)?.totalCapacityPercent ?? 0),
+      capacityPercent: Math.max(plans.reduce((sum, plan) => sum + weeklyPlanCapacity(plan), 0), history.at(-1)?.totalCapacityPercent ?? 0),
       projection: forecastWeeklyUsage(history, plans),
     }
   })
