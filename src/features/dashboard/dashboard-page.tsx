@@ -79,6 +79,7 @@ import {
 import { ResetPlanPanel } from './reset-plan-panel'
 import { NoteEditor, NoteSecret } from './account-notes'
 import { AccountBrowserLink } from './account-browser-link'
+import { BrowserSessionPreference } from './browser-session-preference'
 import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
@@ -1269,6 +1270,7 @@ export function DashboardPage() {
                         </CardDescription>
                         <RepairSignInsBanner devices={repairState.data} session={session} />
                         <ConnectPlanForm devices={repairState.data} session={session} />
+                        <BrowserSessionPreference userId={session.user.id} />
                       </div>
                       <Button
                         className="shrink-0"
