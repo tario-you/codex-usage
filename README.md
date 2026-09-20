@@ -7,7 +7,9 @@ see which account to use next.
 - npm package: `codex-usage-dashboard`
 - Detailed operations guide: [pairing, reset tracking, and releases](./docs/pairing-reset-tracking-and-release-runbook.md)
 
-![Codex Usage dashboard](./public/codexusage.png)
+![Codex Usage dashboard with account planning, reset history, and sign-in repair controls](./public/codexusage.png)
+
+_Current dashboard with anonymized example data._
 
 > The CLI runs with `npx codex-usage-dashboard@latest <command>`, nothing to install. A machine that cannot reach npm can use the pinned GitHub release instead: `npx --yes "github:tario-you/codex-usage#v0.3.0" <command>`.
 
