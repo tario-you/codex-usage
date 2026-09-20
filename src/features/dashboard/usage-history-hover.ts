@@ -63,7 +63,7 @@ export function readingAtX(
 ): ChartHoverReading | null {
   if (coordinates.length === 0) return null
   const latest = coordinates[coordinates.length - 1]
-  if (projection?.runsOutAt && projectionEndMs != null && x > latest.x) {
+  if (projection && projectionEndMs != null && x > latest.x) {
     const time = Math.min(Math.max(timeAtX(x, domain), Date.parse(latest.fetchedAt)), projectionEndMs)
     const remaining = projectedRemainingAt(projection, time)
     return {
