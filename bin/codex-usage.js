@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { runBrowserAgent } from './lib/browser-sessions.js'
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -285,6 +286,11 @@ async function main() {
 
   if (command === 'connect') {
     await runConnectCommand(args)
+    return
+  }
+
+  if (command === 'browser-agent') {
+    await runBrowserAgent(await readConfig(resolveCodexHome(args.options['codex-home'])))
     return
   }
 
@@ -1576,6 +1582,7 @@ function printUsage() {
   console.log('Usage:')
   console.log('  codex-usage connect [--site <url>] [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
+  console.log('  codex-usage browser-agent [--codex-home <path>]')
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>] [--skip-claude]')
   console.log('  codex-usage login setup [--store <accounts.json>]      find every account this machine used, sign each in')

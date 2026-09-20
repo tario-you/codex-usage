@@ -177,6 +177,42 @@ export interface Database {
           },
         ]
       }
+      codex_browser_launches: {
+        Row: {
+          id: string
+          owner_user_id: string
+          device_id: string
+          account_id: string
+          provider: string
+          email: string
+          state: string
+          created_at: string
+          expires_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          device_id: string
+          account_id: string
+          provider: string
+          email: string
+          state?: string
+          created_at?: string
+          expires_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          device_id?: string
+          account_id?: string
+          provider?: string
+          email?: string
+          state?: string
+          created_at?: string
+          expires_at?: string
+        }
+        Relationships: []
+      }
       codex_devices: {
         Row: {
           id: string
@@ -187,6 +223,7 @@ export interface Database {
           label: string
           machine_name: string | null
           codex_home: string | null
+          browser_agent_seen_at: string | null
           metadata: Json
           last_seen_at: string
           revoked_at: string | null
@@ -202,6 +239,7 @@ export interface Database {
           label: string
           machine_name?: string | null
           codex_home?: string | null
+          browser_agent_seen_at?: string | null
           metadata?: Json
           last_seen_at?: string
           revoked_at?: string | null
@@ -217,6 +255,7 @@ export interface Database {
           label?: string
           machine_name?: string | null
           codex_home?: string | null
+          browser_agent_seen_at?: string | null
           metadata?: Json
           last_seen_at?: string
           revoked_at?: string | null

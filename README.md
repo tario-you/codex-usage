@@ -343,3 +343,16 @@ column, with a pencil to edit them inline. Emails that have a note but no
 synced plan appear as "note only" rows at the bottom, and the plus in the table
 header adds one. Notes are encrypted at rest with the shared-login key, decrypted
 only for your own session, and never returned to people you invite.
+
+
+### Open an account on the web
+
+Click an owned account's email to open ChatGPT or Claude in a dedicated Chrome session on your paired Mac. The first time, sign in normally as the email shown; later clicks reuse that session until the provider asks you to sign in again. This does not convert CLI tokens into website cookies or change your everyday Chrome profile.
+
+The Mac needs Google Chrome and the browser helper from a checkout containing this feature:
+
+```sh
+node scripts/install-browser-helper.mjs --apply
+```
+
+The installer uses the existing dashboard pairing in `~/.codex/codex-usage-sync.json` and runs a separate launchd helper. Existing sync agents keep running. Alternatively, run `codex-usage browser-agent` with an updated CLI. If multiple browser helpers are online, the dashboard asks which machine should open the session. Saved browser data stays under `~/.local/share/codex-usage/browser-sessions`; no passwords or browser cookies are uploaded. Requests expire after 90 seconds and are claimed once before launching.
