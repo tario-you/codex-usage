@@ -5,7 +5,7 @@ import { findActiveDeviceByToken, findOwnedAccountById, sharedLoginErrorResponse
 import { serviceRoleSupabase as db } from '../supabase.js'
 import { isClaudeAccountKey } from '../../../src/shared/codex.js'
 
-const requestSchema = z.object({ accountId: z.string().uuid(), deviceId: z.string().uuid() })
+const requestSchema = z.object({ accountId: z.string().uuid(), deviceId: z.string().uuid(), loginMethod: z.enum(['email', 'google']).default('email') })
 const pollSchema = z.object({ deviceToken: z.string().min(1) })
 const doneSchema = pollSchema.extend({ requestId: z.string().uuid(), outcome: z.enum(['opened', 'failed']) })
 const freshSince = () => new Date(Date.now() - 30_000).toISOString()
@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     const { data, error } = await db.from('codex_browser_launches').insert({
       account_id: account.id, owner_user_id: user.id, device_id: device.id,
       email: account.email!, provider: isClaudeAccountKey(account.account_key) ? 'claude' : 'codex',
+      login_method: parsed.data.loginMethod,
     }).select('id').single()
     if (error?.code === '23505') return errorResponse('A browser launch is already queued on that machine.', 409)
     if (error) throw error
@@ -72,7 +73,7 @@ export async function POLL(request: Request) {
     // Claim before replying. Two helpers cannot both open the same click.
     const { data: claimed, error: claimError } = await db.from('codex_browser_launches').update({ state: 'opening' })
       .eq('id', pending.id).eq('state', 'queued').gt('expires_at', now)
-      .select('id, provider, email, expires_at').maybeSingle()
+      .select('id, provider, email, login_method, expires_at').maybeSingle()
     if (claimError) throw claimError
     return jsonResponse({ pending: claimed })
   } catch (error) { return sharedLoginErrorResponse(error, 'Unable to poll browser requests.') }
