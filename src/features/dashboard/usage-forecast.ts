@@ -1,3 +1,4 @@
+import { weeklyPlanCapacity } from './usage-plan-capacity'
 import { getRateLimitWindows } from '../../shared/rate-limit-windows'
 import {
   projectRunOut,
@@ -25,8 +26,10 @@ export function forecastWeeklyUsage(
     const window = getRateLimitWindows(account).find((item) => item.windowDurationMins === 10080)
     if (window?.remainingPercent == null) return []
     const reset = Date.parse(window.resetsAt ?? '')
+    const capacity = weeklyPlanCapacity(account)
     return [{
-      remaining: window.remainingPercent,
+      capacity,
+      remaining: window.remainingPercent * capacity / 100,
       reset: Number.isFinite(reset) && reset > start ? reset : Infinity,
       label: `${account.label ?? 'a plan'}${account.account_key?.startsWith('claude:') ? ' (Claude)' : ''}`,
     }]
@@ -39,7 +42,7 @@ export function forecastWeeklyUsage(
   if (total > remaining) {
     for (const item of balances) item.remaining *= remaining / total
   }
-  balances.push({ remaining: Math.max(0, remaining - total), reset: Infinity, label: '' })
+  balances.push({ capacity: 0, remaining: Math.max(0, remaining - total), reset: Infinity, label: '' })
   const sum = () => balances.reduce((value, item) => value + item.remaining, 0)
   const timeline: NonNullable<UsageProjection['timeline']> = []
   const resets: NonNullable<UsageProjection['resets']> = []
@@ -77,8 +80,8 @@ export function forecastWeeklyUsage(
   for (const at of times) {
     spendUntil(at)
     for (const item of balances.filter((item) => item.reset === at)) {
-      const addedPercent = 100 - item.remaining
-      item.remaining = 100
+      const addedPercent = item.capacity - item.remaining
+      item.remaining = item.capacity
       resets.push({ at: new Date(at).toISOString(), addedPercent, label: item.label })
       // After its reported reset, this account goes behind remaining known resets.
       item.reset = Infinity

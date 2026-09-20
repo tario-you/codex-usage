@@ -10,6 +10,7 @@ const HOUR_MS = 60 * 60 * 1000
 export interface UsageProjectionInputPoint {
   fetchedAt: string
   totalRemainingPercent: number
+  totalCapacityPercent?: number
 }
 
 export interface UsageProjection {
@@ -52,7 +53,12 @@ export function projectRunOut(
 
   let spentPercent = 0
   for (let index = 1; index < window.length; index += 1) {
-    const drop = window[index - 1].totalRemainingPercent - window[index].totalRemainingPercent
+    const previous = window[index - 1]
+    const current = window[index]
+    // A plan change or removed account is not consumption.
+    if (previous.totalCapacityPercent != null && current.totalCapacityPercent != null &&
+        previous.totalCapacityPercent !== current.totalCapacityPercent) continue
+    const drop = previous.totalRemainingPercent - current.totalRemainingPercent
     if (drop > 0) spentPercent += drop
   }
   const paceSpanMs = latest.fetchedAtMs - window[0].fetchedAtMs
@@ -102,6 +108,7 @@ export function projectedRemainingAt(projection: UsageProjection, atMs: number) 
 export interface NextWeeklyResetSource {
   /** `claude:<email>` names a Claude login, which the chart sums too; its reset is named as such. */
   account_key?: string | null
+  plan_type?: string | null
   label: string | null
   primary_remaining_percent: number | null
   primary_resets_at: string | null

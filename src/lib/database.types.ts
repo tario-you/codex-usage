@@ -787,6 +787,19 @@ export interface Database {
           total_capacity_percent: number
         }[]
       }
+      list_dashboard_weighted_weekly_usage_history: {
+        Args: {
+          bucket_seconds?: number
+          range_start: string
+          usage_provider: string
+        }
+        Returns: {
+          fetched_at: string
+          total_remaining_percent: number
+          account_count: number
+          total_capacity_percent: number
+        }[]
+      }
       user_can_access_codex_owner: {
         Args: {
           candidate_owner_user_id: string

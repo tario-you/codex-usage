@@ -52,6 +52,9 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
           </p>
         )
       })}
+      {visible.codex ? (
+        <p className="mt-1 text-xs text-muted-foreground">Codex capacity: Pro = 100%, ProLite = 25%. Account rows show each plan’s own percentage.</p>
+      ) : null}
       {series.some((item) => item.projection) ? (
         <p className="mt-1 text-xs text-muted-foreground">
           Dashed: 7-day estimate from latest sync, using soonest-reset plans first. Jumps: weekly refills.
@@ -113,7 +116,7 @@ function ProviderUsageChart({ series, range }: { series: UsageProviderSeries[]; 
             {chart.projectionPath ? <path data-forecast={key} d={chart.projectionPath} fill="none" stroke={color} strokeWidth="2" strokeDasharray="5 5" opacity="0.75" /> : null}
             {chart.resetDots.map((reset, index) => (
               <circle key={`${reset.at}-${index}`} cx={reset.x} cy={reset.y} r="3" fill="var(--background)" stroke={color} strokeWidth="1.5">
-                <title>{`${label}: ${reset.label} resets ${timestamp(reset.at)}: +${Math.round(reset.addedPercent)}% projected`}</title>
+                <title>{`${label}: ${reset.label} resets ${timestamp(reset.at)}: +${Math.round(reset.addedPercent * 100) / 100}% projected`}</title>
               </circle>
             ))}
             {chart.runOutDot ? <circle cx={chart.runOutDot.x} cy={chart.runOutDot.y} r="3.5" fill="var(--background)" stroke={color} strokeWidth="2"><title>{`${label}: first empty ${chart.runOutDot.label}`}</title></circle> : null}
