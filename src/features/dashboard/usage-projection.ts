@@ -22,7 +22,11 @@ export interface UsageProjection {
   paceSpanMs: number
   /** Spend pace, percent per hour; 0 when nothing was spent in the window. */
   percentPerHour: number
-  /** When the total reaches zero at that pace; null when nothing was spent. */
+  /** Optional reset-aware path; duplicate timestamps represent vertical refills. */
+  timeline?: { at: string; remainingPercent: number }[]
+  endAt?: string
+  resets?: { at: string; addedPercent: number; label: string }[]
+  /** First depletion in the forecast; null if the pool lasts through its horizon. */
   runsOutAt: string | null
 }
 
@@ -74,6 +78,19 @@ export function projectRunOut(
 
 /** The projected remaining at a moment on or after the projection's start, never below zero. */
 export function projectedRemainingAt(projection: UsageProjection, atMs: number) {
+  if (projection.timeline?.length) {
+    const timeline = projection.timeline
+    let left = timeline[0]
+    for (const right of timeline.slice(1)) {
+      if (Date.parse(right.at) > atMs) {
+        const span = Date.parse(right.at) - Date.parse(left.at)
+        const ratio = Math.max(0, (atMs - Date.parse(left.at)) / span)
+        return left.remainingPercent + ratio * (right.remainingPercent - left.remainingPercent)
+      }
+      left = right
+    }
+    return left.remainingPercent
+  }
   const fromMs = Date.parse(projection.fromAt)
   const elapsedHours = Math.max(0, atMs - fromMs) / HOUR_MS
   return Math.max(

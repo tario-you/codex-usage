@@ -7,11 +7,10 @@ import {
   type ReactNode,
 } from 'react'
 import {
-  nextWeeklyReset,
-  projectRunOut,
   projectedRemainingAt,
   type UsageProjection,
 } from './usage-projection'
+import { forecastWeeklyUsage } from './usage-forecast'
 import {
   formatSpanShort,
   inactivityStretches,
@@ -1605,19 +1604,13 @@ function WeeklyUsageHistoryPanel({
   range: DashboardWeeklyUsageRange
 }) {
   const latestPoint = points[points.length - 1] ?? null
-  // #33: the run-out at the recent spend pace, and the next weekly reset that would add allowance back.
-  const projection = latestPoint ? projectRunOut(points) : null
-  const nextReset = nextWeeklyReset(accounts, Date.now())
+  const projection = latestPoint ? forecastWeeklyUsage(points, accounts) : null
   const projectionText = projection
-    ? projection.runsOutAt
-      ? ` · at this pace (${projection.percentPerHour}%/h) it runs out ${formatResetCountdown(projection.runsOutAt)}, ${formatHistoryTooltipTimestamp(projection.runsOutAt)}${
-          nextReset
-            ? Date.parse(nextReset.at) < Date.parse(projection.runsOutAt)
-              ? `; ${nextReset.label} resets ${formatResetCountdown(nextReset.at)} before that`
-              : `; next reset ${formatResetCountdown(nextReset.at)} (${nextReset.label})`
-            : ''
-        }`
-      : ' · no spend in the last 24h'
+    ? ` · ${projection.percentPerHour}%/h recent pace · ${
+        projection.runsOutAt
+          ? `first empty ${formatHistoryTooltipTimestamp(projection.runsOutAt)}`
+          : `no depletion projected through ${formatHistoryTooltipTimestamp(projection.endAt!)}`
+      } · ${projection.resets?.length ?? 0} reported resets included`
     : ''
   const capacityPercent = Math.max(
     accountsTracked * 100,
@@ -1666,6 +1659,12 @@ function WeeklyUsageHistoryPanel({
         </div>
       </div>
 
+      {projection ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Dashed: 7-day estimate from latest sync, using soonest-reset plans first. Jumps: weekly refills.
+          Only reported resets included; session limits and sign-in availability may limit use.
+        </p>
+      ) : null}
       {errorMessage ? (
         <InlineMessage className="mt-2" tone="error">
           {errorMessage}
@@ -1831,6 +1830,12 @@ function WeeklyUsageHistoryChart({
             strokeWidth="2"
           />
         ) : null}
+        {chart.resetDots.map((reset, index) => (
+          <circle key={`${reset.at}-${index}`} cx={reset.x} cy={reset.y} r="3"
+            fill="var(--background)" stroke="var(--chart-1)" strokeWidth="1.5">
+            <title>{reset.label} resets {formatHistoryTooltipTimestamp(reset.at)}: +{Math.round(reset.addedPercent)}% projected</title>
+          </circle>
+        ))}
         {chart.runOutDot ? (
           <circle
             cx={chart.runOutDot.x}
@@ -2601,13 +2606,9 @@ function buildWeeklyUsageChart(
     getDashboardWeeklyUsageRangeDays(range) * 24 * 60 * 60 * 1000
   const endMs = Date.now()
   const startMs = endMs - rangeMs
-  // #33: the run-out sits past now; the axis follows it up to half a range ahead.
   const runsOutAtMs = projection?.runsOutAt ? Date.parse(projection.runsOutAt) : null
-  const horizonMs =
-    runsOutAtMs != null && Number.isFinite(runsOutAtMs)
-      ? Math.min(Math.max(runsOutAtMs - endMs, 0), rangeMs / 2)
-      : 0
-  const domainEndMs = endMs + horizonMs
+  const domainEndMs = projection?.endAt ? Math.max(endMs, Date.parse(projection.endAt)) : endMs
+  const horizonMs = domainEndMs - endMs
   const domainMs = domainEndMs - startMs
   const plotWidth = bounds.right - bounds.left
   const plotHeight = bounds.bottom - bounds.top
@@ -2657,13 +2658,15 @@ function buildWeeklyUsageChart(
     roundChartCoordinate(
       bounds.bottom - (Math.min(Math.max(value, 0), yMax) / yMax) * plotHeight,
     )
-  const latestCoordinate = coordinates[coordinates.length - 1] ?? null
-  const projectionEndMs =
-    runsOutAtMs != null && horizonMs > 0 ? Math.min(runsOutAtMs, domainEndMs) : null
-  const projectionPath =
-    projection && latestCoordinate && projectionEndMs != null
-      ? `M ${latestCoordinate.x} ${latestCoordinate.y} L ${timeToX(projectionEndMs)} ${valueToY(projectedRemainingAt(projection, projectionEndMs))}`
-      : null
+  const projectionEndMs = projection?.endAt ? Date.parse(projection.endAt) : null
+  const projectionPath = projection?.timeline
+    ?.map((point, index) => `${index === 0 ? 'M' : 'L'} ${timeToX(Date.parse(point.at))} ${valueToY(point.remainingPercent)}`)
+    .join(' ') ?? null
+  const resetDots = (projection?.resets ?? []).map((reset) => ({
+    ...reset,
+    x: timeToX(Date.parse(reset.at)),
+    y: valueToY(projectedRemainingAt(projection!, Date.parse(reset.at))),
+  }))
   const runOutDot =
     projection && runsOutAtMs != null && projectionPath && runsOutAtMs <= domainEndMs
       ? {
@@ -2715,6 +2718,7 @@ function buildWeeklyUsageChart(
     projectionEndMs,
     projectionPath,
     runOutDot,
+    resetDots,
     xTicks: xTickValues.map((tick) => ({
       anchor: tick.anchor,
       label: formatHistoryAxisTimestamp(tick.time, range),
