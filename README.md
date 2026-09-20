@@ -347,7 +347,7 @@ only for your own session, and never returned to people you invite.
 
 ### Open an account on the web
 
-Click an owned account's email to open ChatGPT or Claude in a dedicated Chrome session on your paired Mac. The first time, sign in normally as the email shown; later clicks reuse that session until the provider asks you to sign in again. This does not convert CLI tokens into website cookies or change your everyday Chrome profile.
+Click an owned account's email to bring its dedicated Chrome profile window to the front on your paired Mac. ChatGPT opens its sign-in flow with the email supplied; Claude opens its login page with the email prefilled. Finish the provider's password, Google/Apple, or verification step if prompted. Later clicks reuse the same profile and saved sign-in. This does not convert CLI tokens into website cookies or change your everyday Chrome profile.
 
 The Mac needs Google Chrome and the browser helper from a checkout containing this feature:
 

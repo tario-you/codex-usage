@@ -15,14 +15,20 @@ test('provider and normalized email select stable distinct private profiles and 
   assert.deepEqual(a, browserSessionTarget('codex', 'fixture@example.com', '/private/profiles'))
   assert.notEqual(a.directory, browserSessionTarget('claude', 'fixture@example.com', '/private/profiles').directory)
   assert.notEqual(a.directory, browserSessionTarget('codex', 'other@example.com', '/private/profiles').directory)
-  assert.equal(a.url, 'https://chatgpt.com/')
-  assert.equal(browserSessionTarget('claude', pending.email).url, 'https://claude.ai/')
+  const codexUrl = new URL(a.url)
+  assert.equal(codexUrl.origin + codexUrl.pathname, 'https://chatgpt.com/auth/login_with')
+  assert.equal(codexUrl.searchParams.get('login_hint'), 'fixture@example.com')
+  assert.equal(codexUrl.searchParams.get('screen_hint'), 'login')
+  assert.equal(codexUrl.searchParams.get('callback_path'), '/')
+  const claudeUrl = new URL(browserSessionTarget('claude', pending.email).url)
+  assert.equal(claudeUrl.origin + claudeUrl.pathname, 'https://claude.ai/login')
+  assert.equal(claudeUrl.searchParams.get('email'), pending.email)
   assert.ok(!a.directory.includes('@'))
   const args = chromeLaunchArgs(a)
   assert.ok(args.includes(`--profile-directory=${a.profile}`))
   assert.equal(path.basename(a.directory), a.profile)
   assert.ok(!args.some(arg => arg.startsWith('--user-data-dir') || arg === '-n'))
-  assert.equal(args.at(-1), 'https://chatgpt.com/')
+  assert.equal(args.at(-1), a.url)
   assert.throws(() => browserSessionTarget('https://attacker.invalid', pending.email))
   assert.throws(() => browserSessionTarget('codex', '../../etc/passwd'))
 })
@@ -31,12 +37,37 @@ test('reopening a session preserves its browser data; launches are stubbed', asy
   const root = await mkdtemp(path.join(os.tmpdir(), 'browser-session-'))
   const launches = []
   try {
-    const options = { root, launch: async args => launches.push(args) }
+    const events = []
+    const options = { root, launch: async args => { launches.push(args); events.push('launch') }, activate: async () => { events.push('activate') } }
     const first = await openBrowserSession('codex', pending.email, options)
     await writeFile(path.join(first.directory, 'session-fixture'), 'preserve me')
     const second = await openBrowserSession('codex', pending.email, options)
     assert.equal(await readFile(path.join(second.directory, 'session-fixture'), 'utf8'), 'preserve me')
     assert.deepEqual(launches[0], launches[1])
+    assert.deepEqual(events, ['launch', 'activate', 'launch', 'activate'])
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('email hints preserve aliases and cannot inject redirects or other URL parameters', () => {
+  const email = 'fixture+tag&next=elsewhere#name@example.com'
+  for (const provider of ['codex', 'claude']) {
+    const url = new URL(browserSessionTarget(provider, email).url)
+    assert.equal(url.searchParams.get(provider === 'codex' ? 'login_hint' : 'email'), email)
+    assert.equal(url.hash, '')
+    assert.equal(url.searchParams.has('next'), false)
+    assert.equal(url.searchParams.has('prompt'), false)
+    assert.equal(url.searchParams.has('selectAccount'), false)
+  }
+})
+
+test('failed dispatch does not activate a different Chrome window', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'browser-failure-'))
+  let activated = false
+  try {
+    await assert.rejects(openBrowserSession('codex', pending.email, {
+      root, launch: async () => { throw new Error('dispatch failed') }, activate: async () => { activated = true },
+    }), /dispatch failed/)
+    assert.equal(activated, false)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 

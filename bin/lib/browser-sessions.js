@@ -7,15 +7,24 @@ import path from 'node:path'
 import { dashboardRequest } from './dashboard-request.js'
 
 export const BROWSER_SESSION_ROOT = path.join(os.homedir(), 'Library/Application Support/Google/Chrome')
-const PROVIDER_URLS = { codex: 'https://chatgpt.com/', claude: 'https://claude.ai/' }
+const PROVIDER_URLS = { codex: 'https://chatgpt.com/auth/login_with', claude: 'https://claude.ai/login' }
 const CHROME_APP = '/Applications/Google Chrome.app'
 
 export function browserSessionTarget(provider, email, root = BROWSER_SESSION_ROOT) {
   if (!Object.hasOwn(PROVIDER_URLS, provider)) throw new Error('Unsupported provider.')
   if (typeof email !== 'string' || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Invalid account email.')
-  const key = createHash('sha256').update(`${provider}\0${email.trim().toLowerCase()}`).digest('hex')
+  const normalizedEmail = email.trim().toLowerCase()
+  const key = createHash('sha256').update(`${provider}\0${normalizedEmail}`).digest('hex')
   const profile = `Codex Usage ${key}`
-  return { url: PROVIDER_URLS[provider], profile, directory: path.join(root, profile) }
+  const url = new URL(PROVIDER_URLS[provider])
+  if (provider === 'codex') {
+    url.searchParams.set('login_hint', normalizedEmail)
+    url.searchParams.set('screen_hint', 'login')
+    url.searchParams.set('callback_path', '/')
+  } else {
+    url.searchParams.set('email', normalizedEmail)
+  }
+  return { url: url.toString(), profile, directory: path.join(root, profile) }
 }
 
 export function chromeLaunchArgs(target) {
@@ -25,14 +34,25 @@ export function chromeLaunchArgs(target) {
 }
 
 /** Only a saved, isolated profile is opened. No CLI tokens, cookies, or passwords are transferred. */
-export async function openBrowserSession(provider, email, { root = BROWSER_SESSION_ROOT, launch = launchChrome } = {}) {
+export async function openBrowserSession(provider, email, { root = BROWSER_SESSION_ROOT, launch = launchChrome, activate = activateChrome } = {}) {
   const target = browserSessionTarget(provider, email, root)
   await mkdir(root, { recursive: true, mode: 0o700 })
   if ((await lstat(root)).isSymbolicLink()) throw new Error('Browser session directory must not be a link.')
   await mkdir(target.directory, { recursive: true, mode: 0o700 })
   if ((await lstat(target.directory)).isSymbolicLink()) throw new Error('Browser session directory must not be a link.')
   await launch(chromeLaunchArgs(target))
+  await activate()
   return target
+}
+
+function activateChrome() {
+  // LaunchAgent dispatch can open the right window without activating the app.
+  // Activate existing Chrome only, after its new profile window has been requested.
+  return new Promise((resolve, reject) => {
+    const child = spawn('/usr/bin/open', ['-a', CHROME_APP], { stdio: 'ignore' })
+    child.once('error', reject)
+    child.once('exit', code => code === 0 ? resolve() : reject(new Error('Chrome could not be brought forward.')))
+  })
 }
 
 function launchChrome(args) {
