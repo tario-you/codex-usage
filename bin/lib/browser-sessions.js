@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { dashboardRequest } from './dashboard-request.js'
 
-export const BROWSER_SESSION_ROOT = path.join(os.homedir(), '.local/share/codex-usage/browser-sessions')
+export const BROWSER_SESSION_ROOT = path.join(os.homedir(), 'Library/Application Support/Google/Chrome')
 const PROVIDER_URLS = { codex: 'https://chatgpt.com/', claude: 'https://claude.ai/' }
 const CHROME_APP = '/Applications/Google Chrome.app'
 
@@ -14,11 +14,14 @@ export function browserSessionTarget(provider, email, root = BROWSER_SESSION_ROO
   if (!Object.hasOwn(PROVIDER_URLS, provider)) throw new Error('Unsupported provider.')
   if (typeof email !== 'string' || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Invalid account email.')
   const key = createHash('sha256').update(`${provider}\0${email.trim().toLowerCase()}`).digest('hex')
-  return { url: PROVIDER_URLS[provider], directory: path.join(root, key) }
+  const profile = `Codex Usage ${key}`
+  return { url: PROVIDER_URLS[provider], profile, directory: path.join(root, profile) }
 }
 
 export function chromeLaunchArgs(target) {
-  return ['-n', '-a', CHROME_APP, '--args', `--user-data-dir=${target.directory}`, '--new-window', target.url]
+  // Let Chrome's normal singleton dispatch this to a separate profile window.
+  // A second user-data-dir starts another app instance and conflicts with identity guards.
+  return [`--profile-directory=${target.profile}`, '--new-window', target.url]
 }
 
 /** Only a saved, isolated profile is opened. No CLI tokens, cookies, or passwords are transferred. */
@@ -35,9 +38,15 @@ export async function openBrowserSession(provider, email, { root = BROWSER_SESSI
 function launchChrome(args) {
   if (process.platform !== 'darwin' || !existsSync(CHROME_APP)) throw new Error('This helper requires Google Chrome on macOS.')
   return new Promise((resolve, reject) => {
-    const child = spawn('/usr/bin/open', args, { stdio: 'ignore' })
-    child.once('error', reject)
-    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error('Chrome could not be opened.')))
+    const child = spawn(path.join(CHROME_APP, 'Contents/MacOS/Google Chrome'), args, { stdio: 'ignore', detached: true })
+    // Existing Chrome accepts the profile request then exits the dispatch process.
+    // If Chrome was closed, the new browser process stays alive.
+    const timer = setTimeout(() => { child.unref(); resolve() }, 3000)
+    child.once('error', error => { clearTimeout(timer); reject(error) })
+    child.once('exit', code => {
+      clearTimeout(timer)
+      code === 0 ? resolve() : reject(new Error('Chrome could not be opened.'))
+    })
   })
 }
 
