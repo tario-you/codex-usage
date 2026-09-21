@@ -7,11 +7,11 @@ import {
   MASK,
   NOTE_EMAILS_DATALIST_ID,
   emptyDraft,
-  noteKey,
   type AccountNote,
   type AccountNotesController,
   type SecretField,
 } from './account-notes-state'
+import { noteKey } from './account-note-identity'
 
 /** A password behind an eye toggle; a dot when there is none. */
 export function NoteSecret({
@@ -24,8 +24,8 @@ export function NoteSecret({
   note: AccountNote | undefined
 }) {
   const value = note?.[field]
-  if (!value) return <span className="text-muted-foreground">·</span>
-  const key = `${noteKey(note?.email)}:${field}`
+  if (!note || !value) return <span className="text-muted-foreground">·</span>
+  const key = `${noteKey(note.email, note.provider)}:${field}`
   const shown = controller.revealed.has(key)
   return (
     <span className="inline-flex max-w-full items-center gap-1 text-xs">
@@ -66,21 +66,33 @@ export function NoteEditor({
           <option key={email} value={email} />
         ))}
       </datalist>
+      <span className="flex min-w-0 items-center gap-2">
+        <select
+          aria-label="Provider"
+          className="bg-background text-sm"
+          disabled={!controller.adding || controller.busy}
+          onChange={(event) => controller.update({ provider: event.target.value as 'codex' | 'claude' })}
+          value={current.provider}
+        >
+          <option value="codex">Codex</option>
+          <option value="claude">Claude</option>
+        </select>
+        <Input
+          aria-label="Email"
+          autoComplete="off"
+          list={NOTE_EMAILS_DATALIST_ID}
+          onChange={(event) => controller.update({ email: event.target.value })}
+          placeholder="email"
+          readOnly={!controller.adding}
+          required
+          value={current.email}
+        />
+      </span>
       <Input
-        aria-label="Email"
-        autoComplete="off"
-        list={NOTE_EMAILS_DATALIST_ID}
-        onChange={(event) => controller.update({ email: event.target.value })}
-        placeholder="email"
-        readOnly={!controller.adding}
-        required
-        value={current.email}
-      />
-      <Input
-        aria-label="ChatGPT password"
+        aria-label={current.provider === 'claude' ? 'Claude password' : 'ChatGPT password'}
         autoComplete="off"
         onChange={(event) => controller.update({ chatgptPassword: event.target.value })}
-        placeholder="ChatGPT password"
+        placeholder={current.provider === 'claude' ? 'Claude password' : 'ChatGPT password'}
         type="text"
         value={current.chatgptPassword}
       />

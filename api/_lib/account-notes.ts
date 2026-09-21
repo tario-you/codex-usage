@@ -1,10 +1,11 @@
 import { z } from 'zod'
 
-/** Owner-only per-email notes. Everything here is pure so tests never touch env. */
+/** Owner-only per-provider, per-email notes. Everything here is pure so tests never touch env. */
 export const ACCOUNT_NOTE_SECRET_MAX = 512
 export const ACCOUNT_NOTE_TEXT_MAX = 2000
 
 export const accountNoteInputSchema = z.object({
+  provider: z.enum(['codex', 'claude']),
   email: z
     .string()
     .trim()
@@ -23,9 +24,16 @@ export interface AccountNoteFields {
   note: string | null
 }
 
-/** Ciphertext is bound to the owner and the email, so a row cannot be moved. */
-export function accountNoteAssociatedData(ownerUserId: string, email: string) {
-  return `account-note:${ownerUserId}:${email}`
+/** Version 1 is retained only for existing ciphertext preserved by the migration. */
+export function accountNoteAssociatedData(
+  ownerUserId: string,
+  email: string,
+  provider: 'codex' | 'claude',
+  aadVersion = 2,
+) {
+  if (aadVersion === 1) return `account-note:${ownerUserId}:${email}`
+  if (aadVersion !== 2) throw new Error('Unsupported account note encryption binding.')
+  return `account-note:v2:${ownerUserId}:${provider}:${email}`
 }
 
 function cleanField(value: string | null | undefined) {
