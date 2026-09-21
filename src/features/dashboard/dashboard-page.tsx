@@ -84,7 +84,8 @@ import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
 import { expiredEmailSet, useRepairState } from './repair-signins-state'
-import { noteKey, useAccountNotes, type AccountNotesController } from './account-notes-state'
+import { useAccountNotes, type AccountNotesController } from './account-notes-state'
+import { accountNoteKey, accountNoteProvider, normalizeNoteEmail, noteKey } from './account-note-identity'
 import { SharedLoginPanel } from './shared-login-panel'
 import { GettingStartedPanel } from './getting-started-panel'
 import { SwitchHistoryPanel } from './switch-history-panel'
@@ -1621,13 +1622,13 @@ function AccountTable({
   unlinkingAccountId: string | null
 }) {
   const columnCount = notes ? 9 : 6
-  const accountEmails = new Set(accounts.map((account) => noteKey(account.email)).filter(Boolean))
-  const noteOnly = notes ? notes.notes.filter((note) => !accountEmails.has(noteKey(note.email))) : []
-  const emailSuggestions = notes
+  const accountKeys = new Set(accounts.filter((account) => account.access_scope === 'owned').map(accountNoteKey))
+  const noteOnly = notes ? notes.notes.filter((note) => !accountKeys.has(noteKey(note.email, note.provider))) : []
+  const suggestedAccounts = notes
     ? accounts
-        .filter((account) => account.access_scope === 'owned' && account.email && !notes.byEmail.has(noteKey(account.email)))
-        .map((account) => noteKey(account.email))
+        .filter((account) => account.access_scope === 'owned' && account.email && !notes.byAccount.has(accountNoteKey(account)))
     : []
+  const emailSuggestions = [...new Set(suggestedAccounts.map((account) => normalizeNoteEmail(account.email)))]
   const editorRow = (key: string) =>
     notes ? (
       <TableRow key={key}>
@@ -1659,7 +1660,7 @@ function AccountTable({
                 aria-label="Add a note for another email"
                 className="size-6"
                 disabled={notes.busy || notes.adding}
-                onClick={() => notes.startAdd(emailSuggestions[0] ?? '')}
+                onClick={() => notes.startAdd(emailSuggestions[0] ?? '', suggestedAccounts[0] ? accountNoteProvider(suggestedAccounts[0]) : 'codex')}
                 size="icon"
                 title="Add a note for another email"
                 type="button"
@@ -1686,8 +1687,8 @@ function AccountTable({
           const limitWindows = getRateLimitWindows(account)
           const isOwnedAccount = account.access_scope === 'owned'
           const isUnlinking = unlinkingAccountId === account.id
-          const note = notes && isOwnedAccount ? notes.byEmail.get(noteKey(account.email)) : undefined
-          if (notes && isOwnedAccount && account.email && notes.isEditing(account.email)) {
+          const note = notes && isOwnedAccount ? notes.byAccount.get(accountNoteKey(account)) : undefined
+          if (notes && isOwnedAccount && account.email && notes.isEditing(account.email, accountNoteProvider(account))) {
             return editorRow(account.id)
           }
 
@@ -1709,7 +1710,7 @@ function AccountTable({
                       {account.plan_type}
                     </span>
                   ) : null}
-                  {expiredEmails.has(noteKey(account.email)) ? (
+                  {expiredEmails.has(normalizeNoteEmail(account.email)) ? (
                     <span className="rounded border border-amber-500/40 px-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400" title="This machine's saved sign-in for this account is refused; use Fix sign-ins">
                       sign-in expired
                     </span>
@@ -1808,7 +1809,7 @@ function AccountTable({
                         aria-label={`Edit passwords and note for ${account.email}`}
                         className="size-6"
                         disabled={notes.busy}
-                        onClick={() => notes.startEdit(account.email as string)}
+                        onClick={() => notes.startEdit(account.email as string, accountNoteProvider(account))}
                         size="icon"
                         title={note ? 'Edit passwords and note' : 'Add passwords and note'}
                         type="button"
@@ -1830,14 +1831,14 @@ function AccountTable({
         })}
         {notes
           ? noteOnly.map((note) =>
-              notes.isEditing(note.email) ? (
-                editorRow(`note:${note.email}`)
+              notes.isEditing(note.email, note.provider) ? (
+                editorRow(`note:${noteKey(note.email, note.provider)}`)
               ) : (
-                <TableRow key={`note:${note.email}`}>
+                <TableRow key={`note:${noteKey(note.email, note.provider)}`}>
                   <TableCell className="px-3 py-1.5" />
                   <TableCell className="px-4 py-1.5">
                     <p className="truncate font-mono text-xs" title={note.email}>
-                      {note.email}
+                      {note.email} · {note.provider === 'claude' ? 'Claude' : 'Codex'}
                     </p>
                   </TableCell>
                   <TableCell className="py-1.5 text-xs text-muted-foreground">note only</TableCell>
@@ -1852,10 +1853,10 @@ function AccountTable({
                   </TableCell>
                   <TableCell className="px-4 py-1.5 text-right">
                     <span className="inline-flex items-center gap-0.5">
-                      <Button aria-label={`Edit ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(note.email)} size="icon" type="button" variant="ghost">
+                      <Button aria-label={`Edit ${note.provider} ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(note.email, note.provider)} size="icon" type="button" variant="ghost">
                         <Pencil className="size-3.5" />
                       </Button>
-                      <Button aria-label={`Remove ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => void notes.remove(note.email)} size="icon" type="button" variant="ghost">
+                      <Button aria-label={`Remove ${note.provider} ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => void notes.remove(note.email, note.provider)} size="icon" type="button" variant="ghost">
                         <Trash2 className="size-3.5" />
                       </Button>
                     </span>
@@ -1910,7 +1911,7 @@ function AccountSummaryList({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="flex flex-wrap items-baseline gap-x-2 font-medium text-foreground">
-                  <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(notes?.byEmail.get(noteKey(account.email))?.googlePassword)}>{identity.primary}</AccountBrowserLink>
+                  <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(notes?.byAccount.get(accountNoteKey(account))?.googlePassword)}>{identity.primary}</AccountBrowserLink>
                   {isClaudeAccount(account) ? <ClaudeBadge /> : null}
                 </p>
                 {identity.secondary ? (
@@ -1918,7 +1919,7 @@ function AccountSummaryList({
                     {identity.secondary}
                   </p>
                 ) : null}
-                {expiredEmails.has(noteKey(account.email)) ? (
+                {expiredEmails.has(normalizeNoteEmail(account.email)) ? (
                   <p className="text-xs text-amber-600 dark:text-amber-400">sign-in expired</p>
                 ) : null}
                 {isOwnedAccount && !isClaudeAccount(account) ? (
@@ -1983,20 +1984,20 @@ function AccountSummaryList({
                 <MetaField label="Usage limits" value="N/A" />
               )}
               {notes && isOwnedAccount && account.email ? (
-                notes.isEditing(account.email) ? (
+                notes.isEditing(account.email, accountNoteProvider(account)) ? (
                   <div className="col-span-2">
                     <NoteEditor controller={notes} />
                   </div>
                 ) : (
                   <>
-                    <MetaField label="ChatGPT" value={<NoteSecret controller={notes} field="chatgptPassword" note={notes.byEmail.get(noteKey(account.email))} />} />
-                    <MetaField label="Google" value={<NoteSecret controller={notes} field="googlePassword" note={notes.byEmail.get(noteKey(account.email))} />} />
+                    <MetaField label="Password" value={<NoteSecret controller={notes} field="chatgptPassword" note={notes.byAccount.get(accountNoteKey(account))} />} />
+                    <MetaField label="Google" value={<NoteSecret controller={notes} field="googlePassword" note={notes.byAccount.get(accountNoteKey(account))} />} />
                     <MetaField
                       label="Note"
                       value={
                         <span className="inline-flex items-center gap-1">
-                          <span className="truncate">{notes.byEmail.get(noteKey(account.email))?.note ?? '·'}</span>
-                          <Button aria-label={`Edit passwords and note for ${account.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(account.email as string)} size="icon" type="button" variant="ghost">
+                          <span className="truncate">{notes.byAccount.get(accountNoteKey(account))?.note ?? '·'}</span>
+                          <Button aria-label={`Edit passwords and note for ${account.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(account.email as string, accountNoteProvider(account))} size="icon" type="button" variant="ghost">
                             <Pencil className="size-3.5" />
                           </Button>
                         </span>
@@ -2011,22 +2012,22 @@ function AccountSummaryList({
       })}
       {notes
         ? notes.notes
-            .filter((note) => !accounts.some((account) => noteKey(account.email) === noteKey(note.email)))
+            .filter((note) => !accounts.some((account) => account.access_scope === 'owned' && accountNoteKey(account) === noteKey(note.email, note.provider)))
             .map((note) => (
-              <div className="space-y-2 px-4 py-2.5" key={`note:${note.email}`}>
-                {notes.isEditing(note.email) ? (
+              <div className="space-y-2 px-4 py-2.5" key={`note:${noteKey(note.email, note.provider)}`}>
+                {notes.isEditing(note.email, note.provider) ? (
                   <NoteEditor controller={notes} />
                 ) : (
                   <>
                     <div className="flex items-start justify-between gap-3">
-                      <p className="truncate font-mono text-xs" title={note.email}>{note.email}</p>
+                      <p className="truncate font-mono text-xs" title={note.email}>{note.email} · {note.provider === 'claude' ? 'Claude' : 'Codex'}</p>
                       <span className="inline-flex items-center gap-0.5">
-                        <Button aria-label={`Edit ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(note.email)} size="icon" type="button" variant="ghost"><Pencil className="size-3.5" /></Button>
-                        <Button aria-label={`Remove ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => void notes.remove(note.email)} size="icon" type="button" variant="ghost"><Trash2 className="size-3.5" /></Button>
+                        <Button aria-label={`Edit ${note.provider} ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => notes.startEdit(note.email, note.provider)} size="icon" type="button" variant="ghost"><Pencil className="size-3.5" /></Button>
+                        <Button aria-label={`Remove ${note.provider} ${note.email}`} className="size-6" disabled={notes.busy} onClick={() => void notes.remove(note.email, note.provider)} size="icon" type="button" variant="ghost"><Trash2 className="size-3.5" /></Button>
                       </span>
                     </div>
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                      <MetaField label="ChatGPT" value={<NoteSecret controller={notes} field="chatgptPassword" note={note} />} />
+                      <MetaField label="Password" value={<NoteSecret controller={notes} field="chatgptPassword" note={note} />} />
                       <MetaField label="Google" value={<NoteSecret controller={notes} field="googlePassword" note={note} />} />
                       <MetaField label="Note" value={note.note ?? '·'} />
                     </dl>

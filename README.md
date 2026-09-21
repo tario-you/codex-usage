@@ -356,3 +356,14 @@ node scripts/install-browser-helper.mjs --apply
 ```
 
 The installer uses the existing dashboard pairing in `~/.codex/codex-usage-sync.json` and runs a separate launchd helper. Existing sync agents keep running. Alternatively, run `codex-usage browser-agent` with an updated CLI. If multiple browser helpers are online, the dashboard asks which machine should open the session. Each account uses a separate `Codex Usage <hash>` profile under `~/Library/Application Support/Google/Chrome`. Chrome opens these profile windows in its normal application instance, preserving the existing Chrome identity guard. Saved sign-ins stay on this Mac; no passwords or browser cookies are uploaded. Requests expire after 90 seconds and are claimed once before launching.
+
+Notes and saved passwords are scoped to **owner + provider + email**. Codex and
+Claude can use the same email while keeping edits, deletion, and password reveal
+independent. Choose a provider when adding a note without a synced plan.
+
+Apply `20260921200000_scope_account_notes_by_provider.sql` before deploying the
+provider-aware API and dashboard. Existing shared content is copied to both
+providers when both plans exist; Claude-only content stays with Claude and
+unsynced notes stay with Codex. Existing ciphertext remains readable, and the
+next edit binds its encryption to the provider too. Old dashboard tabs must
+reload before saving notes (writes now require a provider).

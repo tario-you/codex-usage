@@ -350,6 +350,8 @@ export interface Database {
         Row: {
           id: string
           owner_user_id: string
+          provider: 'codex' | 'claude'
+          aad_version: number
           email: string
           ciphertext: string
           key_version: number
@@ -359,6 +361,8 @@ export interface Database {
         Insert: {
           id?: string
           owner_user_id: string
+          provider: 'codex' | 'claude'
+          aad_version?: number
           email: string
           ciphertext: string
           key_version?: number
@@ -368,6 +372,8 @@ export interface Database {
         Update: {
           id?: string
           owner_user_id?: string
+          provider?: 'codex' | 'claude'
+          aad_version?: number
           email?: string
           ciphertext?: string
           key_version?: number

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 import { INVALID_SESSION_MESSAGE } from '@/lib/auth'
 import { queryClient } from '@/lib/query-client'
+import { normalizeNoteEmail, noteKey, type NoteProvider } from './account-note-identity'
 
 /**
  * Owner-only passwords and notes, shown inline in the Plans table. The values
@@ -12,6 +13,7 @@ import { queryClient } from '@/lib/query-client'
 export interface AccountNote {
   chatgptPassword: string | null
   email: string
+  provider: NoteProvider
   googlePassword: string | null
   note: string | null
   updatedAt: string | null
@@ -20,6 +22,7 @@ export interface AccountNote {
 export interface NoteDraft {
   chatgptPassword: string
   email: string
+  provider: NoteProvider
   googlePassword: string
   note: string
 }
@@ -29,21 +32,18 @@ export type SecretField = 'chatgptPassword' | 'googlePassword'
 export const MASK = '••••••••'
 export const NOTE_EMAILS_DATALIST_ID = 'account-note-emails'
 
-export function emptyDraft(email = ''): NoteDraft {
-  return { chatgptPassword: '', email, googlePassword: '', note: '' }
+export function emptyDraft(email = '', provider: NoteProvider = 'codex'): NoteDraft {
+  return { chatgptPassword: '', email, provider, googlePassword: '', note: '' }
 }
 
 export function draftFromNote(note: AccountNote): NoteDraft {
   return {
     chatgptPassword: note.chatgptPassword ?? '',
     email: note.email,
+    provider: note.provider,
     googlePassword: note.googlePassword ?? '',
     note: note.note ?? '',
   }
-}
-
-export function noteKey(email: string | null | undefined) {
-  return (email ?? '').trim().toLowerCase()
 }
 
 async function fetchNotes(accessToken: string): Promise<AccountNote[]> {
@@ -62,17 +62,17 @@ async function fetchNotes(accessToken: string): Promise<AccountNote[]> {
 export interface AccountNotesController {
   adding: boolean
   busy: boolean
-  byEmail: Map<string, AccountNote>
+  byAccount: Map<string, AccountNote>
   cancel: () => void
   editing: NoteDraft | null
   error: string | null
-  isEditing: (email: string | null | undefined) => boolean
+  isEditing: (email: string | null | undefined, provider: NoteProvider) => boolean
   notes: AccountNote[]
-  remove: (email: string) => Promise<void>
+  remove: (email: string, provider: NoteProvider) => Promise<void>
   revealed: Set<string>
   save: () => Promise<void>
-  startAdd: (email?: string) => void
-  startEdit: (email: string) => void
+  startAdd: (email?: string, provider?: NoteProvider) => void
+  startEdit: (email: string, provider: NoteProvider) => void
   toggleReveal: (key: string) => void
   update: (patch: Partial<NoteDraft>) => void
 }
@@ -89,7 +89,7 @@ export function useAccountNotes({
   const notesQuery = useQuery({
     enabled: Boolean(accessToken),
     queryFn: () => fetchNotes(accessToken as string),
-    queryKey: ['account-notes', userId],
+    queryKey: ['account-notes', userId, 'provider'],
   })
   const [revealed, setRevealed] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<NoteDraft | null>(null)
@@ -100,7 +100,7 @@ export function useAccountNotes({
   if (!accessToken) return null
 
   const notes = notesQuery.data ?? []
-  const byEmail = new Map(notes.map((note) => [noteKey(note.email), note]))
+  const byAccount = new Map(notes.map((note) => [noteKey(note.email, note.provider), note]))
 
   async function callApi(path: string, body: unknown) {
     const response = await fetch(path, {
@@ -121,22 +121,22 @@ export function useAccountNotes({
   return {
     adding,
     busy,
-    byEmail,
+    byAccount,
     cancel: () => {
       setEditing(null)
       setAdding(false)
     },
     editing,
     error: notesQuery.error?.message ?? error,
-    isEditing: (email) => Boolean(editing) && !adding && noteKey(editing?.email) === noteKey(email),
+    isEditing: (email, provider) => editing !== null && !adding && noteKey(editing.email, editing.provider) === noteKey(email, provider),
     notes,
-    async remove(email) {
+    async remove(email, provider) {
       setBusy(true)
       setError(null)
       try {
-        await callApi('/api/login/notes/delete', { email })
-        await queryClient.invalidateQueries({ queryKey: ['account-notes', userId] })
-        if (noteKey(editing?.email) === noteKey(email)) setEditing(null)
+        await callApi('/api/login/notes/delete', { email, provider })
+        await queryClient.invalidateQueries({ queryKey: ['account-notes', userId, 'provider'] })
+        if (editing && noteKey(editing.email, editing.provider) === noteKey(email, provider)) setEditing(null)
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Unable to remove the note.')
       } finally {
@@ -149,8 +149,8 @@ export function useAccountNotes({
       setBusy(true)
       setError(null)
       try {
-        await callApi('/api/login/notes', { ...editing, email: noteKey(editing.email) })
-        await queryClient.invalidateQueries({ queryKey: ['account-notes', userId] })
+        await callApi('/api/login/notes', { ...editing, email: normalizeNoteEmail(editing.email) })
+        await queryClient.invalidateQueries({ queryKey: ['account-notes', userId, 'provider'] })
         setEditing(null)
         setAdding(false)
       } catch (caught) {
@@ -159,14 +159,14 @@ export function useAccountNotes({
         setBusy(false)
       }
     },
-    startAdd: (email = '') => {
+    startAdd: (email = '', provider = 'codex') => {
       setAdding(true)
-      setEditing(emptyDraft(noteKey(email)))
+      setEditing(emptyDraft(normalizeNoteEmail(email), provider))
     },
-    startEdit: (email) => {
-      const existing = byEmail.get(noteKey(email))
+    startEdit: (email, provider) => {
+      const existing = byAccount.get(noteKey(email, provider))
       setAdding(false)
-      setEditing(existing ? draftFromNote(existing) : emptyDraft(noteKey(email)))
+      setEditing(existing ? draftFromNote(existing) : emptyDraft(normalizeNoteEmail(email), provider))
     },
     toggleReveal: (key) => {
       setRevealed((current) => {
