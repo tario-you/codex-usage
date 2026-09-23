@@ -1588,10 +1588,24 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
 }
 
 /** Usage-limit reset credits the account owns, from the latest snapshot; a dot when the sync never carried them. */
-function formatResetCredits(account: DashboardAccountRow) {
+function ResetCreditsValue({ account }: { account: DashboardAccountRow }) {
   const raw = account.raw_rate_limits as { resetCredits?: { available?: unknown } } | null
   const available = raw?.resetCredits?.available
-  return typeof available === 'number' ? String(available) : '·'
+  const value = typeof available === 'number' ? available : null
+
+  return (
+    <span
+      className={
+        value == null
+          ? 'text-muted-foreground'
+          : value === 0
+            ? 'text-red-500'
+            : 'text-blue-500'
+      }
+    >
+      {value ?? '·'}
+    </span>
+  )
 }
 
 function AccountTable({
@@ -1782,7 +1796,7 @@ function AccountTable({
                 </div>
               </TableCell>
               <TableCell className="py-1.5 text-xs tabular-nums">
-                {formatResetCredits(account)}
+                <ResetCreditsValue account={account} />
               </TableCell>
               {notes ? (
                 <>
@@ -1945,7 +1959,7 @@ function AccountSummaryList({
                 label="Snapshot"
                 value={formatRelativeTimestamp(account.last_snapshot_at)}
               />
-              <MetaField label="Resets" value={formatResetCredits(account)} />
+              <MetaField label="Resets" value={<ResetCreditsValue account={account} />} />
               <MetaField
                 label="Plan first seen"
                 value={formatPlanObservedAt(account)}
