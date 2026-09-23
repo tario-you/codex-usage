@@ -277,6 +277,13 @@ async function main() {
     return
   }
 
+  if (command === 'companion') {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./companion.js', import.meta.url)), ...restArgs], { stdio: 'inherit' })
+    const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
+    process.exitCode = code ?? 1
+    return
+  }
+
   const args = parseArgs(restArgs)
 
   if (command === 'pair') {
@@ -1580,6 +1587,7 @@ function waitForTermination(cleanup) {
 
 function printUsage() {
   console.log('Usage:')
+  console.log('  codex-usage companion [serve | install --launcher <path> | uninstall]')
   console.log('  codex-usage connect [--site <url>] [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage browser-agent [--codex-home <path>]')

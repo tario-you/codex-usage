@@ -894,6 +894,9 @@ export function DashboardPage() {
 
               {session && !showInviteLanding ? (
                 <div className="flex items-center gap-2">
+                  <a className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" href="http://127.0.0.1:3212" target="_blank" rel="noreferrer" title="Open the task companion installed on this Mac">
+                    Task companion ↗
+                  </a>
                   <Button
                     aria-pressed={guideVisible}
                     onClick={() => {
