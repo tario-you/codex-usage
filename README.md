@@ -367,3 +367,64 @@ providers when both plans exist; Claude-only content stays with Claude and
 unsynced notes stay with Codex. Existing ciphertext remains readable, and the
 next edit binds its encryption to the provider too. Old dashboard tabs must
 reload before saving notes (writes now require a provider).
+
+### Local task companion
+
+The task companion runs beside Codex Usage at `http://127.0.0.1:3212`. Its
+status, task IDs, and Claude prompt observations stay on this Mac; they are not
+uploaded to the hosted usage dashboard. The dashboard's **Task companion** link
+opens that local page after you install the helper.
+
+With an existing, user-owned Codex shell launcher under `~/.local/bin`:
+
+```bash
+node bin/codex-usage.js companion install --launcher /absolute/path/to/your/codex-launcher
+```
+
+The macOS installer saves the launcher and Claude settings before-state, copies
+an immutable companion runtime, wraps that launcher, adds observation hooks to
+`~/.claude/settings.json`, and starts a login LaunchAgent for the local page.
+It preserves existing permissions and hooks. It never closes or restarts Codex;
+**recovery attaches on the next launch through that launcher**. Already-running
+connections and old failed tasks are not taken over. A switcher reinstall that
+replaces the launcher can detach the companion; the local page reports that no
+connection is attached. Custom `CLAUDE_CONFIG_DIR` profiles need their own hook
+configuration and are not modified by this installer.
+
+On the original live app-server connection, a failed turn with a structured
+connection or server error schedules a retry after 30 seconds, then 2 minutes,
+then 5 minutes. There are at most three attempts per task per rolling hour.
+Before each retry it checks the latest turn and live state; durable attempt
+records prevent duplicate retries across connections and restarts. User stops,
+active tasks, input requests, quota/authentication errors, safety stops, and
+unknown failures do not qualify. A fresh continuation asks Codex to inspect the
+current state before repeating work. No model, account, permission, or sandbox
+overrides are sent. This is best-effort recovery after a reported failure; it
+cannot guarantee exactly-once execution of an external action that failed after
+that action took effect. Process crashes or silent hangs do not trigger retries.
+
+Claude's observation hooks return no permission decision. The local page shows
+sessions that reported a permission request, clearing an alert when that session
+continues or after 24 hours. Approvals are still handled in Claude. Observation
+starts when Claude loads the updated hooks; it does not scan existing prompts.
+See [Claude's permission modes](https://code.claude.com/docs/en/permission-modes#actions-no-mode-auto-approves)
+for the actions that still require input in bypass mode.
+
+To run a protocol client through the wrapper directly:
+
+```bash
+node bin/companion.js wrap -- /absolute/path/to/codex app-server
+node bin/companion.js serve
+```
+
+Pause automatic retries on the local page. To remove the integration:
+
+```bash
+node bin/codex-usage.js companion uninstall
+```
+
+Removal restores the exact original launcher only if the installed wrapper is
+still unchanged, removes only the companion's hook commands, and keeps the
+before-state copies. Existing Codex connections are left running. Tests:
+`npm run test:companion`. The protocol follows the documented
+[Codex app-server lifecycle and error events](https://developers.openai.com/codex/app-server/).

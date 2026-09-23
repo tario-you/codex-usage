@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Task companion · Codex Usage</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><main>
+<nav><a href="https://codexusage.vercel.app" target="_blank" rel="noreferrer">Codex Usage ↗</a></nav>
+<h1>Task companion</h1><p id="connection" role="status">Connecting…</p>
+<label><input id="enabled" type="checkbox" disabled> Automatically retry Codex connection and server failures</label>
+<p class="muted">Up to three retries per task per hour. Your model and permissions stay the same.</p>
+<h2>Codex tasks</h2><p id="empty">No retry activity yet.</p><table id="tasks" hidden><thead><tr><th>Task</th><th>Status</th><th>Updated</th></tr></thead><tbody></tbody></table>
+<h2>Claude Code</h2><p id="claude" role="status">No permission prompts detected.</p><p class="muted">Permission requests stay in Claude for you to review. Alerts clear when that session continues, or expire after 24 hours.</p>
+<p id="error" role="alert"></p>
+</main></body></html>
