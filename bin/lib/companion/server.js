@@ -4,6 +4,10 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { privateJson, readJson, stateRoot } from './store.js'
+import { autoApproveEnabled } from './claude.js'
+
+const DAY_MS = 24 * 60 * 60_000
+const SETTINGS = ['enabled', 'claudeAutoApprove']
 
 function records(directory) {
   try { return readdirSync(directory).filter(n => n.endsWith('.json')).flatMap(n => {
@@ -14,6 +18,7 @@ export function snapshot(root = stateRoot(), now = Date.now()) {
   const connections = records(path.join(root, 'connections')).filter(r => r.connected && r.at > now - 30_000).filter(r => {
     try { process.kill(r.pid, 0); return true } catch { return false }
   })
+  const claude = records(path.join(root, 'claude')).filter(r => r.at > now - DAY_MS)
   const tasks = new Map()
   for (const connection of connections) for (const task of connection.tasks ?? []) {
     if (!tasks.has(task.threadId) || tasks.get(task.threadId).at < task.at) tasks.set(task.threadId, task)
@@ -22,7 +27,9 @@ export function snapshot(root = stateRoot(), now = Date.now()) {
     enabled: readJson(path.join(root, 'settings.json'), { enabled: true }).enabled === true,
     connected: connections.length > 0,
     tasks: [...tasks.values()].sort((a, b) => b.at - a.at).slice(0, 100),
-    claude: records(path.join(root, 'claude')).filter(r => r.waiting && r.at > now - 24 * 60 * 60_000),
+    claudeAutoApprove: autoApproveEnabled(root),
+    claude: claude.filter(r => r.waiting),
+    claudeApproved: claude.reduce((sum, r) => sum + (r.approvedAt > now - DAY_MS && Number.isInteger(r.approvals) ? r.approvals : 0), 0),
   }
 }
 export async function startServer({ root = stateRoot(), port = 3212 } = {}) {
@@ -52,9 +59,12 @@ export async function startServer({ root = stateRoot(), port = 3212 } = {}) {
         let body = ''
         for await (const chunk of req) { body += chunk; if (body.length > 1024) return json(413, { error: 'Request too large' }) }
         const input = JSON.parse(body)
-        if (typeof input.enabled !== 'boolean') return json(400, { error: 'enabled must be a boolean' })
-        privateJson(path.join(root, 'settings.json'), { enabled: input.enabled })
-        return json(200, { enabled: input.enabled })
+        const keys = Object.keys(input ?? {})
+        if (!keys.length || keys.some(k => !SETTINGS.includes(k) || typeof input[k] !== 'boolean')) return json(400, { error: 'enabled or claudeAutoApprove must be a boolean' })
+        const file = path.join(root, 'settings.json')
+        const saved = { enabled: true, ...readJson(file, {}), ...input }
+        privateJson(file, saved)
+        return json(200, saved)
       }
       return json(404, { error: 'Not found' })
     } catch { return json(500, { error: 'Companion state unavailable' }) }

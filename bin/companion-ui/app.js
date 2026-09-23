@@ -1,13 +1,18 @@
 const enabled = document.querySelector('#enabled')
+const claudeAuto = document.querySelector('#claude-auto')
 const error = document.querySelector('#error')
 let saving = false
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 async function refresh() {
   try {
     const response = await fetch('/api/status')
     if (!response.ok) throw new Error('The companion is unavailable. Reload this page to reconnect.')
     const state = await response.json()
     document.querySelector('#connection').textContent = state.connected ? 'Connected to Codex.' : 'Waiting for Codex to open through the companion. Existing running sessions stay untouched.'
-    if (!saving) { enabled.checked = state.enabled; enabled.disabled = false }
+    if (!saving) {
+      enabled.checked = state.enabled; enabled.disabled = false
+      claudeAuto.checked = state.claudeAutoApprove; claudeAuto.disabled = false
+    }
     document.querySelector('#empty').hidden = state.tasks.length > 0
     const table = document.querySelector('#tasks'); table.hidden = state.tasks.length === 0
     const rows = state.tasks.map(task => {
@@ -21,15 +26,21 @@ async function refresh() {
       return row
     })
     table.querySelector('tbody').replaceChildren(...rows)
-    document.querySelector('#claude').textContent = state.claude.length ? `${state.claude.length} session${state.claude.length === 1 ? '' : 's'} reported a permission prompt. Review in Claude Code.` : 'No permission prompts detected.'
+    const accepted = state.claudeApproved ? `Accepted ${plural(state.claudeApproved, 'prompt')} in the last 24 hours.` : ''
+    const waiting = state.claude.length ? `${plural(state.claude.length, 'session')} waiting on a prompt in Claude Code.` : ''
+    document.querySelector('#claude').textContent = [accepted, waiting].filter(Boolean).join(' ') || 'No permission prompts detected.'
     error.textContent = ''
-  } catch (e) { enabled.disabled = true; error.textContent = e.message }
+  } catch (e) { enabled.disabled = true; claudeAuto.disabled = true; error.textContent = e.message }
 }
-enabled.addEventListener('change', async () => {
-  saving = true; enabled.disabled = true
-  try {
-    const response = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enabled.checked }) })
-    if (!response.ok) throw new Error('Could not change automatic retries.')
-  } catch (e) { error.textContent = e.message } finally { saving = false; await refresh() }
-})
+function saveOnChange(input, key, failure) {
+  input.addEventListener('change', async () => {
+    saving = true; input.disabled = true
+    try {
+      const response = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: input.checked }) })
+      if (!response.ok) throw new Error(failure)
+    } catch (e) { error.textContent = e.message } finally { saving = false; await refresh() }
+  })
+}
+saveOnChange(enabled, 'enabled', 'Could not change automatic retries.')
+saveOnChange(claudeAuto, 'claudeAutoApprove', 'Could not change automatic Claude approvals.')
 void refresh(); setInterval(refresh, 5000)

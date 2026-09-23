@@ -1,14 +1,17 @@
 import test from 'node:test'
+import { createHash } from 'node:crypto'
 import http from 'node:http'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import os from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { transientFailure } from '../bin/lib/companion/policy.js'
 import { RecoveryStore, privateJson } from '../bin/lib/companion/store.js'
 import { RecoveryCompanion } from '../bin/lib/companion/recovery.js'
-import { recordClaudeEvent } from '../bin/lib/companion/claude.js'
+import { claudeDecision, recordClaudeEvent } from '../bin/lib/companion/claude.js'
 import { withHooks } from '../bin/lib/companion/install.js'
 import { startServer, snapshot } from '../bin/lib/companion/server.js'
 
@@ -103,7 +106,7 @@ test('late private RPC responses never leak into the app', async t => {
   assert.equal(c.fromServer({ id: 'real-app-id', result: {} }), false)
 })
 
-test('Claude hooks store no prompt, path or arguments, and never change permissions', t => {
+test('Claude hooks store no prompt, path or arguments, and never change permission settings', t => {
   const { root } = fixture(t)
   const before = { permissions: { deny: ['Bash(rm *)'], ask: ['Write'] }, hooks: { PermissionRequest: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'existing' }] }] } }
   const after = withHooks(before, 'our-observer')
@@ -117,6 +120,45 @@ test('Claude hooks store no prompt, path or arguments, and never change permissi
   for (const text of ['SECRET', '/private/path', 'PRIVATE', 'one']) assert.equal(saved.includes(text), false)
   recordClaudeEvent({ session_id: 'one', hook_event_name: 'PostToolUse' }, root)
   assert.equal(snapshot(root).claude.length, 0)
+})
+
+test('Claude permission prompts are accepted, except questions, plan reviews and when paused', t => {
+  const { root } = fixture(t)
+  const prompt = tool => ({ session_id: 'one', hook_event_name: 'PermissionRequest', tool_name: tool, tool_input: { command: 'SECRET' } })
+  const allow = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } }
+  for (const tool of ['Bash', 'Write', 'Edit', 'mcp__server__tool']) assert.deepEqual(claudeDecision(prompt(tool), root), allow)
+  for (const tool of ['AskUserQuestion', 'ExitPlanMode']) assert.equal(claudeDecision(prompt(tool), root), null)
+  assert.equal(claudeDecision({ ...prompt('Bash'), hook_event_name: 'PreToolUse' }, root), null)
+  assert.equal(claudeDecision({ ...prompt('Bash'), hook_event_name: 'Notification', notification_type: 'permission_prompt' }, root), null)
+  assert.equal(claudeDecision({ session_id: 'one', hook_event_name: 'PermissionRequest' }, root), null)
+  privateJson(path.join(root, 'settings.json'), { enabled: true, claudeAutoApprove: false })
+  assert.equal(claudeDecision(prompt('Bash'), root), null)
+  privateJson(path.join(root, 'settings.json'), { enabled: true })
+  assert.deepEqual(claudeDecision(prompt('Bash'), root), allow)
+})
+
+test('the claude-hook command answers an allowed prompt on stdout and counts it privately', t => {
+  const { root } = fixture(t)
+  const entry = fileURLToPath(new URL('../bin/companion.js', import.meta.url))
+  const hook = event => spawnSync(process.execPath, [entry, 'claude-hook'], { input: JSON.stringify(event), encoding: 'utf8', env: { ...process.env, CODEX_COMPANION_STATE_DIR: root } })
+  const prompt = { session_id: 'one', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'SECRET' }, cwd: '/private/path' }
+  const first = hook(prompt)
+  assert.equal(first.status, 0)
+  assert.deepEqual(JSON.parse(first.stdout), { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } })
+  hook(prompt)
+  let status = snapshot(root)
+  assert.equal(status.claudeApproved, 2)
+  assert.equal(status.claude.length, 0)
+  const saved = readFileSync(path.join(root, 'claude', `${createHash('sha256').update('one').digest('hex')}.json`), 'utf8')
+  for (const text of ['SECRET', '/private/path', 'Bash', '"one"']) assert.equal(saved.includes(text), false)
+  // A question is left for the person and shows as waiting; the count survives it.
+  const question = hook({ ...prompt, tool_name: 'AskUserQuestion' })
+  assert.equal(question.stdout, '')
+  status = snapshot(root)
+  assert.equal(status.claude.length, 1)
+  assert.equal(status.claudeApproved, 2)
+  assert.equal(hook({ session_id: 'one', hook_event_name: 'Stop' }).stdout, '')
+  assert.equal(hook('not json').stdout, '')
 })
 
 test('local dashboard rejects foreign origins, missing cookies and malformed settings', async t => {
@@ -137,6 +179,15 @@ test('local dashboard rejects foreign origins, missing cookies and malformed set
   assert.equal((await put({ enabled: 'yes' })).status, 400)
   assert.equal((await put({ enabled: false })).status, 200)
   assert.equal(snapshot(root).enabled, false)
+  assert.equal(snapshot(root).claudeAutoApprove, true)
+  assert.equal((await put({ claudeAutoApprove: 'no' })).status, 400)
+  assert.equal((await put({ claudeAutoApprove: false, other: true })).status, 400)
+  assert.equal((await put({})).status, 400)
+  assert.equal((await put({ claudeAutoApprove: false })).status, 200)
+  // Each switch is saved without resetting the other.
+  assert.deepEqual([snapshot(root).enabled, snapshot(root).claudeAutoApprove], [false, false])
+  assert.equal((await put({ enabled: true })).status, 200)
+  assert.deepEqual([snapshot(root).enabled, snapshot(root).claudeAutoApprove], [true, false])
 })
 
 test('a failed completion arriving after a manual stop remains stopped', async t => {

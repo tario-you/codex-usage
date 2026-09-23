@@ -47,12 +47,13 @@ test('non-server commands are delegated without a recovery connection', { timeou
   assert.equal(readdirSync(s.root).includes('connections'), false)
 })
 
-test('Claude observer process exits silently without answering a permission request', { timeout: 5000 }, async t => {
+test('paused Claude approvals exit silently and leave the permission request waiting', { timeout: 5000 }, async t => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'companion-hook-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
+  writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ enabled: true, claudeAutoApprove: false }))
   const child = spawn(process.execPath, [entry, 'claude-hook'], { env: { ...process.env, CODEX_COMPANION_STATE_DIR: root } })
   let stdout = '', stderr = ''; child.stdout.on('data', c => stdout += c); child.stderr.on('data', c => stderr += c)
-  child.stdin.end(JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: 'fixture', tool_input: { command: 'PRIVATE' } }))
+  child.stdin.end(JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: 'fixture', tool_name: 'Bash', tool_input: { command: 'PRIVATE' } }))
   const code = await new Promise(resolve => child.once('close', resolve))
   assert.equal(code, 0); assert.equal(stdout, ''); assert.equal(stderr, '')
   const files = readdirSync(path.join(root, 'claude')); assert.equal(files.length, 1)

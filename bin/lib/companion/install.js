@@ -98,7 +98,7 @@ export async function install(args) {
     renameSync(manifestFile, path.join(backup, 'failed-installation.json'))
     throw error
   }
-  return { installed: true, url: 'http://127.0.0.1:3212', codex: 'Waiting for the next app launch; active sessions were not restarted', claude: 'Prompt observation only; approvals unchanged', revision }
+  return { installed: true, url: 'http://127.0.0.1:3212', codex: 'Waiting for the next app launch; active sessions were not restarted', claude: 'Permission prompts are accepted automatically in Claude sessions started from now on; pause on the local page', revision }
 }
 export async function uninstall() {
   const root = stateRoot(), file = path.join(root, 'installation.json'), record = readJson(file, null)
