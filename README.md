@@ -371,7 +371,7 @@ reload before saving notes (writes now require a provider).
 ### Local task companion
 
 The task companion runs beside Codex Usage at `http://127.0.0.1:3212`. Its
-status, task IDs, and Claude prompt observations stay on this Mac; they are not
+status, task IDs, and Claude prompt counts stay on this Mac; they are not
 uploaded to the hosted usage dashboard. The dashboard's **Task companion** link
 opens that local page after you install the helper.
 
@@ -382,7 +382,7 @@ node bin/codex-usage.js companion install --launcher /absolute/path/to/your/code
 ```
 
 The macOS installer saves the launcher and Claude settings before-state, copies
-an immutable companion runtime, wraps that launcher, adds observation hooks to
+an immutable companion runtime, wraps that launcher, adds hooks (prompt approval and observation) to
 `~/.claude/settings.json`, and starts a login LaunchAgent for the local page.
 It preserves existing permissions and hooks. It never closes or restarts Codex;
 **recovery attaches on the next launch through that launcher**. Already-running
@@ -403,11 +403,19 @@ overrides are sent. This is best-effort recovery after a reported failure; it
 cannot guarantee exactly-once execution of an external action that failed after
 that action took effect. Process crashes or silent hangs do not trigger retries.
 
-Claude's observation hooks return no permission decision. The local page shows
-sessions that reported a permission request, clearing an alert when that session
-continues or after 24 hours. Approvals are still handled in Claude. Observation
-starts when Claude loads the updated hooks; it does not scan existing prompts.
-See [Claude's permission modes](https://code.claude.com/docs/en/permission-modes#actions-no-mode-auto-approves)
+Claude permission prompts are accepted automatically. The companion's
+`PermissionRequest` hook answers `allow` for every tool except the ones that ask
+you something (`AskUserQuestion` answers and `ExitPlanMode` plan reviews). It
+only runs when Claude would show a dialog, so deny rules and hook denials have
+already refused the call and are never overridden; a hook that *asks* (for
+example a guard that cannot prove a command safe) is accepted like any other
+prompt. In the desktop app the prompt card may flash before the hook's answer
+cancels it. Turn **Automatically accept Claude Code permission prompts** off on
+the local page to review prompts in Claude again; the page then lists sessions
+waiting on one. Claude loads hooks when a session starts, so sessions started
+after installation are covered and older ones keep their previous behavior.
+Only per-session counts are stored, never tool names, commands, or paths. See
+[Claude's permission modes](https://code.claude.com/docs/en/permission-modes#actions-no-mode-auto-approves)
 for the actions that still require input in bypass mode.
 
 To run a protocol client through the wrapper directly:
@@ -417,7 +425,7 @@ node bin/companion.js wrap -- /absolute/path/to/codex app-server
 node bin/companion.js serve
 ```
 
-Pause automatic retries on the local page. To remove the integration:
+Pause automatic retries or automatic Claude approvals on the local page. To remove the integration:
 
 ```bash
 node bin/codex-usage.js companion uninstall
