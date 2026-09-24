@@ -92,6 +92,17 @@ in, `login add` adds one account by hand, `login list` shows what is saved, and
 `login remove --email you@example.com` forgets one. The machine still has to
 be paired once (section 1) so the dashboard knows whose accounts these are.
 
+**Reset credits.** Each Codex plan can hold "Full reset" credits, and a credit
+only resets the plan that owns it. Add `--spend-resets` to `sync --all --watch`
+and, once every plan is out, the agent spends one credit where it saves the
+most: plan size times how long that plan would otherwise wait for its own
+reset (a Pro Lite counts as a quarter of a Pro), so a plan coming back by
+itself in two days keeps its credit for later. A plan marked cancelled in
+Switchboard that ends before its own reset gets its credit spent first, since
+the credit dies with the plan. One spend per 15 minutes; the dashboard's
+reset line names the same plan. On a Mac where the Moonshot Codex auto-switch
+wraps the desktop, that switcher spends resets and this flag stands down.
+
 **Claude plans too.** The same `sync --all` pass reports every Claude login
 this machine holds: the Claude Code sign-in (macOS Keychain, or
 `~/.claude/.credentials.json` elsewhere), every login saved by

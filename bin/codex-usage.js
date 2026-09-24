@@ -28,11 +28,13 @@ import {
   pendingFromPoll,
   fetchUsage,
   readStore,
+  resetSpendingOwnedElsewhere,
   resolveStorePath,
   syncAllOnce,
   upsertStoreAccount,
   writeStore,
 } from './lib/sync-all.js'
+import { RESET_SPEND_COOLDOWN_MS, formatWait } from './lib/reset-credits.js'
 import { DASHBOARD_UPLOAD_TIMEOUT_MS, dashboardRequest } from './lib/dashboard-request.js'
 import { readJsonFile, resolveAuthFilePath } from './lib/login-file.js'
 import { syncClaudeOnce } from './lib/claude-logins.js'
@@ -655,6 +657,8 @@ async function runSyncAllCommand(args, config, codexHome) {
   let lastExpired = []
   let lastMissing = []
   let claudeHintShown = false
+  let resetHoldUntil = 0
+  let resetOwnerNoted = false
 
   const once = async () => {
     let activeAuthFile = null
@@ -667,7 +671,26 @@ async function runSyncAllCommand(args, config, codexHome) {
         activeAuthFile = null
       }
     }
-    const summary = await syncAllOnce({ activeAuthFile, config, device, storePath })
+    // --spend-resets: spend a reset credit once every plan is out, unless the
+    // Moonshot auto-switch already spends them on this machine.
+    let spendResets = Boolean(args.options['spend-resets'])
+    if (spendResets && resetSpendingOwnedElsewhere()) {
+      spendResets = false
+      if (!resetOwnerNoted) console.log('Reset credits: the Codex auto-switch on this Mac spends them, so this agent leaves them alone.')
+      resetOwnerNoted = true
+    }
+    const summary = await syncAllOnce({ activeAuthFile, config, device, storePath, spendResets, resetHoldUntil })
+    const spend = summary.resetSpend
+    if (spend?.action === 'spent') {
+      resetHoldUntil = Date.now() + RESET_SPEND_COOLDOWN_MS
+      console.log(
+        spend.outcome === 'reset'
+          ? `Reset credits: every plan was out, so ${spend.email}${spend.planType ? ` (${spend.planType})` : ''} was reset; ${spend.lastChance ? `its plan ends in ${formatWait(spend.savedMs)} and the credit would have been lost` : `it would have waited ${formatWait(spend.savedMs)} for its own reset`}.`
+          : `Reset credits: resetting ${spend.email} answered ${spend.outcome ?? spend.error}.`,
+      )
+    } else if (spend?.reason === 'no-credits') {
+      console.log('Reset credits: every plan is out and none holds a usable reset credit.')
+    }
     lastExpired = expiredEmailsFromResults(summary.results)
     // Claude plans ride the same pass: every Claude login this machine holds
     // (Claude Code sign-in, saved switcher logins, the running desktop app).
@@ -1305,7 +1328,7 @@ function parseArgs(rawArgs) {
 
     const key = value.slice(2)
 
-    if (key === 'watch' || key === 'restore' || key === 'all' || key === 'skip-claude') {
+    if (key === 'watch' || key === 'restore' || key === 'all' || key === 'skip-claude' || key === 'spend-resets') {
       options[key] = true
       continue
     }
@@ -1584,7 +1607,7 @@ function printUsage() {
   console.log('  codex-usage pair <pair-url> [--watch] [--codex-home <path>] [--label <name>]')
   console.log('  codex-usage browser-agent [--codex-home <path>]')
   console.log('  codex-usage sync [--watch] [--codex-home <path>] [--label <name>]')
-  console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>] [--skip-claude]')
+  console.log('  codex-usage sync --all [--watch] [--every <seconds>] [--store <accounts.json>] [--skip-claude] [--spend-resets]')
   console.log('  codex-usage login setup [--store <accounts.json>]      find every account this machine used, sign each in')
   console.log('  codex-usage login discover [--store <accounts.json>]   list them without signing in')
   console.log('  codex-usage login add [--store <accounts.json>]')
