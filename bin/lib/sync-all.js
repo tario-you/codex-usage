@@ -1,5 +1,5 @@
 import { DASHBOARD_UPLOAD_TIMEOUT_MS, dashboardRequest } from './dashboard-request.js'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,6 +11,7 @@ import {
   validateSharedLoginFile,
   writeJsonFilePrivately,
 } from './login-file.js'
+import { consumeResetCredit, planResetSpend, resetPlanFromUsage } from './reset-credits.js'
 
 /**
  * One machine, every account. `login add` saves each Codex login once into the
@@ -141,8 +142,8 @@ function windowValue(window) {
   }
 }
 
-/** The dashboard's sync payload, built from the raw usage endpoint response. */
-export function buildSyncPayloadFromUsage(data, email = null) {
+/** The dashboard's sync payload, built from the raw usage endpoint response and the login's store entry. */
+export function buildSyncPayloadFromUsage(data, email = null, account = null) {
   const credits = {
     balance: String(data.credits?.balance ?? '0'),
     hasCredits: Boolean(data.credits?.has_credits),
@@ -162,6 +163,15 @@ export function buildSyncPayloadFromUsage(data, email = null) {
   main.resetCredits = {
     applicable: typeof resets?.applicable_available_count === 'number' ? resets.applicable_available_count : null,
     available: Number(resets?.available_count ?? 0) || 0,
+  }
+  // Switchboard's cancelled flag and the subscription's end ride along, so the
+  // dashboard shows the same reset choice the agent makes.
+  const endsAt = Date.parse(account?.subscription_expires_at ?? '')
+  if (account?.subscription_cancelled === true || Number.isFinite(endsAt)) {
+    main.subscription = {
+      cancelled: account?.subscription_cancelled === true,
+      endsAt: Number.isFinite(endsAt) ? Math.round(endsAt / 1000) : null,
+    }
   }
   const byLimitId = { codex: main }
   for (const extra of data.additional_rate_limits ?? []) {
@@ -187,7 +197,7 @@ export function buildSyncPayloadFromUsage(data, email = null) {
  * login are merged into the store as it is on disk at write time, so a
  * concurrent switch elsewhere keeps its own changes.
  */
-export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null }) {
+export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null, spendResets = false, resetHoldUntil = 0, now = Date.now() }) {
   const store = await readStore(storePath)
   const changedIds = new Set()
   const added = []
@@ -201,6 +211,7 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
     }
   }
   const results = []
+  const fresh = []
   for (const account of store.accounts) {
     const tokens = account.auth_data
     const label = account.email ?? account.id
@@ -217,7 +228,8 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
       account.auth_data = { ...account.auth_data, ...usage.tokens }
       changedIds.add(account.id)
     }
-    const payload = buildSyncPayloadFromUsage(usage.data, account.email)
+    fresh.push({ account, plan: resetPlanFromUsage(account.id, usage.data, account) })
+    const payload = buildSyncPayloadFromUsage(usage.data, account.email, account)
     const response = await fetcher(
       config.syncUrl,
       dashboardRequest({ ...payload, device, deviceToken: config.deviceToken }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
@@ -233,6 +245,9 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
       usedPercent: usage.data.rate_limit?.primary_window?.used_percent ?? null,
     })
   }
+  const resetSpend = spendResets
+    ? await spendResetWherePays({ changedIds, config, device, fetcher, fresh, holdUntil: resetHoldUntil, now })
+    : null
   if (changedIds.size > 0) {
     const latest = await readStore(storePath)
     for (const account of store.accounts) {
@@ -245,10 +260,65 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
   }
   return {
     added: added.map((account) => account.email ?? account.id),
+    resetSpend,
     results,
     storePath,
     synced: results.filter((result) => result.ok).length,
     total: store.accounts.length,
+  }
+}
+
+/**
+ * `sync --all --spend-resets`: once every plan read this pass is out, spend
+ * the reset credit that saves the most (reset-credits.js), then read and
+ * report that plan again so the dashboard shows it back. One spend per
+ * cooldown, so a slow usage endpoint can never lead to a second credit.
+ */
+async function spendResetWherePays({ changedIds, config, device, fetcher, fresh, holdUntil, now }) {
+  const decision = planResetSpend(fresh.map((entry) => entry.plan), { now })
+  if (decision.action !== 'spend') return { action: 'wait', reason: decision.reason }
+  if (now < holdUntil) return { action: 'wait', reason: 'cooldown' }
+  const entry = fresh.find((item) => item.plan.id === decision.plan.id)
+  const email = entry.account.email ?? entry.account.id
+  const spent = await consumeResetCredit(entry.account.auth_data, { fetcher })
+  const result = {
+    action: 'spent',
+    email,
+    error: spent.error ?? null,
+    lastChance: decision.lastChance,
+    outcome: spent.outcome,
+    planType: decision.plan.planType,
+    savedMs: decision.savedMs,
+  }
+  if (spent.outcome !== 'reset') return result
+  const usage = await fetchUsage(entry.account.auth_data, fetcher)
+  if (usage.error) return result
+  if (usage.refreshed) {
+    entry.account.auth_data = { ...entry.account.auth_data, ...usage.tokens }
+    changedIds.add(entry.account.id)
+  }
+  result.usableAfter = !resetPlanFromUsage(entry.account.id, usage.data, entry.account).exhausted
+  const payload = buildSyncPayloadFromUsage(usage.data, entry.account.email, entry.account)
+  await fetcher(
+    config.syncUrl,
+    dashboardRequest({ ...payload, device, deviceToken: config.deviceToken }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
+  ).catch(() => null)
+  return result
+}
+
+/**
+ * One owner spends resets per machine. When the Moonshot auto-switch wraps
+ * the Codex desktop here, it spends a credit the moment a chat stops, so this
+ * agent stands down instead of racing it. An unreadable record stands down too.
+ */
+export function resetSpendingOwnedElsewhere({ home = os.homedir() } = {}) {
+  const file = path.join(home, '.local/state/codex-auto-switch/installation.json')
+  if (!existsSync(file)) return false
+  try {
+    const record = JSON.parse(readFileSync(file, 'utf8'))
+    return record?.enabled === true && typeof record.bin === 'string' && existsSync(record.bin)
+  } catch {
+    return true
   }
 }
 

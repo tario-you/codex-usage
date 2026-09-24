@@ -4,6 +4,9 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { DashboardAccountRow } from '@/lib/dashboard'
 import { formatTimestamp } from '@/shared/codex'
 
+import { formatWait } from '../../../bin/lib/reset-credits.js'
+
+import { resetCreditChoice } from './reset-credit-choice'
 import {
   buildResetPlan,
   type ResetPlanEvent,
@@ -21,6 +24,8 @@ export function ResetPlanPanel({ accounts }: { accounts: DashboardAccountRow[] }
   const [now, setNow] = useState(() => Date.now())
   const [isOpen, setIsOpen] = useState(false)
   const plan = buildResetPlan(accounts, now)
+  // With nothing usable, the agent spends the reset credit that saves the most.
+  const resetCredit = plan.current ? null : resetCreditChoice(accounts, now)
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -50,6 +55,14 @@ export function ResetPlanPanel({ accounts }: { accounts: DashboardAccountRow[] }
         {fallbacks.length > 0 ? (
           <span className="text-muted-foreground">
             then {fallbacks.map((fallback) => fallback.accountLabel).join(', ')}
+          </span>
+        ) : null}
+        {resetCredit ? (
+          <span className="text-muted-foreground">
+            or spend {resetCredit.accountLabel}&apos;s reset{' '}
+            {resetCredit.lastChance
+              ? `(last chance: its plan ends in ${formatWait(resetCredit.savedMs)})`
+              : `(saves ${formatWait(resetCredit.savedMs)})`}
           </span>
         ) : null}
         {nextReset ? (

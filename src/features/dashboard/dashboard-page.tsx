@@ -77,6 +77,7 @@ import {
 } from '@/shared/site'
 
 import { ResetPlanPanel } from './reset-plan-panel'
+import { subscriptionEnd } from './reset-credit-choice'
 import { NoteEditor, NoteSecret } from './account-notes'
 import { AccountBrowserLink } from './account-browser-link'
 import { BrowserSessionPreference } from './browser-session-preference'
@@ -1588,6 +1589,17 @@ function getAccountIdentityLines(account: DashboardAccountRow) {
 }
 
 /** Usage-limit reset credits the account owns, from the latest snapshot; a dot when the sync never carried them. */
+/** Switchboard's cancelled flag: the plan ends then, so its reset credit goes first before that. */
+function SubscriptionEnd({ rawRateLimits }: { rawRateLimits: unknown }) {
+  const endsAt = subscriptionEnd(rawRateLimits)
+  if (endsAt == null) return null
+  return (
+    <span className="text-[10px] leading-4 text-muted-foreground" title="Marked cancelled in Switchboard">
+      cancelled, ends {new Date(endsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+    </span>
+  )
+}
+
 function ResetCreditsValue({ account }: { account: DashboardAccountRow }) {
   const raw = account.raw_rate_limits as { resetCredits?: { available?: unknown } } | null
   const available = raw?.resetCredits?.available
@@ -1724,6 +1736,7 @@ function AccountTable({
                       {account.plan_type}
                     </span>
                   ) : null}
+                  <SubscriptionEnd rawRateLimits={account.raw_rate_limits} />
                   {expiredEmails.has(normalizeNoteEmail(account.email)) ? (
                     <span className="rounded border border-amber-500/40 px-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400" title="This machine's saved sign-in for this account is refused; use Fix sign-ins">
                       sign-in expired

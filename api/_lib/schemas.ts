@@ -17,9 +17,15 @@ const resetCreditsSchema = z.object({
   available: z.number().int().nonnegative(),
 })
 
+const subscriptionSchema = z.object({
+  cancelled: z.boolean(),
+  endsAt: z.number().nullable(),
+})
+
 const rateLimitSnapshotSchema = z.object({
   credits: creditsSchema.nullable(),
   resetCredits: resetCreditsSchema.nullish(),
+  subscription: subscriptionSchema.nullish(),
   limitId: z.string().nullable(),
   limitName: z.string().nullable(),
   planType: z.string().nullable(),
