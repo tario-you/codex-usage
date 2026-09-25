@@ -134,3 +134,22 @@ test('the sign-in link the agent opened rides the state until the sign-in ends o
   assert.equal(readRepairState(done, Date.parse(at)).link, null, 'the result clears the link')
   assert.equal(readRepairState({ repair: { expired: [] } }, Date.parse(at)).link, null, 'older rows read as no link')
 })
+
+test('Claude reconnect keeps provider identity through request, link, result and legacy-agent polling',async()=>{
+ const {supportedRepairPending}=await import('../api/_lib/login/repair-state.ts')
+ const at=new Date().toISOString()
+ const requested=withConnectRequest(withExpiredReport({},['same@example.test'],at),'same@example.test',at,'claude')
+ const before=readRepairState(requested.metadata)
+ assert.equal(before.pending?.provider,'claude')
+ assert.equal(supportedRepairPending(before),null,'an old Codex-only agent must never receive a Claude login')
+ assert.equal(supportedRepairPending(before,['codex','claude'])?.provider,'claude')
+ const url='https://claude.ai/oauth/authorize?client_id=fixture'
+ assert.equal(isSignInUrl(url),false)
+ assert.equal(isSignInUrl('https://auth.openai.com/oauth/authorize','claude'),false)
+ const linked=withSignInLink(requested.metadata,'same@example.test',url,at,'claude')
+ assert.equal(readRepairState(linked.metadata).link?.provider,'claude')
+ const done=withResult(linked.metadata,[{provider:'claude',email:'same@example.test',outcome:'signed-in'}],at)
+ assert.deepEqual(readRepairState(done).expired,['same@example.test'],'Claude reconnection must not clear Codex expiry for the same email')
+ assert.equal(readRepairState(done).pending,null)
+ assert.equal(withConnectRequest(requested.metadata,'other@example.test',at).targets.length,0,'do not combine providers in one repair')
+})

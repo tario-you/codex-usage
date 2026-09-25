@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { repairClaudeLogin, repairProviders } from './lib/repair-claude.js'
 import { runBrowserAgent } from './lib/browser-sessions.js'
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
@@ -760,7 +761,8 @@ async function runSyncAllCommand(args, config, codexHome) {
         console.log(`The dashboard asked to fix sign-ins: ${pending.emails.join(', ')}`)
         const results = await repairLogins({
           emails: pending.emails,
-          onLink: (email, url) => reportSignInLink(config, email, url).catch((error) => {
+          provider: pending.provider ?? 'codex',
+          onLink: (email, url, provider = 'codex') => reportSignInLink(config, email, url, provider).catch((error) => {
             console.error(`[sign-in link] ${error instanceof Error ? error.message : String(error)}`)
           }),
           storePath,
@@ -784,7 +786,7 @@ async function runSyncAllCommand(args, config, codexHome) {
 const REPAIR_POLL_SECONDS = 20
 
 async function pollRepairRequest(config, expired, missing = []) {
-  const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, expired, missing }))
+  const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, expired, missing, providers: repairProviders() }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair poll failed.'))
   return pendingFromPoll(payload)
@@ -810,8 +812,8 @@ async function discoverMissingQuietly({ codexHome, config, storePath }) {
 }
 
 /** The dashboard shows this link so the owner can open or copy it instead of hunting for the tab. */
-async function reportSignInLink(config, email, url) {
-  const response = await fetch(new URL('/api/login/repair/link', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, email, url }))
+async function reportSignInLink(config, email, url, provider = 'codex') {
+  const response = await fetch(new URL('/api/login/repair/link', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, email, url, provider }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Sign-in link report failed.'))
 }
@@ -826,7 +828,15 @@ async function reportRepairResults(config, results) {
  * Sign the given logins in again, one browser sign-in after another. With no
  * emails, every saved login whose refresh is refused is repaired.
  */
-async function repairLogins({ emails = null, onLink = null, storePath }) {
+async function repairLogins({ emails = null, onLink = null, storePath, provider = 'codex' }) {
+  if (provider === 'claude') {
+    const results = []
+    for (const email of emails ?? []) {
+      try { results.push(await repairClaudeLogin(email, { onLink })) }
+      catch (error) { results.push({ email, provider: 'claude', outcome: 'failed', detail: error.message }) }
+    }
+    return results
+  }
   const store = await readStore(storePath)
   let targets = (emails ?? []).map((email) => String(email).trim().toLowerCase()).filter(Boolean)
   if (targets.length === 0) {

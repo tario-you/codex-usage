@@ -8,6 +8,7 @@ import { findActiveDeviceByToken, sharedLoginErrorResponse } from '../login-stor
 import { serviceRoleSupabase } from '../supabase.js'
 import {
   readRepairState,
+  supportedRepairPending,
   withExpiredReport,
   withConnectRequest,
   withPendingRequest,
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
 }
 
 const requestSchema = z.object({
+  provider: z.enum(['codex', 'claude']).default('codex'),
   connect: z.string().trim().email().max(320).optional(),
   deviceId: z.string().uuid().optional(),
   emails: z.array(z.string()).max(64).optional(),
@@ -89,12 +91,14 @@ export async function POST(request: Request) {
         ? devices.find((entry) => entry.id === parsed.data.deviceId)
         : devices[0]
       if (!device) return errorResponse('Add a machine first; the sign-in opens there.', 409)
-      const { metadata, targets } = withConnectRequest(device.metadata, parsed.data.connect, now)
-      if (targets.length === 0) return errorResponse('Enter a complete email address.')
+      if (!readRepairState(device.metadata).providers.includes(parsed.data.provider)) return errorResponse('Update the sync helper on this machine to reconnect Claude accounts.', 409)
+      const { metadata, targets } = withConnectRequest(device.metadata, parsed.data.connect, now, parsed.data.provider)
+      if (targets.length === 0) return errorResponse('Finish the sign-in already running on this machine first.', 409)
       await saveMetadata(device.id, metadata)
       device.metadata = metadata as unknown as Json
       return jsonResponse({ devices: devices.map(serializeDevice), requested: 1 })
     }
+    if (parsed.data.provider !== 'codex') return errorResponse('Choose a Claude account to reconnect.')
     let requested = 0
     for (const device of devices) {
       if (parsed.data.deviceId && device.id !== parsed.data.deviceId) continue
@@ -114,6 +118,7 @@ export async function POST(request: Request) {
 }
 
 const pollSchema = z.object({
+  providers: z.array(z.enum(['codex', 'claude'])).default(['codex']),
   deviceToken: z.string().min(1),
   expired: z.array(z.string()).max(64).default([]),
   missing: z.array(z.string()).max(64).default([]),
@@ -131,9 +136,10 @@ export async function POLL(request: Request) {
       parsed.data.expired,
       new Date().toISOString(),
       parsed.data.missing,
+      parsed.data.providers,
     )
     await saveMetadata(device.id, metadata)
-    return jsonResponse({ pending: readRepairState(metadata).pending })
+    return jsonResponse({ pending: supportedRepairPending(readRepairState(metadata), parsed.data.providers) })
   } catch (error) {
     return sharedLoginErrorResponse(error, 'Unable to report sign-in state.')
   }
@@ -181,6 +187,7 @@ export async function KNOWN(request: Request) {
 }
 
 const linkSchema = z.object({
+  provider: z.enum(['codex', 'claude']).default('codex'),
   deviceToken: z.string().min(1),
   email: z.string().min(3).max(320),
   url: z.string().max(2048),
@@ -193,8 +200,8 @@ export async function LINK(request: Request) {
     if (!parsed.success) return errorResponse('Send the device token, the email, and the sign-in URL.')
     const device = await findActiveDeviceByToken(parsed.data.deviceToken)
     if (!device) throw new SharedLoginError('Unknown or revoked device token.', 401)
-    const { metadata, link } = withSignInLink(device.metadata, parsed.data.email, parsed.data.url, new Date().toISOString())
-    if (!link) return errorResponse('Only an OpenAI sign-in link can be shown.')
+    const { metadata, link } = withSignInLink(device.metadata, parsed.data.email, parsed.data.url, new Date().toISOString(), parsed.data.provider)
+    if (!link) return errorResponse('Only the selected provider’s sign-in link can be shown.')
     await saveMetadata(device.id, metadata)
     return jsonResponse({ ok: true, link })
   } catch (error) {
@@ -207,6 +214,7 @@ const doneSchema = z.object({
   results: z
     .array(
       z.object({
+        provider: z.enum(['claude']).optional(),
         detail: z.string().max(300).nullish(),
         email: z.string().min(3).max(320),
         outcome: z.enum(['signed-in', 'mismatch', 'failed', 'skipped']),
@@ -223,6 +231,7 @@ export async function DONE(request: Request) {
     const device = await findActiveDeviceByToken(parsed.data.deviceToken)
     if (!device) throw new SharedLoginError('Unknown or revoked device token.', 401)
     const results: RepairResult[] = parsed.data.results.map((entry) => ({
+      ...(entry.provider === 'claude' ? { provider: 'claude' as const } : {}),
       detail: entry.detail ?? null,
       email: entry.email.toLowerCase(),
       outcome: entry.outcome,
