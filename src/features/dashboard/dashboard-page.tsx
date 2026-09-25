@@ -84,7 +84,8 @@ import { BrowserSessionPreference } from './browser-session-preference'
 import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
-import { expiredEmailSet, useRepairState } from './repair-signins-state'
+import { ReconnectSignIn } from './reconnect-signin'
+import { type RepairDevice, useRepairState } from './repair-signins-state'
 import { useAccountNotes, type AccountNotesController } from './account-notes-state'
 import { accountNoteKey, accountNoteProvider, normalizeNoteEmail, noteKey } from './account-note-identity'
 import { SharedLoginPanel } from './shared-login-panel'
@@ -134,7 +135,6 @@ export function DashboardPage() {
   const [showGuide, setShowGuide] = useState(false)
   const accountNotes = useAccountNotes({ onInvalidSession: handleInvalidSession, session })
   const repairState = useRepairState(session)
-  const expiredEmails = expiredEmailSet(repairState.data)
   const planSwitchState = usePlanSwitchState(session)
   const planSwitchDevice = planSwitchTarget(planSwitchState.data)
   const [guideHidden, setGuideHidden] = useState(false)
@@ -1325,7 +1325,7 @@ export function DashboardPage() {
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={accounts}
-                              expiredEmails={expiredEmails}
+                              repairDevices={repairState.data}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
                               planSwitchDevice={planSwitchDevice}
@@ -1341,7 +1341,7 @@ export function DashboardPage() {
                           <div className="hidden md:block">
                             <AccountTable
                               accounts={accounts}
-                              expiredEmails={expiredEmails}
+                              repairDevices={repairState.data}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
                               planSwitchDevice={planSwitchDevice}
@@ -1622,7 +1622,7 @@ function ResetCreditsValue({ account }: { account: DashboardAccountRow }) {
 
 function AccountTable({
   accounts,
-  expiredEmails,
+  repairDevices,
   notes,
   onSaveUsageOverride,
   planSwitchDevice,
@@ -1633,7 +1633,7 @@ function AccountTable({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
-  expiredEmails: Set<string>
+  repairDevices: RepairDevice[] | undefined
   notes: AccountNotesController | null
   onSaveUsageOverride: (
     account: DashboardAccountRow,
@@ -1737,10 +1737,8 @@ function AccountTable({
                     </span>
                   ) : null}
                   <SubscriptionEnd rawRateLimits={account.raw_rate_limits} />
-                  {expiredEmails.has(normalizeNoteEmail(account.email)) ? (
-                    <span className="rounded border border-amber-500/40 px-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400" title="This machine's saved sign-in for this account is refused; use Fix sign-ins">
-                      sign-in expired
-                    </span>
+                  {isOwnedAccount && !isClaudeAccount(account) ? (
+                    <ReconnectSignIn devices={repairDevices} email={account.email} session={session} />
                   ) : null}
                   {isOwnedAccount && !isClaudeAccount(account) ? (
                     <UsePlanControl device={planSwitchDevice} email={account.email} session={session} />
@@ -1900,7 +1898,7 @@ function AccountTable({
 
 function AccountSummaryList({
   accounts,
-  expiredEmails,
+  repairDevices,
   notes,
   onSaveUsageOverride,
   planSwitchDevice,
@@ -1911,7 +1909,7 @@ function AccountSummaryList({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
-  expiredEmails: Set<string>
+  repairDevices: RepairDevice[] | undefined
   notes: AccountNotesController | null
   onSaveUsageOverride: (
     account: DashboardAccountRow,
@@ -1946,8 +1944,8 @@ function AccountSummaryList({
                     {identity.secondary}
                   </p>
                 ) : null}
-                {expiredEmails.has(normalizeNoteEmail(account.email)) ? (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">sign-in expired</p>
+                {isOwnedAccount && !isClaudeAccount(account) ? (
+                  <ReconnectSignIn devices={repairDevices} email={account.email} session={session} />
                 ) : null}
                 {isOwnedAccount && !isClaudeAccount(account) ? (
                   <p className="mt-1">

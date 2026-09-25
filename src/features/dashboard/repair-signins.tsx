@@ -5,20 +5,9 @@ import { Check, Copy, ExternalLink, KeyRound, Loader2, Plus } from 'lucide-react
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatRelativeTimestamp } from '@/shared/codex'
-import { queryClient } from '@/lib/query-client'
 
-import type { RepairDevice } from './repair-signins-state'
+import { postRepair, type RepairDevice } from './repair-signins-state'
 
-async function postRepair(session: Session, body: Record<string, unknown>) {
-  const response = await fetch('/api/login/repair', {
-    body: JSON.stringify(body),
-    headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-    method: 'POST',
-  })
-  const payload = (await response.json().catch(() => null)) as { error?: string } | null
-  if (!response.ok) throw new Error(payload?.error ?? 'Unable to request the sign-in.')
-  await queryClient.invalidateQueries({ queryKey: ['repair-signins', session.user.id] })
-}
 
 /**
  * Connect a plan the dashboard has never seen: type its email, and the
