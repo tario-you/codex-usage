@@ -40,3 +40,19 @@ test('posts only the selected account and immediately exposes returned progress 
   await assert.rejects(postRepair(session,{}),/Machine unavailable/)
  }finally{globalThis.fetch=original;queryClient.clear()}
 })
+
+test('the 12-hour cutoff offers reconnect for stale Codex and Claude rows without an expiry report',async()=>{
+ const {isSignInStale}=await import('../src/features/dashboard/repair-signins-state.ts')
+ const now=Date.parse('2026-09-25T00:00:00Z')
+ assert.equal(isSignInStale('2026-09-24T12:00:00Z',now),false)
+ assert.equal(isSignInStale('2026-09-24T11:59:59.999Z',now),true)
+ assert.equal(isSignInStale(null,now),false)
+ assert.equal(isSignInStale('invalid',now),false)
+ for(const provider of ['codex','claude'] as const){
+  const html=renderToStaticMarkup(createElement(ReconnectSignIn,{devices:[{...device,expired:[]}],email:'a@example.test',session,provider,lastUpdate:'2020-01-01T00:00:00Z'}))
+  assert.match(html,/Update stale sign-in/)
+  assert.match(html,/Last update is over 12 hours old/)
+ }
+ const html=renderToStaticMarkup(createElement(ReconnectSignIn,{devices:[{...device,pending:{provider:'claude',emails:['a@example.test'],requestedAt:device.lastSeenAt},link:{provider:'claude',email:'a@example.test',at:device.lastSeenAt,url:'https://claude.ai/oauth/authorize?client_id=fixture'}}],email:'a@example.test',session,provider:'codex'}))
+ assert.doesNotMatch(html,/href=/,'same email on another provider never gets its authorization link')
+})

@@ -1737,8 +1737,8 @@ function AccountTable({
                     </span>
                   ) : null}
                   <SubscriptionEnd rawRateLimits={account.raw_rate_limits} />
-                  {isOwnedAccount && !isClaudeAccount(account) ? (
-                    <ReconnectSignIn devices={repairDevices} email={account.email} session={session} />
+                  {isOwnedAccount ? (
+                    <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                   ) : null}
                   {isOwnedAccount && !isClaudeAccount(account) ? (
                     <UsePlanControl device={planSwitchDevice} email={account.email} session={session} />
@@ -1944,8 +1944,8 @@ function AccountSummaryList({
                     {identity.secondary}
                   </p>
                 ) : null}
-                {isOwnedAccount && !isClaudeAccount(account) ? (
-                  <ReconnectSignIn devices={repairDevices} email={account.email} session={session} />
+                {isOwnedAccount ? (
+                  <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                 ) : null}
                 {isOwnedAccount && !isClaudeAccount(account) ? (
                   <p className="mt-1">

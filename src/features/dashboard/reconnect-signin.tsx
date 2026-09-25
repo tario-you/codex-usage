@@ -3,23 +3,26 @@ import type { Session } from '@supabase/supabase-js'
 import { ExternalLink, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { postRepair, repairTarget, type RepairDevice } from './repair-signins-state'
+import { isSignInStale, postRepair, repairTarget, type RepairDevice } from './repair-signins-state'
 
 /** Reconnect exactly this row on the machine that reported its expired login. */
-export function ReconnectSignIn({ devices, email, session }: {
+export function ReconnectSignIn({ devices, email, session, lastUpdate, provider = 'codex' }: {
   devices: RepairDevice[] | undefined
   email: string | null | undefined
   session: Session
+  lastUpdate?: string | null
+  provider?: 'codex' | 'claude'
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const key = (email ?? '').trim().toLowerCase()
-  const device = repairTarget(devices, key)
+  const stale = isSignInStale(lastUpdate)
+  const device = repairTarget(devices, key, stale, provider)
   if (!device) return null
   const machine = device.label || device.machineName || 'your machine'
-  const pending = device.pending?.emails.includes(key)
-  const link = pending && device.link?.email === key ? device.link : null
-  const last = device.lastResult?.results.find(result => result.email === key)
+  const pending = (device.pending?.provider ?? 'codex') === provider && device.pending?.emails.includes(key)
+  const link = pending && (device.link?.provider ?? 'codex') === provider && device.link?.email === key ? device.link : null
+  const last = device.lastResult?.results.find(result => result.email === key && (result.provider ?? 'codex') === provider)
   const failure = !pending && last && last.outcome !== 'signed-in' ? last.detail || `Sign-in ${last.outcome}. Try again.` : null
 
   async function reconnect() {
@@ -27,7 +30,9 @@ export function ReconnectSignIn({ devices, email, session }: {
     setBusy(true)
     setError(null)
     try {
-      await postRepair(session, { deviceId: device.id, emails: [key] })
+      await postRepair(session, stale || provider === 'claude'
+        ? { deviceId: device.id, connect: key, provider }
+        : { deviceId: device.id, emails: [key] })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to start sign-in.')
     } finally {
@@ -45,11 +50,11 @@ export function ReconnectSignIn({ devices, email, session }: {
       disabled={busy || Boolean(device.pending)}
       onClick={() => void reconnect()}
       size="xs"
-      title={device.pending ? `Waiting for sign-in on ${machine}` : `Sign-in expired. Reconnect ${key} on ${machine}`}
+      title={device.pending ? `Waiting for sign-in on ${machine}` : `${stale ? 'Last update is over 12 hours old' : 'Sign-in expired'}. Reconnect ${key} on ${machine}`}
       type="button"
       variant="outline"
     >
-      {busy || pending ? <><Loader2 className="size-3 animate-spin" />Opening sign-in…</> : 'Sign in'}
+      {busy || pending ? <><Loader2 className="size-3 animate-spin" />Opening sign-in…</> : stale ? 'Update stale sign-in' : 'Sign in'}
     </Button>}
     {pending && !link ? <span className="text-[10px] text-muted-foreground">Waiting for {machine}; keep it online.</span> : null}
     {error || failure ? <span role="alert" className="text-[10px] text-destructive">{error || failure}</span> : null}

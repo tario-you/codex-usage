@@ -27,7 +27,7 @@
     "collector:once": "tsx scripts/codex-collector.ts --once",
     "release:check": "node ./scripts/check-publish.mjs",
     "prepublishOnly": "npm run release:check",
-    "test:reconnect": "tsx --tsconfig tsconfig.app.json --test tests/reconnect-signin.test.tsx"
+    "test:reconnect": "tsx --tsconfig tsconfig.app.json --test tests/reconnect-signin.test.tsx tests/repair-claude.test.js"
   },
   "dependencies": {
     "@openai/codex": "^0.142.5",

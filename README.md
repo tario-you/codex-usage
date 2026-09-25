@@ -378,3 +378,18 @@ providers when both plans exist; Claude-only content stays with Claude and
 unsynced notes stay with Codex. Existing ciphertext remains readable, and the
 next edit binds its encryption to the provider too. Old dashboard tabs must
 reload before saving notes (writes now require a provider).
+
+### Reconnect a stale plan
+
+Each owned Codex or Claude plan whose last update is over 12 hours old offers
+**Update stale sign-in**. Codex logins reported expired offer **Sign in** sooner.
+Clicking requests only that account on a paired machine; finish the provider's
+browser sign-in there. The row shows progress and a matching **Continue sign-in**
+link, then the normal sync refreshes its usage. Old usage is not proof that a
+credential has expired.
+
+Claude reconnect requires `claude-auto-switch` at `~/.local/bin/claude-auto-switch`
+on the paired machine. The updated sync agent advertises this capability and
+uses the helper's isolated login flow; older Codex-only agents never receive
+Claude repair requests. The helper preserves the everyday Claude login. A
+wrong-account sign-in is reported as a mismatch rather than success.

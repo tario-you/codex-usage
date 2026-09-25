@@ -3,15 +3,16 @@ import { queryClient } from '@/lib/query-client'
 import type { Session } from '@supabase/supabase-js'
 
 export interface RepairDevice {
+  providers?: ('codex' | 'claude')[]
   expired: string[]
   id: string
   label: string
-  link: { at: string; email: string; url: string } | null
-  lastResult: { at: string; results: { email: string; outcome: string; detail?: string | null }[] } | null
+  link: { provider?: 'claude'; at: string; email: string; url: string } | null
+  lastResult: { at: string; results: { provider?: 'claude'; email: string; outcome: string; detail?: string | null }[] } | null
   lastSeenAt: string
   machineName: string | null
   missing: string[]
-  pending: { emails: string[]; requestedAt: string } | null
+  pending: { provider?: 'claude'; emails: string[]; requestedAt: string } | null
   reportedAt: string | null
 }
 
@@ -43,12 +44,13 @@ export function expiredEmailSet(devices: RepairDevice[] | undefined) {
 }
 
 /** Prefer an existing request, otherwise the most recently online holder of this login. */
-export function repairTarget(devices: RepairDevice[] | undefined, email: string) {
+export function repairTarget(devices: RepairDevice[] | undefined, email: string, stale = false, provider: 'codex' | 'claude' = 'codex') {
   const key = email.trim().toLowerCase()
   if (!key) return null
-  const eligible = (devices ?? []).filter(device => device.expired.some(value => value.toLowerCase() === key))
-  return eligible.find(device => device.pending?.emails.includes(key))
-    ?? eligible.sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt))[0]
+  const eligible = (devices ?? []).filter(device => stale || (provider === 'codex' && device.expired.some(value => value.toLowerCase() === key)))
+  return eligible.find(device => (device.pending?.provider ?? 'codex') === provider && device.pending?.emails.includes(key))
+    ?? eligible.sort((a, b) => Number((b.providers ?? ['codex']).includes(provider)) - Number((a.providers ?? ['codex']).includes(provider))
+      || Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt))[0]
     ?? null
 }
 
@@ -62,4 +64,9 @@ export async function postRepair(session: Session, body: Record<string, unknown>
   if (!response.ok) throw new Error(payload?.error ?? 'Unable to request the sign-in.')
   if (payload?.devices) queryClient.setQueryData(['repair-signins', session.user.id], payload.devices)
   await queryClient.invalidateQueries({ queryKey: ['repair-signins', session.user.id] })
+}
+
+export function isSignInStale(lastUpdate: string | null | undefined, now = Date.now()) {
+  const at = Date.parse(lastUpdate ?? '')
+  return Number.isFinite(at) && now - at > 12 * 60 * 60 * 1000
 }
