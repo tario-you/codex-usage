@@ -21,6 +21,29 @@ interface PersistSnapshotInput {
   device: DeviceContext
   ownerUserId: string
   rateLimits: CodexRateLimitsResponse
+  /** An explicit owner action (pairing, publishing) links an unlinked account again; background syncs leave it unlinked. */
+  relink?: boolean
+}
+
+/** The account keys the owner unlinked; background syncs skip them. */
+export async function isAccountUnlinked(ownerUserId: string, accountKey: string) {
+  const { data, error } = await serviceRoleSupabase
+    .from('codex_unlinked_accounts')
+    .select('account_key')
+    .eq('owner_user_id', ownerUserId)
+    .eq('account_key', accountKey)
+    .maybeSingle()
+  if (error) throw error
+  return Boolean(data)
+}
+
+export async function forgetUnlinkedAccount(ownerUserId: string, accountKey: string) {
+  const { error } = await serviceRoleSupabase
+    .from('codex_unlinked_accounts')
+    .delete()
+    .eq('owner_user_id', ownerUserId)
+    .eq('account_key', accountKey)
+  if (error) throw error
 }
 
 export async function persistSnapshotForOwner({
@@ -28,7 +51,8 @@ export async function persistSnapshotForOwner({
   device,
   ownerUserId,
   rateLimits,
-}: PersistSnapshotInput) {
+  relink = false,
+}: PersistSnapshotInput): Promise<{ unlinked: boolean }> {
   const account = accountState.account
   if (!account) {
     throw new Error('No logged-in Codex account was found on this machine.')
@@ -43,6 +67,11 @@ export async function persistSnapshotForOwner({
     : account.type === 'claude'
       ? `claude-source:${device.deviceKey}`
       : `source:${device.deviceKey}`
+  if (relink) {
+    await forgetUnlinkedAccount(ownerUserId, accountKey)
+  } else if (await isAccountUnlinked(ownerUserId, accountKey)) {
+    return { unlinked: true }
+  }
   const nowIso = new Date().toISOString()
 
   const accountUpsert: Database['public']['Tables']['codex_accounts']['Insert'] =
@@ -90,6 +119,7 @@ export async function persistSnapshotForOwner({
     rateLimits,
     sourceKey: device.deviceKey,
   })
+  return { unlinked: false }
 }
 
 /**

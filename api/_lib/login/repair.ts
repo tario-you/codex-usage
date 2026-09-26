@@ -5,6 +5,7 @@ import { requireUser } from '../auth.js'
 import { errorResponse, jsonResponse } from '../http.js'
 import { SharedLoginError } from '../login-reconcile.js'
 import { findActiveDeviceByToken, sharedLoginErrorResponse } from '../login-store.js'
+import { forgetUnlinkedAccount } from '../persistence.js'
 import { serviceRoleSupabase } from '../supabase.js'
 import {
   readRepairState,
@@ -96,6 +97,7 @@ export async function POST(request: Request) {
       if (targets.length === 0) return errorResponse('Finish the sign-in already running on this machine first.', 409)
       await saveMetadata(device.id, metadata)
       device.metadata = metadata as unknown as Json
+      await forgetUnlinkedAccount(user.id, `${parsed.data.provider === 'claude' ? 'claude' : 'chatgpt'}:${parsed.data.connect.toLowerCase()}`)
       return jsonResponse({ devices: devices.map(serializeDevice), requested: 1 })
     }
     if (parsed.data.provider !== 'codex') return errorResponse('Choose a Claude account to reconnect.')

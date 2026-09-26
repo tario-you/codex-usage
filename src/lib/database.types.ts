@@ -390,6 +390,32 @@ export interface Database {
           },
         ]
       }
+      codex_unlinked_accounts: {
+        Row: {
+          owner_user_id: string
+          account_key: string
+          unlinked_at: string
+        }
+        Insert: {
+          owner_user_id: string
+          account_key: string
+          unlinked_at?: string
+        }
+        Update: {
+          owner_user_id?: string
+          account_key?: string
+          unlinked_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_unlinked_accounts_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       codex_login_grants: {
         Row: {
           id: string
