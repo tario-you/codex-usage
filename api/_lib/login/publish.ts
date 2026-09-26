@@ -79,6 +79,7 @@ export async function POST(request: Request) {
         device: deviceContext,
         ownerUserId: device.owner_user_id,
         rateLimits,
+        relink: true,
       })
     }
 

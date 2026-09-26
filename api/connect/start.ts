@@ -105,6 +105,7 @@ export async function POST(request: Request) {
       },
       ownerUserId: linkData.user.id,
       rateLimits,
+      relink: true,
     })
 
     return jsonResponse({

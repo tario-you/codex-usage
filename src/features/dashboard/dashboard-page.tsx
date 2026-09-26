@@ -729,7 +729,9 @@ export function DashboardPage() {
     }
 
     const identity = getAccountIdentityLines(account)
-    const confirmed = window.confirm(`Unlink ${identity.primary}?`)
+    const confirmed = window.confirm(
+      `Unlink ${identity.primary}? Its machine keeps syncing your other plans; this one stays hidden until you connect it again.`,
+    )
     if (!confirmed) {
       return
     }

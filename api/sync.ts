@@ -69,7 +69,7 @@ export async function POST(request: Request) {
       })
       .eq('id', device.id)
 
-    await persistSnapshotForOwner({
+    const { unlinked } = await persistSnapshotForOwner({
       accountState,
       device: {
         codexHome: body.device?.codexHome ?? device.codex_home,
@@ -86,6 +86,7 @@ export async function POST(request: Request) {
     return jsonResponse({
       ok: true,
       syncedAt: nowIso,
+      ...(unlinked ? { unlinked: true } : {}),
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

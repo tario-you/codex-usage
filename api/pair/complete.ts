@@ -108,6 +108,7 @@ export async function POST(request: Request) {
       },
       ownerUserId: pairingSession.owner_user_id,
       rateLimits,
+      relink: true,
     })
 
     const nowIso = new Date().toISOString()

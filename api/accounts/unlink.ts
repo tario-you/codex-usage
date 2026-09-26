@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
     const { data: account, error: accountError } = await serviceRoleSupabase
       .from('codex_accounts')
-      .select('id, source_key')
+      .select('id, account_key')
       .eq('id', body.accountId)
       .eq('owner_user_id', user.id)
       .maybeSingle()
@@ -29,18 +29,17 @@ export async function POST(request: Request) {
       return errorResponse('Account not found.', 404)
     }
 
-    const revokedAt = new Date().toISOString()
-    const { error: revokeError } = await serviceRoleSupabase
-      .from('codex_devices')
-      .update({
-        revoked_at: revokedAt,
-      })
-      .eq('device_key', account.source_key)
-      .eq('owner_user_id', user.id)
-      .is('revoked_at', null)
+    // Remember the unlink instead of revoking the machine that reported the
+    // account: one machine syncs every plan, so revoking it stopped them all.
+    const { error: unlinkError } = await serviceRoleSupabase
+      .from('codex_unlinked_accounts')
+      .upsert(
+        { account_key: account.account_key, owner_user_id: user.id },
+        { onConflict: 'owner_user_id,account_key' },
+      )
 
-    if (revokeError) {
-      throw revokeError
+    if (unlinkError) {
+      throw unlinkError
     }
 
     const { error: deleteError } = await serviceRoleSupabase
