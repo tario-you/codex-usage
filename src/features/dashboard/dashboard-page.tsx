@@ -92,6 +92,8 @@ import { SharedLoginPanel } from './shared-login-panel'
 import { GettingStartedPanel } from './getting-started-panel'
 import { SwitchHistoryPanel } from './switch-history-panel'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
+import { UsageWindowList } from './usage-window-list'
+import { formatResetCountdown } from './reset-countdown'
 import { filterUsageAccounts, readUsageVisibility, saveUsageVisibility, type UsageVisibility } from './usage-provider-visibility'
 
 interface PairingCommandState {
@@ -134,6 +136,8 @@ export function DashboardPage() {
   const [isCreatingInvite, setIsCreatingInvite] = useState(false)
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
+  const [showSetup, setShowSetup] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
   const accountNotes = useAccountNotes({ onInvalidSession: handleInvalidSession, session })
   const repairState = useRepairState(session)
   const planSwitchState = usePlanSwitchState(session)
@@ -219,6 +223,7 @@ export function DashboardPage() {
   )
   const guideVisible =
     showGuide || (!isLoadingAccounts && accounts.length === 0 && !guideHidden)
+  const settingsVisible = showSetup || guideVisible
   const acceptInviteOnAuth = useEffectEvent(() => {
     void handleAcceptInvite()
   })
@@ -899,50 +904,13 @@ export function DashboardPage() {
               ) : null}
 
               {session && !showInviteLanding ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    aria-pressed={guideVisible}
-                    onClick={() => {
-                      setGuideHidden(false)
-                      setShowGuide((value) => !value)
-                    }}
-                    size="sm"
-                    title="What each button does"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <CircleHelp className="mr-1.5 size-3.5" />
-                    How it works
-                  </Button>
-                  <Button
-                    disabled={isGeneratingPairing}
-                    onClick={() => void handleStartPairing()}
-                    size="sm"
-                    title="Show a machine's own Codex usage here. This does not sign anyone into your plans."
-                    type="button"
-                    variant="outline"
-                  >
-                    <TerminalSquare className="mr-1.5 size-3.5" />
-                    {isGeneratingPairing ? 'Creating...' : 'Add a machine'}
-                  </Button>
-                  <Button
-                    disabled={isCreatingInvite}
-                    onClick={() => void handleCreateInvite()}
-                    size="sm"
-                    title="Get a view-only link. They see your plans and cannot use them."
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link2 className="mr-1.5 size-3.5" />
-                    {isCreatingInvite ? 'Creating...' : 'Invite a viewer'}
-                  </Button>
-                  {isPairingCommandCopied || isInviteLinkCopied || isSyncCommandCopied ? (
-                    <CopiedPill />
-                  ) : null}
-                </div>
+                <Button aria-expanded={settingsVisible} onClick={() => {
+                  setShowSetup(!settingsVisible)
+                  if (settingsVisible) { setShowGuide(false); setGuideHidden(true) }
+                }} size="sm" type="button" variant="ghost">Settings</Button>
               ) : null}
 
-              <ThemeToggle className="shrink-0" />
+              {!session || showInviteLanding ? <ThemeToggle className="shrink-0" /> : null}
 
               {session ? (
                 <div className="flex flex-wrap items-center justify-end gap-3">
@@ -953,22 +921,6 @@ export function DashboardPage() {
                       size="sm"
                       src={sessionAvatarUrl}
                     />
-                    <div className="text-right text-xs">
-                      <p className="font-medium text-foreground">
-                        {sessionLabel}
-                      </p>
-                      <p className="text-muted-foreground">
-                        {showInviteLanding
-                          ? isAcceptingInvite
-                            ? 'Finishing shared access...'
-                            : 'Shared invite in progress'
-                          : `${summary.accountsTracked} tracked${
-                              summary.accountsTracked === 1
-                                ? ' account'
-                                : ' accounts'
-                            }`}
-                      </p>
-                    </div>
                   </div>
                   <Button
                     aria-label="Sign out"
@@ -1119,144 +1071,200 @@ export function DashboardPage() {
               ) : null}
 
               <div className="space-y-3">
-                {canLinkGoogle ? (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>
-                        {inviteToken ? 'Accept shared dashboard access' : 'Link Google'}
-                      </CardTitle>
-                      <CardDescription>
-                        {inviteToken
-                          ? 'This invite only works after you sign in with Google.'
-                          : 'The dashboard already works through the local terminal flow. Add Google if you want the same account to keep a reusable browser sign-in.'}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <Button
-                        disabled={Boolean(inviteOriginRedirectUrl) || isStartingGoogleLogin}
-                        onClick={() => void handleGoogleSignIn()}
-                        type="button"
-                      >
-                        <GoogleIcon className="mr-2 size-4" />
-                        {inviteOriginRedirectUrl
-                          ? 'Opening shared link...'
-                          : isStartingGoogleLogin
-                            ? 'Redirecting to Google...'
-                            : inviteToken
-                              ? 'Continue with Google'
-                              : 'Link Google'}
-                      </Button>
-
-                      {loginError ? (
-                        <InlineMessage tone="error">{loginError}</InlineMessage>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                ) : null}
-
-                {inviters.length > 0 || invitersQuery.error ? (
-                  <Card>
-                    <CardHeader
-                      className={
-                        inviters.length > 0 || invitersQuery.error
-                          ? 'border-b border-border'
-                          : undefined
-                      }
-                    >
-                      <CardTitle>Shared with you</CardTitle>
-                      <CardDescription>
-                        These people invited you to see their dashboard accounts.
-                      </CardDescription>
-                    </CardHeader>
+                <div hidden={!settingsVisible} className="space-y-3">
+                  <Card size="sm">
+                    <CardHeader><CardTitle>Setup & settings</CardTitle></CardHeader>
                     <CardContent className="space-y-3">
-                      {invitersQuery.error ? (
-                        <InlineMessage tone="error">
-                          {invitersQuery.error.message}
-                        </InlineMessage>
-                      ) : null}
-
-                      {inviters.map((inviter) => (
-                        <div
-                          key={inviter.sharer_user_id}
-                          className="flex items-center gap-3"
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          aria-pressed={guideVisible}
+                          onClick={() => {
+                            setGuideHidden(false)
+                            setShowGuide((value) => !value)
+                          }}
+                          size="sm"
+                          title="What each button does"
+                          type="button"
+                          variant="ghost"
                         >
-                          <UserAvatar
-                            alt={getInviterLabel(inviter)}
-                            fallback={getInviterLabel(inviter)}
-                            size="sm"
-                            src={inviter.sharer_avatar_url}
-                          />
-                          <div className="min-w-0 text-sm">
-                            <p className="truncate font-medium text-foreground">
-                              {getInviterLabel(inviter)}
-                            </p>
-                            {inviter.sharer_email &&
-                            inviter.sharer_email !== getInviterLabel(inviter) ? (
-                              <p className="truncate text-muted-foreground">
-                                {inviter.sharer_email}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
+                          <CircleHelp className="mr-1.5 size-3.5" />
+                          How it works
+                        </Button>
+                        <Button
+                          disabled={isGeneratingPairing}
+                          onClick={() => void handleStartPairing()}
+                          size="sm"
+                          title="Show a machine's own Codex usage here. This does not sign anyone into your plans."
+                          type="button"
+                          variant="outline"
+                        >
+                          <TerminalSquare className="mr-1.5 size-3.5" />
+                          {isGeneratingPairing ? 'Creating...' : 'Add a machine'}
+                        </Button>
+                        <Button
+                          disabled={isCreatingInvite}
+                          onClick={() => void handleCreateInvite()}
+                          size="sm"
+                          title="Get a view-only link. They see your plans and cannot use them."
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link2 className="mr-1.5 size-3.5" />
+                          {isCreatingInvite ? 'Creating...' : 'Invite a viewer'}
+                        </Button>
+                        {isPairingCommandCopied || isInviteLinkCopied || isSyncCommandCopied ? (
+                          <CopiedPill />
+                        ) : null}
+                      </div>
+                      <ConnectPlanForm devices={repairState.data} session={session} />
+                      <RepairSignInsBanner devices={repairState.data} session={session} />
+                      <BrowserSessionPreference userId={session.user.id} />
+                      <ThemeToggle />
                     </CardContent>
                   </Card>
-                ) : null}
+                  {canLinkGoogle ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>
+                          {inviteToken ? 'Accept shared dashboard access' : 'Link Google'}
+                        </CardTitle>
+                        <CardDescription>
+                          {inviteToken
+                            ? 'This invite only works after you sign in with Google.'
+                            : 'The dashboard already works through the local terminal flow. Add Google if you want the same account to keep a reusable browser sign-in.'}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <Button
+                          disabled={Boolean(inviteOriginRedirectUrl) || isStartingGoogleLogin}
+                          onClick={() => void handleGoogleSignIn()}
+                          type="button"
+                        >
+                          <GoogleIcon className="mr-2 size-4" />
+                          {inviteOriginRedirectUrl
+                            ? 'Opening shared link...'
+                            : isStartingGoogleLogin
+                              ? 'Redirecting to Google...'
+                              : inviteToken
+                                ? 'Continue with Google'
+                                : 'Link Google'}
+                        </Button>
 
-                {guideVisible ? (
-                  <GettingStartedPanel
-                    onAddMachine={() => void handleStartPairing()}
-                    onDismiss={() => {
-                      setShowGuide(false)
-                      setGuideHidden(true)
-                    }}
-                    onInviteViewer={() => void handleCreateInvite()}
-                  />
-                ) : null}
+                        {loginError ? (
+                          <InlineMessage tone="error">{loginError}</InlineMessage>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  ) : null}
 
-                {pairingError || inviteCreateError || pairingCommand || shareInvite ? (
-                <Card size="sm">
-                  <CardContent className="space-y-2">
-                    {pairingError ? <InlineMessage tone="error">{pairingError}</InlineMessage> : null}
-                    {inviteCreateError ? (
-                      <InlineMessage tone="error">{inviteCreateError}</InlineMessage>
-                    ) : null}
-                    {pairingCommand ? (
-                      <>
-                        <p className="text-xs text-muted-foreground">
-                          This adds that machine's own usage to your dashboard. To let
-                          someone use your plans, use Share Codex login below.
-                        </p>
+                  {inviters.length > 0 || invitersQuery.error ? (
+                    <Card>
+                      <CardHeader
+                        className={
+                          inviters.length > 0 || invitersQuery.error
+                            ? 'border-b border-border'
+                            : undefined
+                        }
+                      >
+                        <CardTitle>Shared with you</CardTitle>
+                        <CardDescription>
+                          These people invited you to see their dashboard accounts.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {invitersQuery.error ? (
+                          <InlineMessage tone="error">
+                            {invitersQuery.error.message}
+                          </InlineMessage>
+                        ) : null}
+
+                        {inviters.map((inviter) => (
+                          <div
+                            key={inviter.sharer_user_id}
+                            className="flex items-center gap-3"
+                          >
+                            <UserAvatar
+                              alt={getInviterLabel(inviter)}
+                              fallback={getInviterLabel(inviter)}
+                              size="sm"
+                              src={inviter.sharer_avatar_url}
+                            />
+                            <div className="min-w-0 text-sm">
+                              <p className="truncate font-medium text-foreground">
+                                {getInviterLabel(inviter)}
+                              </p>
+                              {inviter.sharer_email &&
+                              inviter.sharer_email !== getInviterLabel(inviter) ? (
+                                <p className="truncate text-muted-foreground">
+                                  {inviter.sharer_email}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  {guideVisible ? (
+                    <GettingStartedPanel
+                      onAddMachine={() => void handleStartPairing()}
+                      onDismiss={() => {
+                        setShowGuide(false)
+                        setGuideHidden(true)
+                      }}
+                      onInviteViewer={() => void handleCreateInvite()}
+                    />
+                  ) : null}
+
+                  {pairingError || inviteCreateError || pairingCommand || shareInvite ? (
+                  <Card size="sm">
+                    <CardContent className="space-y-2">
+                      {pairingError ? <InlineMessage tone="error">{pairingError}</InlineMessage> : null}
+                      {inviteCreateError ? (
+                        <InlineMessage tone="error">{inviteCreateError}</InlineMessage>
+                      ) : null}
+                      {pairingCommand ? (
+                        <>
+                          <p className="text-xs text-muted-foreground">
+                            This adds that machine's own usage to your dashboard. To let
+                            someone use your plans, use Share Codex login below.
+                          </p>
+                          <CommandRow
+                            copied={isPairingCommandCopied}
+                            error={pairingCopyError}
+                            label="1. Run this once, in Terminal, on the machine where you use Codex"
+                            meta={`Expires ${formatTimestamp(pairingCommand.expiresAt)}`}
+                            onCopy={() => void handleCopyCommand()}
+                            value={pairingCommand.command}
+                          />
+                          <CommandRow
+                            copied={isSyncCommandCopied}
+                            error={syncCommandCopyError}
+                            label="2. Optional: keep this running there for live updates"
+                            onCopy={() => void handleCopySyncCommand()}
+                            value={pairingCommand.syncCommand}
+                          />
+                        </>
+                      ) : null}
+                      {shareInvite ? (
                         <CommandRow
-                          copied={isPairingCommandCopied}
-                          error={pairingCopyError}
-                          label="1. Run this once, in Terminal, on the machine where you use Codex"
-                          meta={`Expires ${formatTimestamp(pairingCommand.expiresAt)}`}
-                          onCopy={() => void handleCopyCommand()}
-                          value={pairingCommand.command}
+                          copied={isInviteLinkCopied}
+                          error={inviteCopyError}
+                          label="Send this view-only link. They sign in with Google and see your plans."
+                          meta={`Expires ${formatTimestamp(shareInvite.expiresAt)}`}
+                          onCopy={() => void handleCopyInviteLink()}
+                          value={shareInvite.inviteUrl}
                         />
-                        <CommandRow
-                          copied={isSyncCommandCopied}
-                          error={syncCommandCopyError}
-                          label="2. Optional: keep this running there for live updates"
-                          onCopy={() => void handleCopySyncCommand()}
-                          value={pairingCommand.syncCommand}
-                        />
-                      </>
-                    ) : null}
-                    {shareInvite ? (
-                      <CommandRow
-                        copied={isInviteLinkCopied}
-                        error={inviteCopyError}
-                        label="Send this view-only link. They sign in with Google and see your plans."
-                        meta={`Expires ${formatTimestamp(shareInvite.expiresAt)}`}
-                        onCopy={() => void handleCopyInviteLink()}
-                        value={shareInvite.inviteUrl}
-                      />
-                    ) : null}
-                  </CardContent>
-                </Card>
-                ) : null}
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                  ) : null}
+
+                  <div id="share-codex-login">
+                    <SharedLoginPanel accounts={accounts} onInvalidSession={handleInvalidSession} session={session} />
+                  </div>
+                </div>
 
                 <Card className="min-w-0" size="sm">
                   <CardHeader
@@ -1264,33 +1272,35 @@ export function DashboardPage() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <CardTitle>Plans</CardTitle>
+                        <CardTitle>Accounts</CardTitle>
                         <CardDescription>
                           {summary.accountsTracked}{' '}
                           {summary.accountsTracked === 1 ? 'account' : 'accounts'} · synced{' '}
                           {summary.mostRecentSync
                             ? formatRelativeTimestamp(summary.mostRecentSync)
                             : 'never'}
-                          {summary.staleAccounts > 0
+                          {showDetails && summary.staleAccounts > 0
                             ? ` · ${summary.staleAccounts} stale`
                             : ''}
                         </CardDescription>
-                        <RepairSignInsBanner devices={repairState.data} session={session} />
-                        <ConnectPlanForm devices={repairState.data} session={session} />
-                        <BrowserSessionPreference userId={session.user.id} />
                       </div>
-                      <Button
-                        className="shrink-0"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          void accountsQuery.refetch()
-                          void weeklyUsageHistoryQuery.refetch()
-                        }}
-                      >
-                        <RefreshCcw className="mr-1.5 size-3.5" />
-                        Refresh
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button aria-pressed={showDetails} onClick={() => setShowDetails((value) => !value)} size="sm" type="button" variant="ghost">
+                          {showDetails ? 'Hide details' : 'Details'}
+                        </Button>
+                        <Button
+                          className="shrink-0"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            void accountsQuery.refetch()
+                            void weeklyUsageHistoryQuery.refetch()
+                          }}
+                        >
+                          <RefreshCcw className="mr-1.5 size-3.5" />
+                          Refresh
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   {hasAccountsDetails ? (
@@ -1345,6 +1355,7 @@ export function DashboardPage() {
                             <AccountSummaryList
                               accounts={visibleAccounts}
                               usageVisibility={usageVisibility}
+                              showDetails={showDetails}
                               repairDevices={repairState.data}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
@@ -1362,6 +1373,7 @@ export function DashboardPage() {
                             <AccountTable
                               accounts={visibleAccounts}
                               usageVisibility={usageVisibility}
+                              showDetails={showDetails}
                               repairDevices={repairState.data}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
@@ -1381,15 +1393,10 @@ export function DashboardPage() {
                   ) : null}
                 </Card>
 
-                <SwitchHistoryPanel session={session} />
-
-                <div id="share-codex-login">
-                  <SharedLoginPanel
-                    accounts={accounts}
-                    onInvalidSession={handleInvalidSession}
-                    session={session}
-                  />
-                </div>
+                <details className="border-t border-border pt-3">
+                  <summary className="cursor-pointer text-sm text-muted-foreground">Switch history</summary>
+                  <div className="mt-3"><SwitchHistoryPanel session={session} /></div>
+                </details>
 
               </div>
             </div>
@@ -1644,6 +1651,7 @@ function ResetCreditsValue({ account }: { account: DashboardAccountRow }) {
 function AccountTable({
   accounts,
   usageVisibility,
+  showDetails,
   repairDevices,
   notes,
   onSaveUsageOverride,
@@ -1656,6 +1664,7 @@ function AccountTable({
 }: {
   accounts: DashboardAccountRow[]
   usageVisibility: UsageVisibility
+  showDetails: boolean
   repairDevices: RepairDevice[] | undefined
   notes: AccountNotesController | null
   onSaveUsageOverride: (
@@ -1670,7 +1679,7 @@ function AccountTable({
   session: Session
   unlinkingAccountId: string | null
 }) {
-  const columnCount = notes ? 9 : 6
+  const columnCount = showDetails ? (notes ? 9 : 6) : usageVisibility.codex ? 3 : 2
   const accountKeys = new Set(accounts.filter((account) => account.access_scope === 'owned').map(accountNoteKey))
   const noteOnly = notes ? notes.notes.filter((note) => usageVisibility[note.provider] && !accountKeys.has(noteKey(note.email, note.provider))) : []
   const suggestedAccounts = notes
@@ -1680,7 +1689,7 @@ function AccountTable({
   const emailSuggestions = [...new Set(suggestedAccounts.map((account) => normalizeNoteEmail(account.email)))]
   const editorRow = (key: string) =>
     notes ? (
-      <TableRow key={key}>
+      <TableRow key={key} hidden={!showDetails}>
         <TableCell className="px-4 py-2" colSpan={columnCount}>
           <NoteEditor controller={notes} emailSuggestions={emailSuggestions} />
         </TableCell>
@@ -1688,23 +1697,23 @@ function AccountTable({
     ) : null
 
   return (
-    <Table className={notes ? 'min-w-[1120px]' : 'min-w-[800px]'}>
+    <Table className={showDetails ? (notes ? 'min-w-[1120px]' : 'min-w-[800px]') : 'min-w-[640px]'}>
       <TableHeader className="bg-muted/50">
         <TableRow className="hover:bg-muted/50">
-          <TableHead className="h-8 w-8 px-3 text-right text-xs">#</TableHead>
+          <TableHead hidden={!showDetails} className="h-8 w-8 px-3 text-right text-xs">#</TableHead>
           <TableHead className="h-8 px-4 text-xs">Account</TableHead>
-          <TableHead className="h-8 text-xs">Synced</TableHead>
-          <TableHead className="h-8 text-xs">Usable</TableHead>
-          <TableHead className="h-8 text-xs" title="Usage-limit reset credits the account owns">Resets</TableHead>
+          <TableHead hidden={!showDetails} className="h-8 text-xs">Synced</TableHead>
+          <TableHead className="h-8 text-xs">Remaining</TableHead>
+          <TableHead hidden={!showDetails} className="h-8 text-xs" title="Usage-limit reset credits the account owns">Resets</TableHead>
           {notes ? (
             <>
-              <TableHead className="h-8 text-xs" title="The ChatGPT or Claude password for this login">Password</TableHead>
-              <TableHead className="h-8 text-xs">Google</TableHead>
-              <TableHead className="h-8 text-xs">Note</TableHead>
+              <TableHead hidden={!showDetails} className="h-8 text-xs" title="The ChatGPT or Claude password for this login">Password</TableHead>
+              <TableHead hidden={!showDetails} className="h-8 text-xs">Google</TableHead>
+              <TableHead hidden={!showDetails} className="h-8 text-xs">Note</TableHead>
             </>
           ) : null}
-          <TableHead className="h-8 w-16 px-4 text-right">
-            {notes ? (
+          <TableHead hidden={!showDetails && !usageVisibility.codex} className="h-8 w-16 px-4 text-right">
+            {showDetails && notes ? (
               <Button
                 aria-label="Add a note for another email"
                 className="size-6"
@@ -1718,7 +1727,7 @@ function AccountTable({
                 <Plus className="size-3.5" />
               </Button>
             ) : (
-              <span className="sr-only">Unlink</span>
+              <span className="sr-only">Switch</span>
             )}
           </TableHead>
         </TableRow>
@@ -1733,13 +1742,6 @@ function AccountTable({
         ) : null}
         {accounts.map((account, index) => {
           const identity = getAccountIdentityLines(account)
-          const limitWindows = getRateLimitWindows(account)
-          const weeklyExhausted = limitWindows.some(
-            (window) =>
-              window.windowDurationMins === 10_080 &&
-              window.remainingPercent != null &&
-              window.remainingPercent <= 0,
-          )
           const isOwnedAccount = account.access_scope === 'owned'
           const isUnlinking = unlinkingAccountId === account.id
           const note = notes && isOwnedAccount ? notes.byAccount.get(accountNoteKey(account)) : undefined
@@ -1749,35 +1751,32 @@ function AccountTable({
 
           return (
             <TableRow key={account.id}>
-              <TableCell className="px-3 py-1.5 text-right text-xs text-muted-foreground tabular-nums">
+              <TableCell hidden={!showDetails} className="px-3 py-1.5 text-right text-xs text-muted-foreground tabular-nums">
                 {index + 1}
               </TableCell>
               <TableCell className="px-4 py-1.5">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <span title={[identity.secondary, formatPlanLine(account)].filter(Boolean).join(' · ')}>
-                    <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(note?.googlePassword)}>
+                    <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(note?.googlePassword)} showMethodSelector={showDetails}>
                       {identity.primary}
                     </AccountBrowserLink>
                   </span>
-                  {isClaudeAccount(account) ? <ClaudeBadge /> : null}
+                  {isClaudeAccount(account) && (showDetails || (usageVisibility.codex && usageVisibility.claude)) ? <ClaudeBadge /> : null}
                   {account.plan_type ? (
-                    <span className="rounded border border-border px-1 text-[10px] uppercase leading-4 text-muted-foreground">
+                    <span className="text-[10px] uppercase leading-4 text-muted-foreground">
                       {account.plan_type}
                     </span>
                   ) : null}
-                  <SubscriptionEnd rawRateLimits={account.raw_rate_limits} />
-                  {isOwnedAccount ? (
+                  {showDetails ? <SubscriptionEnd rawRateLimits={account.raw_rate_limits} /> : null}
+                  {showDetails && isOwnedAccount ? (
                     <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
-                  ) : null}
-                  {isOwnedAccount && !isClaudeAccount(account) ? (
-                    <UsePlanControl device={planSwitchDevice} email={account.email} session={session} />
                   ) : null}
                   {!isOwnedAccount ? (
                     <SharedAccessNote inviter={primaryInviter} />
                   ) : null}
                 </div>
               </TableCell>
-              <TableCell className="py-1.5">
+              <TableCell hidden={!showDetails} className="py-1.5">
                 <p
                   className="text-sm text-foreground"
                   title={formatTimestamp(account.last_snapshot_at)}
@@ -1786,69 +1785,20 @@ function AccountTable({
                 </p>
               </TableCell>
               <TableCell className="py-1.5">
-                <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  {limitWindows.length > 0 ? (
-                    limitWindows.map((window) => (
-                      <div className="flex items-center gap-2" key={window.key}>
-                        <span
-                          aria-hidden="true"
-                          className={`size-1.5 shrink-0 rounded-full ${
-                            window.windowDurationMins === 300 && weeklyExhausted
-                              ? 'bg-red-500'
-                              : window.remainingPercent == null
-                                ? 'bg-muted-foreground/40'
-                                : window.remainingPercent <= 0
-                                  ? 'bg-red-500'
-                                  : window.remainingPercent <= 20
-                                    ? 'bg-amber-500'
-                                    : 'bg-emerald-500'
-                          }`}
-                        />
-                        <p className="w-12 text-xs text-muted-foreground">
-                          {window.label}
-                        </p>
-                        <RemainingPercentageEditor
-                          canEdit={isOwnedAccount}
-                          isOverridden={
-                            window.key === 'primary'
-                              ? account.primary_remaining_overridden
-                              : account.secondary_remaining_overridden
-                          }
-                          isSaving={
-                            savingUsageOverride ===
-                            `${account.id}:${window.key}`
-                          }
-                          onSave={(value) =>
-                            onSaveUsageOverride(account, window.key, value)
-                          }
-                          value={window.remainingPercent}
-                          windowLabel={window.label}
-                        />
-                        <p
-                          className="text-xs text-muted-foreground"
-                          title={formatTimestamp(window.resetsAt)}
-                        >
-                          resets {formatResetCountdown(window.resetsAt)}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-muted-foreground">N/A</span>
-                  )}
-                </div>
+                <UsageWindowList account={account} showDetails={showDetails} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} />
               </TableCell>
-              <TableCell className="py-1.5 text-xs tabular-nums">
+              <TableCell hidden={!showDetails} className="py-1.5 text-xs tabular-nums">
                 <ResetCreditsValue account={account} />
               </TableCell>
               {notes ? (
                 <>
-                  <TableCell className="py-1.5">
+                  <TableCell hidden={!showDetails} className="py-1.5">
                     {isOwnedAccount ? <NoteSecret controller={notes} field="chatgptPassword" note={note} /> : null}
                   </TableCell>
-                  <TableCell className="py-1.5">
+                  <TableCell hidden={!showDetails} className="py-1.5">
                     {isOwnedAccount ? <NoteSecret controller={notes} field="googlePassword" note={note} /> : null}
                   </TableCell>
-                  <TableCell className="max-w-[16rem] py-1.5">
+                  <TableCell hidden={!showDetails} className="max-w-[16rem] py-1.5">
                     {isOwnedAccount ? (
                       <p className="truncate text-xs" title={note?.note ?? ''}>
                         {note?.note ?? <span className="text-muted-foreground">·</span>}
@@ -1857,9 +1807,10 @@ function AccountTable({
                   </TableCell>
                 </>
               ) : null}
-              <TableCell className="px-4 py-1.5 text-right">
-                {isOwnedAccount ? (
-                  <span className="inline-flex items-center gap-0.5">
+              <TableCell hidden={!showDetails && !usageVisibility.codex} className="px-4 py-1.5 text-right">
+                {isOwnedAccount && !isClaudeAccount(account) ? <UsePlanControl device={planSwitchDevice} email={account.email} session={session} /> : null}
+                {showDetails && isOwnedAccount ? (
+                  <span className="ml-2 inline-flex items-center gap-0.5">
                     {notes && account.email ? (
                       <Button
                         aria-label={`Edit passwords and note for ${account.email}`}
@@ -1890,7 +1841,7 @@ function AccountTable({
               notes.isEditing(note.email, note.provider) ? (
                 editorRow(`note:${noteKey(note.email, note.provider)}`)
               ) : (
-                <TableRow key={`note:${noteKey(note.email, note.provider)}`}>
+                <TableRow hidden={!showDetails} key={`note:${noteKey(note.email, note.provider)}`}>
                   <TableCell className="px-3 py-1.5" />
                   <TableCell className="px-4 py-1.5">
                     <p className="truncate font-mono text-xs" title={note.email}>
@@ -1902,7 +1853,7 @@ function AccountTable({
                   <TableCell className="py-1.5 text-xs text-muted-foreground">·</TableCell>
                   <TableCell className="py-1.5"><NoteSecret controller={notes} field="chatgptPassword" note={note} /></TableCell>
                   <TableCell className="py-1.5"><NoteSecret controller={notes} field="googlePassword" note={note} /></TableCell>
-                  <TableCell className="max-w-[16rem] py-1.5">
+                  <TableCell hidden={!showDetails} className="max-w-[16rem] py-1.5">
                     <p className="truncate text-xs" title={note.note ?? ''}>
                       {note.note ?? <span className="text-muted-foreground">·</span>}
                     </p>
@@ -1930,6 +1881,7 @@ function AccountTable({
 function AccountSummaryList({
   accounts,
   usageVisibility,
+  showDetails,
   repairDevices,
   notes,
   onSaveUsageOverride,
@@ -1942,6 +1894,7 @@ function AccountSummaryList({
 }: {
   accounts: DashboardAccountRow[]
   usageVisibility: UsageVisibility
+  showDetails: boolean
   repairDevices: RepairDevice[] | undefined
   notes: AccountNotesController | null
   onSaveUsageOverride: (
@@ -1969,15 +1922,15 @@ function AccountSummaryList({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="flex flex-wrap items-baseline gap-x-2 font-medium text-foreground">
-                  <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(notes?.byAccount.get(accountNoteKey(account))?.googlePassword)}>{identity.primary}</AccountBrowserLink>
-                  {isClaudeAccount(account) ? <ClaudeBadge /> : null}
+                  <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(notes?.byAccount.get(accountNoteKey(account))?.googlePassword)} showMethodSelector={showDetails}>{identity.primary}</AccountBrowserLink>
+                  {isClaudeAccount(account) && (showDetails || (usageVisibility.codex && usageVisibility.claude)) ? <ClaudeBadge /> : null}
                 </p>
-                {identity.secondary ? (
+                {showDetails && identity.secondary ? (
                   <p className="truncate text-sm text-muted-foreground">
                     {identity.secondary}
                   </p>
                 ) : null}
-                {isOwnedAccount ? (
+                {showDetails && isOwnedAccount ? (
                   <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                 ) : null}
                 {isOwnedAccount && !isClaudeAccount(account) ? (
@@ -1989,7 +1942,7 @@ function AccountSummaryList({
                   <SharedAccessNote inviter={primaryInviter} />
                 ) : null}
               </div>
-              {isOwnedAccount ? (
+              {showDetails && isOwnedAccount ? (
                 <UnlinkAccountButton
                   disabled={Boolean(unlinkingAccountId)}
                   isUnlinking={isUnlinking}
@@ -1998,7 +1951,10 @@ function AccountSummaryList({
               ) : null}
             </div>
 
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            <div hidden={showDetails}>
+              <UsageWindowList account={account} showDetails={false} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} />
+            </div>
+            <dl hidden={!showDetails} className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <MetaField
                 label="Snapshot"
                 value={formatRelativeTimestamp(account.last_snapshot_at)}
@@ -2072,7 +2028,7 @@ function AccountSummaryList({
         ? notes.notes
             .filter((note) => usageVisibility[note.provider] && !accounts.some((account) => account.access_scope === 'owned' && accountNoteKey(account) === noteKey(note.email, note.provider)))
             .map((note) => (
-              <div className="space-y-2 px-4 py-2.5" key={`note:${noteKey(note.email, note.provider)}`}>
+              <div hidden={!showDetails} className="space-y-2 px-4 py-2.5" key={`note:${noteKey(note.email, note.provider)}`}>
                 {notes.isEditing(note.email, note.provider) ? (
                   <NoteEditor controller={notes} />
                 ) : (
@@ -2095,7 +2051,7 @@ function AccountSummaryList({
             ))
         : null}
       {notes ? (
-        <div className="px-4 py-2.5">
+        <div hidden={!showDetails} className="px-4 py-2.5">
           {notes.adding ? (
             <NoteEditor controller={notes} />
           ) : (
@@ -2277,33 +2233,6 @@ function MetaField({
       </dd>
     </div>
   )
-}
-
-function formatResetCountdown(value: Date | string | null | undefined) {
-  if (!value) {
-    return 'N/A'
-  }
-
-  const resetAt = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(resetAt.getTime())) {
-    return 'N/A'
-  }
-
-  const remainingMs = Math.max(0, resetAt.getTime() - Date.now())
-  const totalMinutes = Math.floor(remainingMs / 60000)
-  const days = Math.floor(totalMinutes / (24 * 60))
-  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
-  const minutes = totalMinutes % 60
-
-  if (days > 0) {
-    return `in ${days}d ${hours}h`
-  }
-
-  if (hours > 0) {
-    return `in ${hours}h ${minutes}m`
-  }
-
-  return `in ${minutes}m`
 }
 
 function getIsGuestSession(session: Session | null) {
