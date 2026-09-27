@@ -92,6 +92,7 @@ import { SharedLoginPanel } from './shared-login-panel'
 import { GettingStartedPanel } from './getting-started-panel'
 import { SwitchHistoryPanel } from './switch-history-panel'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
+import { filterUsageAccounts, readUsageVisibility, saveUsageVisibility, type UsageVisibility } from './usage-provider-visibility'
 
 interface PairingCommandState {
   command: string
@@ -168,6 +169,7 @@ export function DashboardPage() {
   )
   const [weeklyUsageRange, setWeeklyUsageRange] =
     useState<DashboardWeeklyUsageRange>('7d')
+  const [usageVisibility, setUsageVisibility] = useState(readUsageVisibility)
   const showInviteLanding = Boolean(inviteToken)
   const canLoadDashboardData = Boolean(session?.user.id) && !showInviteLanding
 
@@ -188,9 +190,10 @@ export function DashboardPage() {
   })
 
   const accounts = accountsQuery.data ?? []
+  const visibleAccounts = filterUsageAccounts(accounts, usageVisibility)
   const inviters = invitersQuery.data ?? []
   const weeklyUsageHistory = weeklyUsageHistoryQuery.data ?? []
-  const summary = buildSummary(accounts)
+  const summary = buildSummary(visibleAccounts)
   const connectCommand =
     typeof window === 'undefined'
       ? ''
@@ -1320,13 +1323,27 @@ export function DashboardPage() {
                             }
                             isLoading={weeklyUsageHistoryQuery.isPending}
                             onRangeChange={setWeeklyUsageRange}
+                            onVisibilityChange={(visible) => {
+                              setUsageVisibility(visible)
+                              saveUsageVisibility(visible)
+                            }}
                             points={weeklyUsageHistory}
                             range={weeklyUsageRange}
+                            visible={usageVisibility}
                           />
-                          <ResetPlanPanel accounts={accounts} />
+                          {usageVisibility.codex && visibleAccounts.some((account) => !isClaudeAccount(account)) ? (
+                            <ResetPlanPanel accounts={visibleAccounts} />
+                          ) : null}
+                          {visibleAccounts.length === 0 ? (
+                            <p className="px-4 py-3 text-sm text-muted-foreground">
+                              {usageVisibility.codex || usageVisibility.claude
+                                ? 'No accounts for the selected provider.'
+                                : 'Select Codex or Claude to show accounts.'}
+                            </p>
+                          ) : null}
                           <div className="md:hidden">
                             <AccountSummaryList
-                              accounts={accounts}
+                              accounts={visibleAccounts}
                               repairDevices={repairState.data}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
@@ -1342,7 +1359,8 @@ export function DashboardPage() {
                           </div>
                           <div className="hidden md:block">
                             <AccountTable
-                              accounts={accounts}
+                              accounts={visibleAccounts}
+                              usageVisibility={usageVisibility}
                               repairDevices={repairState.data}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
@@ -1624,6 +1642,7 @@ function ResetCreditsValue({ account }: { account: DashboardAccountRow }) {
 
 function AccountTable({
   accounts,
+  usageVisibility,
   repairDevices,
   notes,
   onSaveUsageOverride,
@@ -1635,6 +1654,7 @@ function AccountTable({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  usageVisibility: UsageVisibility
   repairDevices: RepairDevice[] | undefined
   notes: AccountNotesController | null
   onSaveUsageOverride: (
@@ -1651,7 +1671,7 @@ function AccountTable({
 }) {
   const columnCount = notes ? 9 : 6
   const accountKeys = new Set(accounts.filter((account) => account.access_scope === 'owned').map(accountNoteKey))
-  const noteOnly = notes ? notes.notes.filter((note) => !accountKeys.has(noteKey(note.email, note.provider))) : []
+  const noteOnly = notes ? notes.notes.filter((note) => usageVisibility[note.provider] && !accountKeys.has(noteKey(note.email, note.provider))) : []
   const suggestedAccounts = notes
     ? accounts
         .filter((account) => account.access_scope === 'owned' && account.email && !notes.byAccount.has(accountNoteKey(account)))
@@ -1687,8 +1707,8 @@ function AccountTable({
               <Button
                 aria-label="Add a note for another email"
                 className="size-6"
-                disabled={notes.busy || notes.adding}
-                onClick={() => notes.startAdd(emailSuggestions[0] ?? '', suggestedAccounts[0] ? accountNoteProvider(suggestedAccounts[0]) : 'codex')}
+                disabled={notes.busy || notes.adding || !(usageVisibility.codex || usageVisibility.claude)}
+                onClick={() => notes.startAdd(emailSuggestions[0] ?? '', suggestedAccounts[0] ? accountNoteProvider(suggestedAccounts[0]) : usageVisibility.codex ? 'codex' : 'claude')}
                 size="icon"
                 title="Add a note for another email"
                 type="button"
