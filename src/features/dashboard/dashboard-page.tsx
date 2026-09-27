@@ -1344,6 +1344,7 @@ export function DashboardPage() {
                           <div className="md:hidden">
                             <AccountSummaryList
                               accounts={visibleAccounts}
+                              usageVisibility={usageVisibility}
                               repairDevices={repairState.data}
                               notes={accountNotes}
                               onSaveUsageOverride={handleSaveUsageOverride}
@@ -1928,6 +1929,7 @@ function AccountTable({
 
 function AccountSummaryList({
   accounts,
+  usageVisibility,
   repairDevices,
   notes,
   onSaveUsageOverride,
@@ -1939,6 +1941,7 @@ function AccountSummaryList({
   unlinkingAccountId,
 }: {
   accounts: DashboardAccountRow[]
+  usageVisibility: UsageVisibility
   repairDevices: RepairDevice[] | undefined
   notes: AccountNotesController | null
   onSaveUsageOverride: (
@@ -2067,7 +2070,7 @@ function AccountSummaryList({
       })}
       {notes
         ? notes.notes
-            .filter((note) => !accounts.some((account) => account.access_scope === 'owned' && accountNoteKey(account) === noteKey(note.email, note.provider)))
+            .filter((note) => usageVisibility[note.provider] && !accounts.some((account) => account.access_scope === 'owned' && accountNoteKey(account) === noteKey(note.email, note.provider)))
             .map((note) => (
               <div className="space-y-2 px-4 py-2.5" key={`note:${noteKey(note.email, note.provider)}`}>
                 {notes.isEditing(note.email, note.provider) ? (
@@ -2096,7 +2099,7 @@ function AccountSummaryList({
           {notes.adding ? (
             <NoteEditor controller={notes} />
           ) : (
-            <Button disabled={notes.busy} onClick={() => notes.startAdd()} size="sm" type="button" variant="outline">
+            <Button disabled={notes.busy || !(usageVisibility.codex || usageVisibility.claude)} onClick={() => notes.startAdd('', usageVisibility.codex ? 'codex' : 'claude')} size="sm" type="button" variant="outline">
               <Plus className="size-3.5" /> Add a note for another email
             </Button>
           )}
