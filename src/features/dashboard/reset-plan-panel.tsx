@@ -52,25 +52,6 @@ export function ResetPlanPanel({ accounts }: { accounts: DashboardAccountRow[] }
               ? `${plan.nextAvailable.windowLabel} resets in ${formatTimeUntil(plan.nextAvailable.at, now)}`
               : 'Sync again to rebuild the plan.'}
         </span>
-        {fallbacks.length > 0 ? (
-          <span className="text-muted-foreground">
-            then {fallbacks.map((fallback) => fallback.accountLabel).join(', ')}
-          </span>
-        ) : null}
-        {resetCredit ? (
-          <span className="text-muted-foreground">
-            or spend {resetCredit.accountLabel}&apos;s reset{' '}
-            {resetCredit.lastChance
-              ? `(last chance: its plan ends in ${formatWait(resetCredit.savedMs)})`
-              : `(saves ${formatWait(resetCredit.savedMs)})`}
-          </span>
-        ) : null}
-        {nextReset ? (
-          <span className="text-muted-foreground">
-            next reset {formatTimeUntil(nextReset.at, now)} ({nextReset.accountLabel},{' '}
-            {nextReset.windowLabel})
-          </span>
-        ) : null}
         <button
           aria-expanded={isOpen}
           className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
@@ -83,63 +64,86 @@ export function ResetPlanPanel({ accounts }: { accounts: DashboardAccountRow[] }
       </div>
 
       {isOpen ? (
-        <div className="mt-3 grid gap-4 border-t border-border pt-3 md:grid-cols-2">
-          <div>
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Order
-            </p>
-            <ol className="mt-1.5 space-y-1">
-              {plan.current ? (
-                <li className="flex items-baseline gap-2">
-                  <span className="w-4 text-muted-foreground">1.</span>
-                  <span className="min-w-0">
-                    <span className="font-medium text-foreground">{plan.current.accountLabel}</span>
-                    <span className="text-muted-foreground"> · {formatUsableBalance(plan.current)}</span>
-                  </span>
-                </li>
-              ) : null}
-              {fallbacks.map((fallback, index) => (
-                <li className="flex items-baseline gap-2" key={fallback.accountId}>
-                  <span className="w-4 text-muted-foreground">{index + (plan.current ? 2 : 1)}.</span>
-                  <span className="min-w-0">
-                    <span className="font-medium text-foreground">{fallback.accountLabel}</span>
-                    <span className="text-muted-foreground"> · {formatUsableBalance(fallback)}</span>
-                  </span>
-                </li>
-              ))}
-              {!plan.current && plan.nextAvailable ? (
-                <li className="text-muted-foreground">
-                  <NextAvailable event={plan.nextAvailable} now={now} />
-                </li>
-              ) : null}
-            </ol>
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1">
+            {fallbacks.length > 0 ? (
+              <span className="text-muted-foreground">
+                then {fallbacks.map((fallback) => fallback.accountLabel).join(', ')}
+              </span>
+            ) : null}
+            {resetCredit ? (
+              <span className="text-muted-foreground">
+                or spend {resetCredit.accountLabel}&apos;s reset{' '}
+                {resetCredit.lastChance
+                  ? `(last chance: its plan ends in ${formatWait(resetCredit.savedMs)})`
+                  : `(saves ${formatWait(resetCredit.savedMs)})`}
+              </span>
+            ) : null}
+            {nextReset ? (
+              <span className="text-muted-foreground">
+                next reset {formatTimeUntil(nextReset.at, now)} ({nextReset.accountLabel},{' '}
+                {nextReset.windowLabel})
+              </span>
+            ) : null}
           </div>
-          <div>
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Upcoming resets
-            </p>
-            {plan.upcomingResets.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Order
+              </p>
               <ol className="mt-1.5 space-y-1">
-                {plan.upcomingResets.slice(0, MAX_UPCOMING_RESETS).map((event) => (
-                  <li
-                    className="flex flex-wrap items-baseline gap-x-2"
-                    key={`${event.accountId}-${event.windowKey}`}
-                  >
-                    <span className="w-14 font-medium text-foreground">
-                      {formatTimeUntil(event.at, now)}
+                {plan.current ? (
+                  <li className="flex items-baseline gap-2">
+                    <span className="w-4 text-muted-foreground">1.</span>
+                    <span className="min-w-0">
+                      <span className="font-medium text-foreground">{plan.current.accountLabel}</span>
+                      <span className="text-muted-foreground"> · {formatUsableBalance(plan.current)}</span>
                     </span>
-                    <span className="min-w-0 text-muted-foreground">
-                      {event.accountLabel} · {event.windowLabel}
-                      {event.projectedUsablePercent != null
-                        ? ` · about ${event.projectedUsablePercent}% usable`
-                        : ''}
+                  </li>
+                ) : null}
+                {fallbacks.map((fallback, index) => (
+                  <li className="flex items-baseline gap-2" key={fallback.accountId}>
+                    <span className="w-4 text-muted-foreground">{index + (plan.current ? 2 : 1)}.</span>
+                    <span className="min-w-0">
+                      <span className="font-medium text-foreground">{fallback.accountLabel}</span>
+                      <span className="text-muted-foreground"> · {formatUsableBalance(fallback)}</span>
                     </span>
                   </li>
                 ))}
+                {!plan.current && plan.nextAvailable ? (
+                  <li className="text-muted-foreground">
+                    <NextAvailable event={plan.nextAvailable} now={now} />
+                  </li>
+                ) : null}
               </ol>
-            ) : (
-              <p className="mt-1.5 text-muted-foreground">No future reset times were reported.</p>
-            )}
+            </div>
+            <div>
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Upcoming resets
+              </p>
+              {plan.upcomingResets.length > 0 ? (
+                <ol className="mt-1.5 space-y-1">
+                  {plan.upcomingResets.slice(0, MAX_UPCOMING_RESETS).map((event) => (
+                    <li
+                      className="flex flex-wrap items-baseline gap-x-2"
+                      key={`${event.accountId}-${event.windowKey}`}
+                    >
+                      <span className="w-14 font-medium text-foreground">
+                        {formatTimeUntil(event.at, now)}
+                      </span>
+                      <span className="min-w-0 text-muted-foreground">
+                        {event.accountLabel} · {event.windowLabel}
+                        {event.projectedUsablePercent != null
+                          ? ` · about ${event.projectedUsablePercent}% usable`
+                          : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-1.5 text-muted-foreground">No future reset times were reported.</p>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

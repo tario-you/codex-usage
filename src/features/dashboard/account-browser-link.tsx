@@ -15,8 +15,8 @@ function subscribeMethod(onChange: () => void) {
 
 type BrowserDevice = { id: string; label: string; machine_name: string | null }
 
-export function AccountBrowserLink({ account, session, children, hasGoogleCredential = false }: {
-  account: DashboardAccountRow; session: Session; children: ReactNode; hasGoogleCredential?: boolean
+export function AccountBrowserLink({ account, session, children, hasGoogleCredential = false, showMethodSelector = true }: {
+  account: DashboardAccountRow; session: Session; children: ReactNode; hasGoogleCredential?: boolean; showMethodSelector?: boolean
 }) {
   const [browserMode] = useBrowserSessionMode(session.user?.id)
   const storageKey = `browser-login-method:${session.user?.id}:${account.id}`
@@ -78,12 +78,12 @@ export function AccountBrowserLink({ account, session, children, hasGoogleCreden
     <span className="inline-flex min-w-0 flex-col items-start">
       <span className="inline-flex max-w-full items-baseline gap-2">
       {browserMode === 'current' ? <a href={currentBrowserUrl} target="_blank" rel="noopener noreferrer"
-        className="min-w-0 truncate text-left font-medium text-foreground underline underline-offset-2"
+        className="min-w-0 truncate text-left font-medium text-foreground hover:underline underline-offset-2"
         title={`Open ${provider} sign-in for ${account.email} in this browser profile.${provider === 'Claude' && loginMethod === 'google' ? ' Choose Continue with Google on Claude.' : ''} The provider may keep its current account.`}
-        aria-label={`Open ${provider} sign-in for ${account.email}`}>{children}</a> : <button type="button" className="min-w-0 truncate text-left font-medium text-foreground underline underline-offset-2 disabled:opacity-60"
+        aria-label={`Open ${provider} sign-in for ${account.email}`}>{children}</a> : <button type="button" className="min-w-0 truncate text-left font-medium text-foreground hover:underline underline-offset-2 disabled:opacity-60"
         title={`Open ${provider} in the Chrome session for ${account.email} using ${loginMethod === 'google' ? 'Google' : 'email'}. Sign in once on first use.`}
         aria-label={`Open ${provider} as ${account.email}`} disabled={busy} onClick={() => void click()}>{children}</button>}
-      <select aria-label={`Sign-in method for ${provider} ${account.email}`} value={loginMethod} disabled={busy}
+      <select hidden={!showMethodSelector} aria-label={`Sign-in method for ${provider} ${account.email}`} value={loginMethod} disabled={busy}
         title="Sign-in method; your choice is remembered on this browser. Google is the default when a Google credential is saved."
         className="shrink-0 bg-background text-xs font-normal text-muted-foreground"
         onChange={event => {

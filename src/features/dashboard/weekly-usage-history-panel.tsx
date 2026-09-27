@@ -17,6 +17,7 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
   range: DashboardWeeklyUsageRange
   visible: UsageVisibility
 }) {
+  const [showHistory, setShowHistory] = useState(false)
   const series = buildProviderSeries(points, accounts, visible)
   return (
     <section className="border-b border-border px-4 py-2.5">
@@ -35,39 +36,56 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
             ))}
           </div>
         </div>
-        <div aria-label="History range" className="inline-flex rounded-lg border border-border bg-background p-0.5" role="group">
+        <button aria-expanded={showHistory} aria-controls="usage-history" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowHistory((value) => !value)} type="button">
+          {showHistory ? 'Hide history' : 'Usage history'}
+        </button>
+      </div>
+      {series.map((item) => {
+        const latest = item.points.at(-1)
+        return (
+          <p key={item.key} className="mt-1 text-sm text-muted-foreground">
+            {item.label} · {latest && item.capacityPercent > 0
+              ? `${Math.round(latest.totalRemainingPercent / item.capacityPercent * 100)}% remaining`
+              : isLoading ? 'Loading…' : 'No usage yet'}
+          </p>
+        )
+      })}
+      {errorMessage ? <p role="alert" className="mt-2 text-sm text-destructive">{errorMessage}</p> : null}
+      <div hidden={!showHistory} id="usage-history" className="mt-3">
+        <div className="flex justify-end">
+          <div aria-label="History range" className="inline-flex rounded-lg border border-border bg-background p-0.5" role="group">
           {dashboardWeeklyUsageRanges.map((option) => (
             <button key={option.value} aria-pressed={option.value === range} type="button"
               className={`h-6 rounded-md px-2 text-xs font-medium ${option.value === range ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               onClick={() => onRangeChange(option.value)}>{option.label}</button>
           ))}
+          </div>
         </div>
+        <details className="mt-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Calculation details</summary>
+          {series.map((item) => {
+            const latest = item.points.at(-1)
+            const projection = item.projection
+            return <p key={item.key} className="mt-1">
+              {item.label}: {latest ? `${latest.totalRemainingPercent}% of ${item.capacityPercent}% total capacity · Updated ${formatRelativeTimestamp(latest.fetchedAt)}` : 'No sync history.'}
+              {projection ? ` · ${projection.percentPerHour}%/h · ${projection.runsOutAt ? `first empty ${timestamp(projection.runsOutAt)}` : `forecast through ${timestamp(projection.endAt!)}`} · ${projection.resets?.length ?? 0} resets` : ''}
+            </p>
+          })}
+          {visible.codex ? (
+            <p className="mt-1 text-xs text-muted-foreground">Codex capacity: Pro = 100%, ProLite = 25%. Account rows show each plan’s own percentage.</p>
+          ) : null}
+          {series.some((item) => item.projection) ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Dashed: 7-day estimate from latest sync, using soonest-reset plans first. Jumps: weekly refills.
+              Only reported resets included; session limits and sign-in availability may limit use.
+            </p>
+          ) : null}
+        </details>
+        {series.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">Select Codex or Claude to show usage.</p>
+          : series.some((item) => item.points.length) ? <ProviderUsageChart series={series} range={range} />
+          : isLoading ? <div className="mt-2 h-28 animate-pulse rounded-md bg-muted" />
+          : <p className="py-6 text-center text-sm text-muted-foreground">No points to plot.</p>}
       </div>
-      {series.map((item) => {
-        const latest = item.points.at(-1)
-        const projection = item.projection
-        return (
-          <p key={item.key} className="mt-1 text-sm text-muted-foreground">
-            <span className="font-medium" style={{ color: item.color }}>{item.label}</span>{' · '}
-            {latest ? `${latest.totalRemainingPercent}% left of ${item.capacityPercent}% · Updated ${formatRelativeTimestamp(latest.fetchedAt)}` : isLoading ? 'Loading sync history…' : 'No sync history in this range.'}
-            {projection ? ` · ${projection.percentPerHour}%/h recent pace · ${projection.runsOutAt ? `first empty ${timestamp(projection.runsOutAt)}` : `no depletion projected through ${timestamp(projection.endAt!)}`} · ${projection.resets?.length ?? 0} reported resets included` : ''}
-          </p>
-        )
-      })}
-      {visible.codex ? (
-        <p className="mt-1 text-xs text-muted-foreground">Codex capacity: Pro = 100%, ProLite = 25%. Account rows show each plan’s own percentage.</p>
-      ) : null}
-      {series.some((item) => item.projection) ? (
-        <p className="mt-1 text-xs text-muted-foreground">
-          Dashed: 7-day estimate from latest sync, using soonest-reset plans first. Jumps: weekly refills.
-          Only reported resets included; session limits and sign-in availability may limit use.
-        </p>
-      ) : null}
-      {errorMessage ? <p role="alert" className="mt-2 text-sm text-destructive">{errorMessage}</p>
-        : series.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">Select Codex or Claude to show usage.</p>
-        : series.some((item) => item.points.length) ? <ProviderUsageChart series={series} range={range} />
-        : isLoading ? <div className="mt-2 h-28 animate-pulse rounded-md bg-muted" />
-        : <p className="py-6 text-center text-sm text-muted-foreground">No points to plot.</p>}
     </section>
   )
 }
