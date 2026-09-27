@@ -17,7 +17,7 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
   range: DashboardWeeklyUsageRange
   visible: UsageVisibility
 }) {
-  const [showHistory, setShowHistory] = useState(false)
+  const [showHistory, setShowHistory] = useState(true)
   const series = buildProviderSeries(points, accounts, visible)
   return (
     <section className="border-b border-border px-4 py-2.5">
