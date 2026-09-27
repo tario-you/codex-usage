@@ -1713,6 +1713,12 @@ function AccountTable({
         {accounts.map((account, index) => {
           const identity = getAccountIdentityLines(account)
           const limitWindows = getRateLimitWindows(account)
+          const weeklyExhausted = limitWindows.some(
+            (window) =>
+              window.windowDurationMins === 10_080 &&
+              window.remainingPercent != null &&
+              window.remainingPercent <= 0,
+          )
           const isOwnedAccount = account.access_scope === 'owned'
           const isUnlinking = unlinkingAccountId === account.id
           const note = notes && isOwnedAccount ? notes.byAccount.get(accountNoteKey(account)) : undefined
@@ -1766,13 +1772,15 @@ function AccountTable({
                         <span
                           aria-hidden="true"
                           className={`size-1.5 shrink-0 rounded-full ${
-                            window.remainingPercent == null
-                              ? 'bg-muted-foreground/40'
-                              : window.remainingPercent <= 0
-                                ? 'bg-red-500'
-                                : window.remainingPercent <= 20
-                                  ? 'bg-amber-500'
-                                  : 'bg-emerald-500'
+                            window.windowDurationMins === 300 && weeklyExhausted
+                              ? 'bg-red-500'
+                              : window.remainingPercent == null
+                                ? 'bg-muted-foreground/40'
+                                : window.remainingPercent <= 0
+                                  ? 'bg-red-500'
+                                  : window.remainingPercent <= 20
+                                    ? 'bg-amber-500'
+                                    : 'bg-emerald-500'
                           }`}
                         />
                         <p className="w-12 text-xs text-muted-foreground">
