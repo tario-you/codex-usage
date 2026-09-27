@@ -7,7 +7,7 @@ export const USAGE_PROVIDERS = [
   { key: 'codex', label: 'Codex', color: '#3b82f6' },
   { key: 'claude', label: 'Claude', color: '#f97316' },
 ] as const
-export const DEFAULT_USAGE_VISIBILITY: Record<UsageProvider, boolean> = { codex: true, claude: false }
+export { DEFAULT_USAGE_VISIBILITY } from './usage-provider-visibility'
 
 export function buildProviderSeries(
   points: DashboardWeeklyUsageHistoryPoint[],

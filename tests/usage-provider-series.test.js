@@ -61,6 +61,7 @@ test('the rendered default chart exposes both toggles and draws only Codex', asy
   const { WeeklyUsageHistoryPanel } = await import('../src/features/dashboard/weekly-usage-history-panel')
   const html = renderToStaticMarkup(createElement(WeeklyUsageHistoryPanel, {
     accounts, points, range: '7d', isLoading: false, errorMessage: null, onRangeChange: () => {},
+    visible: DEFAULT_USAGE_VISIBILITY, onVisibilityChange: () => {},
   }))
   assert.match(html, /data-provider="codex"/)
   assert.doesNotMatch(html, /data-provider="claude"/)

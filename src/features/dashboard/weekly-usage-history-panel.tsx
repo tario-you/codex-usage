@@ -2,19 +2,21 @@ import { useState, type PointerEvent } from 'react'
 import type { DashboardAccountRow, DashboardWeeklyUsageHistoryPoint } from '../../lib/dashboard'
 import { formatRelativeTimestamp } from '../../shared/codex'
 import { dashboardWeeklyUsageRanges, type DashboardWeeklyUsageRange } from './usage-history-ranges'
-import { buildProviderSeries, DEFAULT_USAGE_VISIBILITY, USAGE_PROVIDERS, type UsageProviderSeries } from './usage-provider-series'
+import { buildProviderSeries, USAGE_PROVIDERS, type UsageProviderSeries } from './usage-provider-series'
+import type { UsageVisibility } from './usage-provider-visibility'
 import { buildWeeklyUsageChart, formatHistoryTooltipTimestamp as timestamp } from './weekly-usage-chart'
 import { readingAtX } from './usage-history-hover'
 
-export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onRangeChange, points, range }: {
+export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onRangeChange, onVisibilityChange, points, range, visible }: {
   accounts: DashboardAccountRow[]
   errorMessage: string | null
   isLoading: boolean
   onRangeChange: (range: DashboardWeeklyUsageRange) => void
+  onVisibilityChange: (visible: UsageVisibility) => void
   points: DashboardWeeklyUsageHistoryPoint[]
   range: DashboardWeeklyUsageRange
+  visible: UsageVisibility
 }) {
-  const [visible, setVisible] = useState(DEFAULT_USAGE_VISIBILITY)
   const series = buildProviderSeries(points, accounts, visible)
   return (
     <section className="border-b border-border px-4 py-2.5">
@@ -26,7 +28,7 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
               <label key={provider.key} className="flex cursor-pointer items-center gap-1.5">
                 <input type="checkbox" checked={visible[provider.key]}
                   style={{ accentColor: provider.color }}
-                  onChange={(event) => setVisible((previous) => ({ ...previous, [provider.key]: event.target.checked }))} />
+                  onChange={(event) => onVisibilityChange({ ...visible, [provider.key]: event.target.checked })} />
                 <span aria-hidden="true" className="inline-block h-0.5 w-4" style={{ backgroundColor: provider.color }} />
                 {provider.label}
               </label>
