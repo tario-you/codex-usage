@@ -3,10 +3,56 @@ import test from 'node:test'
 
 import {
   buildResetPlan,
+  orderAccountsForUse,
   type ResetPlanAccount,
 } from '../src/features/dashboard/reset-plan'
 
 const NOW = Date.parse('2026-07-15T18:00:00.000Z')
+
+test('table order follows the recommendation and keeps exhausted and unknown rows at the bottom', () => {
+  const rows = [
+    account({ id: 'empty', primary_remaining_percent: 0 }),
+    account({ id: 'later', primary_remaining_percent: 90, primary_resets_at: isoAfterHours(4) }),
+    account({ id: 'soon-low', primary_remaining_percent: 30, primary_resets_at: isoAfterHours(1) }),
+    account({ id: 'unknown', primary_used_percent: null, primary_remaining_percent: null, secondary_used_percent: null, secondary_remaining_percent: null }),
+    account({ id: 'soon-high', primary_remaining_percent: 80, primary_resets_at: isoAfterHours(1) }),
+    account({ id: 'weekly-empty', secondary_remaining_percent: 0, primary_resets_at: isoAfterHours(0.5) }),
+  ]
+  const original = [...rows]
+  const ordered = orderAccountsForUse(rows, NOW)
+  assert.deepEqual(ordered.map((row) => row.id), ['soon-high', 'soon-low', 'later', 'empty', 'unknown', 'weekly-empty'])
+  assert.equal(ordered[0].id, buildResetPlan(rows, NOW).current?.accountId)
+  assert.deepEqual(rows, original, 'the query cache is not reordered in place')
+  assert.ok(ordered.every((row) => rows.includes(row)), 'keep original account identities and controls')
+})
+
+test('unknown reset times use balance then label, instead of a NaN comparison', () => {
+  const rows = [
+    account({ id: 'low', label: 'Low', primary_remaining_percent: 20, primary_resets_at: null, secondary_resets_at: null }),
+    account({ id: 'z', label: 'Z', primary_remaining_percent: 80, primary_resets_at: 'invalid', secondary_resets_at: null }),
+    account({ id: 'a', label: 'A', primary_remaining_percent: 80, primary_resets_at: new Date(NOW - 1).toISOString(), secondary_resets_at: null }),
+  ]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['a', 'z', 'low'])
+})
+
+test('order updates after a reset passes and after a new usage snapshot exhausts a plan', () => {
+  const rows = [
+    account({ id: 'soon', primary_resets_at: isoAfterHours(1) }),
+    account({ id: 'later', primary_resets_at: isoAfterHours(2) }),
+  ]
+  assert.equal(orderAccountsForUse(rows, NOW)[0].id, 'soon')
+  assert.equal(orderAccountsForUse(rows, NOW + 90 * 60_000)[0].id, 'later')
+  rows[0] = account({ id: 'soon', primary_remaining_percent: 0 })
+  assert.equal(orderAccountsForUse(rows, NOW)[0].id, 'later')
+})
+
+test('Claude rows are preserved without becoming Codex recommendations', () => {
+  const claude = account({ id: 'claude', account_key: 'claude:fixture@example.com', primary_resets_at: isoAfterHours(0.1) })
+  const codex = account({ id: 'codex' })
+  assert.deepEqual(orderAccountsForUse([claude, codex], NOW), [codex, claude])
+  assert.deepEqual(orderAccountsForUse([claude], NOW), [claude])
+  assert.deepEqual(orderAccountsForUse([], NOW), [])
+})
 
 test('uses the account whose available allowance expires first', () => {
   const plan = buildResetPlan(

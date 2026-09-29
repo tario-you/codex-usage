@@ -79,6 +79,21 @@ export function buildResetPlan(
   }
 }
 
+/** Put the recommended Codex allowance first without changing the saved rows. */
+export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], now = Date.now()): T[] {
+  const plan = buildResetPlan(accounts, now)
+  const order = new Map(
+    [plan.current, ...plan.fallbacks]
+      .filter((item): item is ResetPlanRecommendation => item !== null)
+      .map((item, index) => [item.accountId, index]),
+  )
+  // Unusable/unknown balances stay below the usable recommendations. Keep
+  // their original order, including any rows for a different provider.
+  return [...accounts].sort((left, right) =>
+    (order.get(left.id) ?? accounts.length) - (order.get(right.id) ?? accounts.length),
+  )
+}
+
 function normalizeAccount(
   account: ResetPlanAccount,
   now: number,
@@ -137,7 +152,7 @@ function compareRecommendations(
   const resetDifference =
     (left.nextResetAt ?? Number.POSITIVE_INFINITY) -
     (right.nextResetAt ?? Number.POSITIVE_INFINITY)
-  if (resetDifference !== 0) {
+  if (left.nextResetAt !== right.nextResetAt) {
     return resetDifference
   }
 

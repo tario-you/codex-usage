@@ -77,6 +77,7 @@ import {
 } from '@/shared/site'
 
 import { ResetPlanPanel } from './reset-plan-panel'
+import { orderAccountsForUse } from './reset-plan'
 import { subscriptionEnd } from './reset-credit-choice'
 import { NoteEditor, NoteSecret } from './account-notes'
 import { AccountBrowserLink } from './account-browser-link'
@@ -122,6 +123,11 @@ const PENDING_INVITE_TOKEN_STORAGE_KEY = 'codex-usage.pending-invite-token'
 const COPY_FEEDBACK_DURATION_MS = 2000
 
 export function DashboardPage() {
+  const [usageOrderNow, setUsageOrderNow] = useState(() => Date.now())
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setUsageOrderNow(Date.now()), 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
   const {
     isLoading: authIsLoading,
     redirectError: authRedirectError,
@@ -195,6 +201,7 @@ export function DashboardPage() {
 
   const accounts = accountsQuery.data ?? []
   const visibleAccounts = filterUsageAccounts(accounts, usageVisibility)
+  const orderedAccounts = orderAccountsForUse(visibleAccounts, usageOrderNow)
   const inviters = invitersQuery.data ?? []
   const weeklyUsageHistory = weeklyUsageHistoryQuery.data ?? []
   const summary = buildSummary(visibleAccounts)
@@ -1342,7 +1349,7 @@ export function DashboardPage() {
                             visible={usageVisibility}
                           />
                           {usageVisibility.codex && visibleAccounts.some((account) => !isClaudeAccount(account)) ? (
-                            <ResetPlanPanel accounts={visibleAccounts} />
+                            <ResetPlanPanel accounts={visibleAccounts} now={usageOrderNow} />
                           ) : null}
                           {visibleAccounts.length === 0 ? (
                             <p className="px-4 py-3 text-sm text-muted-foreground">
@@ -1353,7 +1360,7 @@ export function DashboardPage() {
                           ) : null}
                           <div className="md:hidden">
                             <AccountSummaryList
-                              accounts={visibleAccounts}
+                              accounts={orderedAccounts}
                               usageVisibility={usageVisibility}
                               showDetails={showDetails}
                               repairDevices={repairState.data}
@@ -1371,7 +1378,7 @@ export function DashboardPage() {
                           </div>
                           <div className="hidden md:block">
                             <AccountTable
-                              accounts={visibleAccounts}
+                              accounts={orderedAccounts}
                               usageVisibility={usageVisibility}
                               showDetails={showDetails}
                               repairDevices={repairState.data}

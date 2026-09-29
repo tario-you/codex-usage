@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import type { DashboardAccountRow } from '@/lib/dashboard'
@@ -20,17 +20,11 @@ const MAX_UPCOMING_RESETS = 5
  * One line answers "which account now, and what comes next". The full
  * fallback order and reset schedule stay one click away.
  */
-export function ResetPlanPanel({ accounts }: { accounts: DashboardAccountRow[] }) {
-  const [now, setNow] = useState(() => Date.now())
+export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRow[]; now: number }) {
   const [isOpen, setIsOpen] = useState(false)
   const plan = buildResetPlan(accounts, now)
   // With nothing usable, the agent spends the reset credit that saves the most.
   const resetCredit = plan.current ? null : resetCreditChoice(accounts, now)
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => setNow(Date.now()), 60_000)
-    return () => window.clearInterval(intervalId)
-  }, [])
 
   const fallbacks = plan.fallbacks.slice(0, MAX_FALLBACKS)
   const nextReset = plan.upcomingResets[0] ?? null
