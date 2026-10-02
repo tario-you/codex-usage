@@ -11,13 +11,15 @@ export function UsageWindowList({ account, showDetails, savingUsageOverride, onS
   onSaveUsageOverride: (account: DashboardAccountRow, window: RateLimitWindowKey, remaining: number) => Promise<boolean>
 }) {
   const windows = getRateLimitWindows(account)
+  const isFreePlan = account.plan_type?.trim().toLowerCase() === 'free'
   const weeklyExhausted = windows.some((window) => window.windowDurationMins === 10_080 && window.remainingPercent != null && window.remainingPercent <= 0)
   return windows.length === 0 ? <span className="text-muted-foreground">N/A</span> : (
     <div className="flex flex-col gap-1">
       {windows.map((window) => (
         <div className="flex items-center gap-2" key={window.key}>
           <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${
-            window.windowDurationMins === 300 && weeklyExhausted ? 'bg-red-500'
+            isFreePlan ? 'bg-muted-foreground'
+              : window.windowDurationMins === 300 && weeklyExhausted ? 'bg-red-500'
               : window.remainingPercent == null ? 'bg-muted-foreground/40'
                 : window.remainingPercent <= 0 ? 'bg-red-500'
                   : window.remainingPercent <= 20 ? 'bg-amber-500' : 'bg-emerald-500'
