@@ -9,6 +9,7 @@ import {
   resolveAuthFilePath,
   resolveDefaultSwitcherStorePath,
 } from './login-file.js'
+import { dashboardWake } from './wake.js'
 
 /**
  * One-click plan switching from the dashboard. The owner clicks "Use" on a
@@ -130,6 +131,7 @@ export async function pollPlanSwitch({ activeEmail, config, fetcher = fetch }) {
   )
   const payload = await readBody(response)
   if (!response.ok) throw new Error(payload?.error ?? `Plan switch poll failed (HTTP ${response.status}).`)
+  dashboardWake.update(payload?.wake)
   return pendingSwitchFromPoll(payload)
 }
 

@@ -5,10 +5,13 @@ import { mkdir, lstat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { dashboardRequest } from './dashboard-request.js'
+import { dashboardWake } from './wake.js'
 
 export const BROWSER_SESSION_ROOT = path.join(os.homedir(), 'Library/Application Support/Google/Chrome')
 const PROVIDER_URLS = { codex: 'https://chatgpt.com/auth/login_with', claude: 'https://claude.ai/login' }
 const CHROME_APP = '/Applications/Google Chrome.app'
+// Without a joined wake channel the helper polls this often, as it always did.
+const BROWSER_POLL_MS = 5_000
 
 export function browserSessionTarget(provider, email, root = BROWSER_SESSION_ROOT, loginMethod = 'email') {
   if (!['email', 'google'].includes(loginMethod)) throw new Error('Unsupported login method.')
@@ -72,7 +75,7 @@ function launchChrome(args) {
   })
 }
 
-export async function runBrowserPass(config, { fetcher = fetch, open = openBrowserSession, now = () => Date.now() } = {}) {
+export async function runBrowserPass(config, { fetcher = fetch, open = openBrowserSession, now = () => Date.now(), wake = dashboardWake } = {}) {
   const site = new URL(config.dashboardOrigin ?? config.syncUrl)
   if (site.protocol !== 'https:' && !(site.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(site.hostname))) throw new Error('Invalid dashboard origin.')
   const call = async (route, body) => {
@@ -80,7 +83,8 @@ export async function runBrowserPass(config, { fetcher = fetch, open = openBrows
     if (!response.ok) throw new Error('Browser helper request failed.')
     return response.json()
   }
-  const { pending } = await call('/poll', {})
+  const { pending, wake: channel } = await call('/poll', {})
+  wake.update(channel)
   if (!pending) return false
   if (typeof pending.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(pending.id)) throw new Error('Invalid browser request.')
   const expires = Date.parse(pending.expires_at)
@@ -98,12 +102,12 @@ export async function runBrowserPass(config, { fetcher = fetch, open = openBrows
   return outcome === 'opened'
 }
 
-export async function runBrowserAgent(config) {
+export async function runBrowserAgent(config, { wake = dashboardWake } = {}) {
   if (!config?.deviceToken || !config?.syncUrl) throw new Error('Pair this machine with the dashboard first.')
   if (process.platform !== 'darwin' || !existsSync(CHROME_APP)) throw new Error('This helper requires Google Chrome on macOS.')
   console.log('Browser helper ready. Account clicks open separate Chrome sessions; sign in once per account.')
   for (;;) {
-    try { await runBrowserPass(config) } catch { console.error('Browser helper could not reach the dashboard; retrying.') }
-    await new Promise(resolve => setTimeout(resolve, 5000))
+    try { await runBrowserPass(config, { wake }) } catch { console.error('Browser helper could not reach the dashboard; retrying.') }
+    await wake.wait(BROWSER_POLL_MS)
   }
 }

@@ -33,7 +33,7 @@ export function useRepairState(session: Session | null) {
     enabled: Boolean(session?.access_token),
     queryFn: () => fetchRepairState(session?.access_token as string),
     queryKey: ['repair-signins', session?.user.id ?? null],
-    refetchInterval: query => query.state.data?.some(device => device.pending) ? 2_000 : 15_000,
+    refetchInterval: query => query.state.data?.some(device => device.pending) ? 2_000 : 60_000,
   })
 }
 

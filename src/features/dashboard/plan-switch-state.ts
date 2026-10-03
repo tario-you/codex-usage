@@ -35,13 +35,16 @@ async function fetchPlanSwitchState(accessToken: string): Promise<PlanSwitchDevi
   return payload?.devices ?? []
 }
 
-/** Which login each machine is on, refreshed often enough to follow a switch as it runs. */
+/**
+ * Which login each machine is on: every 2 s while a switch runs, else every
+ * 30 s (each refetch is a function call on the Hobby plan, issue #65).
+ */
 export function usePlanSwitchState(session: Session | null) {
   return useQuery({
     enabled: Boolean(session?.access_token),
     queryFn: () => fetchPlanSwitchState(session?.access_token as string),
     queryKey: queryKey(session?.user.id ?? null),
-    refetchInterval: 10_000,
+    refetchInterval: query => query.state.data?.some(device => device.pending) ? 2_000 : 30_000,
   })
 }
 
