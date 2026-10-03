@@ -10,4 +10,5 @@ export function resolveStorePath(option?: string | null): string
 export function buildSyncPayloadFromUsage(data: unknown, email?: string | null, account?: unknown): { accountState: unknown; rateLimits: unknown }
 export function resetSpendingOwnedElsewhere(options?: { home?: string }): boolean
 export function pendingFromPoll(payload: unknown): { emails: string[]; requestedAt?: string } | null
+export function wakeFromPoll(payload: unknown): unknown
 export function accountsFromKnown(payload: unknown): string[]

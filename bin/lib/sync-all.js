@@ -343,6 +343,11 @@ function bodyOf(payload) {
   return inner && typeof inner === 'object' && !Array.isArray(inner) ? inner : payload
 }
 
+/** The wake channel /api/login/repair/poll names (bin/lib/wake.js), read through the same wrapper as its pending request. */
+export function wakeFromPoll(payload) {
+  return bodyOf(payload).wake
+}
+
 /** The pending sign-in request from /api/login/repair/poll, or null. */
 export function pendingFromPoll(payload) {
   const pending = bodyOf(payload).pending

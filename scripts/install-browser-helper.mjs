@@ -39,5 +39,15 @@ execFileSync('/usr/bin/plutil', ['-lint', plist], { stdio: 'pipe' })
 const domain = `gui/${process.getuid()}`
 // Replace only this helper's own launchd service; existing sync agents keep running.
 try { execFileSync('/bin/launchctl', ['bootout', `${domain}/${label}`], { stdio: 'pipe' }) } catch { /* First install. */ }
-execFileSync('/bin/launchctl', ['bootstrap', domain, plist], { stdio: 'pipe' })
+// launchd can refuse the bootstrap ("5: Input/output error") while the bootout
+// is still settling; on 10-03 the first install attempt failed that way.
+for (let attempt = 1; ; attempt++) {
+  try {
+    execFileSync('/bin/launchctl', ['bootstrap', domain, plist], { stdio: 'pipe' })
+    break
+  } catch (error) {
+    if (attempt === 5) throw error
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+}
 console.log(`Browser helper installed from ${revision}. Chrome opens only when an account is clicked.`)

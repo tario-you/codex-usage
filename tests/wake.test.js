@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { pendingFromPoll, wakeFromPoll } from '../bin/lib/sync-all.js'
 import { IDLE_POLL_SECONDS, createWakeListener } from '../bin/lib/wake.js'
 
 const channel = { apikey: 'fixture-anon', topic: 'wake-fixture', url: 'wss://fixture.invalid/realtime/v1/websocket' }
@@ -179,4 +180,17 @@ test('maxMs caps a joined wait for a loop with its own deadline, and close ends 
   await advance(t, 0)
   assert.equal(open.reason, 'closed')
   assert.equal(FakeSocket.all[0].closed, true)
+})
+
+test('sync --all reads the repair poll\'s channel through the same wrapper as its pending request', (t) => {
+  const wake = setup(t)
+  // codex-usage.js parseResponseBody hands the poll's JSON over as { data, text }.
+  const wrapped = { data: { pending: { emails: ['a@example.com'], requestedAt: 'now' }, wake: channel }, text: '{}' }
+  assert.deepEqual(pendingFromPoll(wrapped)?.emails, ['a@example.com'])
+  assert.deepEqual(wakeFromPoll(wrapped), channel)
+  // The switch poll names the channel, then the repair poll must not take it away again.
+  wake.update(channel)
+  wake.update(wakeFromPoll(wrapped))
+  void wake.wait(20_000)
+  assert.equal(FakeSocket.all.length, 1)
 })
