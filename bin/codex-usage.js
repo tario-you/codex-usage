@@ -28,6 +28,7 @@ import {
   accountsFromKnown,
   expiredEmailsFromResults,
   pendingFromPoll,
+  wakeFromPoll,
   fetchUsage,
   readStore,
   resetSpendingOwnedElsewhere,
@@ -791,7 +792,7 @@ async function pollRepairRequest(config, expired, missing = []) {
   const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, expired, missing, providers: repairProviders() }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair poll failed.'))
-  dashboardWake.update(payload?.wake)
+  dashboardWake.update(wakeFromPoll(payload))
   return pendingFromPoll(payload)
 }
 
