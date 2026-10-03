@@ -3,12 +3,13 @@ import { requireUser } from '../auth.js'
 import { errorResponse, jsonResponse } from '../http.js'
 import { findActiveDeviceByToken, findOwnedAccountById, sharedLoginErrorResponse } from '../login-store.js'
 import { serviceRoleSupabase as db } from '../supabase.js'
+import { AGENT_ONLINE_WINDOW_MS, wakeChannelFor, wakeDevice } from '../wake.js'
 import { isClaudeAccountKey } from '../../../src/shared/codex.js'
 
 const requestSchema = z.object({ accountId: z.string().uuid(), deviceId: z.string().uuid(), loginMethod: z.enum(['email', 'google']).default('email') })
 const pollSchema = z.object({ deviceToken: z.string().min(1) })
 const doneSchema = pollSchema.extend({ requestId: z.string().uuid(), outcome: z.enum(['opened', 'failed']) })
-const freshSince = () => new Date(Date.now() - 30_000).toISOString()
+const freshSince = () => new Date(Date.now() - AGENT_ONLINE_WINDOW_MS).toISOString()
 
 export async function GET(request: Request) {
   try {
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
     }).select('id').single()
     if (error?.code === '23505') return errorResponse('A browser launch is already queued on that machine.', 409)
     if (error) throw error
+    await wakeDevice(device.id)
     return jsonResponse({ requestId: data.id })
   } catch (error) { return sharedLoginErrorResponse(error, 'Unable to open account.') }
 }
@@ -69,13 +71,14 @@ export async function POLL(request: Request) {
       .eq('device_id', device.id).eq('owner_user_id', device.owner_user_id).eq('state', 'queued')
       .gt('expires_at', now).order('created_at').limit(1).maybeSingle()
     if (error) throw error
-    if (!pending) return jsonResponse({ pending: null })
+    const wake = wakeChannelFor(device.id)
+    if (!pending) return jsonResponse({ pending: null, wake })
     // Claim before replying. Two helpers cannot both open the same click.
     const { data: claimed, error: claimError } = await db.from('codex_browser_launches').update({ state: 'opening' })
       .eq('id', pending.id).eq('state', 'queued').gt('expires_at', now)
       .select('id, provider, email, login_method, expires_at').maybeSingle()
     if (claimError) throw claimError
-    return jsonResponse({ pending: claimed })
+    return jsonResponse({ pending: claimed, wake })
   } catch (error) { return sharedLoginErrorResponse(error, 'Unable to poll browser requests.') }
 }
 

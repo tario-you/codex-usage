@@ -21,6 +21,7 @@ import {
 } from './lib/shared-login.js'
 import { uploadSwitchEvents } from './lib/switch-events.js'
 import { PLAN_SWITCH_POLL_SECONDS, runPlanSwitchPass } from './lib/plan-switch.js'
+import { dashboardWake } from './lib/wake.js'
 import {
   DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
   MIN_SYNC_ALL_INTERVAL_SECONDS,
@@ -746,15 +747,16 @@ async function runSyncAllCommand(args, config, codexHome) {
     Number.isFinite(requested) ? requested : DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
   )
   console.log(`Watching every ${everySeconds}s. Press Ctrl+C to stop.`)
-  // Between passes the agent asks the dashboard every REPAIR_POLL_SECONDS
-  // whether the owner clicked Fix sign-ins; a request opens one browser
-  // sign-in per expired login right here, then the next pass syncs them.
-  let sinceSync = 0
+  // Between passes the agent asks the dashboard whether the owner clicked Fix
+  // sign-ins: on the click's wake, else every REPAIR_POLL_SECONDS without a
+  // wake channel (bin/lib/wake.js). A request opens one browser sign-in per
+  // expired login right here, then the next pass syncs them.
+  let lastSyncAt = Date.now()
   while (true) {
-    await new Promise((resolve) => setTimeout(resolve, REPAIR_POLL_SECONDS * 1000))
-    sinceSync += REPAIR_POLL_SECONDS
+    await dashboardWake.wait(REPAIR_POLL_SECONDS * 1000, { maxMs: lastSyncAt + everySeconds * 1000 - Date.now() })
+    let syncNow = Date.now() - lastSyncAt >= everySeconds * 1000
     // A "Use" click on a Plans row lands here too: switch through Switchboard, then sync at once.
-    if (await runPlanSwitchPass({ codexHome, config, storePath })) sinceSync = everySeconds
+    if (await runPlanSwitchPass({ codexHome, config, storePath })) syncNow = true
     try {
       const pending = await pollRepairRequest(config, lastExpired, lastMissing)
       if (pending?.emails?.length) {
@@ -768,13 +770,13 @@ async function runSyncAllCommand(args, config, codexHome) {
           storePath,
         })
         await reportRepairResults(config, results)
-        sinceSync = everySeconds
+        syncNow = true
       }
     } catch (error) {
       console.error(`[sign-in repair] ${error instanceof Error ? error.message : String(error)}`)
     }
-    if (sinceSync < everySeconds) continue
-    sinceSync = 0
+    if (!syncNow) continue
+    lastSyncAt = Date.now()
     try {
       await once()
     } catch (error) {
@@ -789,6 +791,7 @@ async function pollRepairRequest(config, expired, missing = []) {
   const response = await fetch(new URL('/api/login/repair/poll', config.syncUrl), dashboardRequest({ deviceToken: config.deviceToken, expired, missing, providers: repairProviders() }))
   const payload = await parseResponseBody(response)
   if (!response.ok) throw new Error(buildHttpErrorMessage(response, payload, 'Repair poll failed.'))
+  dashboardWake.update(payload?.wake)
   return pendingFromPoll(payload)
 }
 
@@ -1138,26 +1141,24 @@ async function runWatchLoop(client, config, args) {
     void run()
   }, config.pollMs ?? DEFAULT_POLL_MS)
 
-  // Every PLAN_SWITCH_POLL_SECONDS the agent reports the active login and
-  // runs any "Use" click from the dashboard through Switchboard; a completed
-  // switch syncs right away so the row flips without waiting for the poll.
+  // On a "Use" click's wake (else every PLAN_SWITCH_POLL_SECONDS without a
+  // wake channel, bin/lib/wake.js) the agent reports the active login and runs
+  // the switch through Switchboard; a completed switch syncs right away so
+  // the row flips without waiting for the poll.
   const codexHome = config.codexHome ?? resolveCodexHome(args.options['codex-home'])
-  let switchPassRunning = false
-  const switchInterval = setInterval(() => {
-    if (switchPassRunning) return
-    switchPassRunning = true
-    void runPlanSwitchPass({ codexHome, config })
-      .then((switched) => {
-        if (switched) void run()
-      })
-      .finally(() => {
-        switchPassRunning = false
-      })
-  }, PLAN_SWITCH_POLL_SECONDS * 1000)
+  let stopped = false
+  void (async () => {
+    while (!stopped) {
+      await dashboardWake.wait(PLAN_SWITCH_POLL_SECONDS * 1000)
+      if (stopped) break
+      if (await runPlanSwitchPass({ codexHome, config })) void run()
+    }
+  })()
 
   await waitForTermination(async () => {
     clearInterval(interval)
-    clearInterval(switchInterval)
+    stopped = true
+    dashboardWake.close()
 
     if (scheduledRefresh) {
       clearTimeout(scheduledRefresh)

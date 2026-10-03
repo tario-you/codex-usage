@@ -7,6 +7,7 @@ import { SharedLoginError } from '../login-reconcile.js'
 import { findActiveDeviceByToken, sharedLoginErrorResponse } from '../login-store.js'
 import { forgetUnlinkedAccount } from '../persistence.js'
 import { serviceRoleSupabase } from '../supabase.js'
+import { wakeChannelFor, wakeDevice } from '../wake.js'
 import {
   readRepairState,
   supportedRepairPending,
@@ -97,6 +98,7 @@ export async function POST(request: Request) {
       if (targets.length === 0) return errorResponse('Finish the sign-in already running on this machine first.', 409)
       await saveMetadata(device.id, metadata)
       device.metadata = metadata as unknown as Json
+      await wakeDevice(device.id)
       await forgetUnlinkedAccount(user.id, `${parsed.data.provider === 'claude' ? 'claude' : 'chatgpt'}:${parsed.data.connect.toLowerCase()}`)
       return jsonResponse({ devices: devices.map(serializeDevice), requested: 1 })
     }
@@ -108,6 +110,7 @@ export async function POST(request: Request) {
       if (targets.length === 0) continue
       await saveMetadata(device.id, metadata)
       device.metadata = metadata as unknown as Json
+      await wakeDevice(device.id)
       requested += targets.length
     }
     if (requested === 0) {
@@ -141,7 +144,10 @@ export async function POLL(request: Request) {
       parsed.data.providers,
     )
     await saveMetadata(device.id, metadata)
-    return jsonResponse({ pending: supportedRepairPending(readRepairState(metadata), parsed.data.providers) })
+    return jsonResponse({
+      pending: supportedRepairPending(readRepairState(metadata), parsed.data.providers),
+      wake: wakeChannelFor(device.id),
+    })
   } catch (error) {
     return sharedLoginErrorResponse(error, 'Unable to report sign-in state.')
   }

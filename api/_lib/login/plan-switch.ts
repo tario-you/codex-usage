@@ -8,6 +8,7 @@ import { errorResponse, jsonResponse } from '../http.js'
 import { SharedLoginError } from '../login-reconcile.js'
 import { findActiveDeviceByToken, sharedLoginErrorResponse } from '../login-store.js'
 import { serviceRoleSupabase } from '../supabase.js'
+import { wakeChannelFor, wakeDevice } from '../wake.js'
 import { readPlanSwitchState, withActiveReport, withSwitchRequest, withSwitchResult } from './switch-state.js'
 
 const DEVICE_COLUMNS = 'id, label, machine_name, last_seen_at, metadata'
@@ -89,6 +90,7 @@ export async function POST(request: Request) {
     if (outcome.reason === null) {
       await saveMetadata(device.id, outcome.metadata)
       device.metadata = outcome.metadata as unknown as Json
+      await wakeDevice(device.id)
     }
     return jsonResponse({ devices: devices.map(serializeDevice), pending: outcome.pending })
   } catch (error) {
@@ -111,7 +113,7 @@ export async function POLL(request: Request) {
     const now = new Date().toISOString()
     const metadata = withActiveReport(device.metadata, parsed.data.activeEmail ?? null, now)
     await saveMetadata(device.id, metadata)
-    return jsonResponse({ pending: readPlanSwitchState(metadata).pending })
+    return jsonResponse({ pending: readPlanSwitchState(metadata).pending, wake: wakeChannelFor(device.id) })
   } catch (error) {
     return sharedLoginErrorResponse(error, 'Unable to report the active plan.')
   }

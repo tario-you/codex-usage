@@ -16,7 +16,7 @@ if (!config.deviceToken || !config.syncUrl) throw new Error('Pair this machine w
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
 const release = path.join(home, '.local/share/codex-usage/browser-helper', revision)
 mkdirSync(path.join(release, 'bin/lib'), { recursive: true, mode: 0o700 })
-for (const file of ['bin/browser-agent.js', 'bin/lib/browser-sessions.js', 'bin/lib/dashboard-request.js']) {
+for (const file of ['bin/browser-agent.js', 'bin/lib/browser-sessions.js', 'bin/lib/dashboard-request.js', 'bin/lib/wake.js']) {
   copyFileSync(path.join(root, file), path.join(release, file))
 }
 writeFileSync(path.join(release, 'package.json'), '{"type":"module"}\n', { mode: 0o600 })
