@@ -40,6 +40,37 @@ export function getRateLimitWindows(source: RateLimitWindowSource) {
   ].filter((window): window is RateLimitWindow => window !== null)
 }
 
+export const WEEKLY_WINDOW_MINS = 10_080
+
+/**
+ * The windows as they stand at `now`, not as the last sync saw them: a window
+ * whose reset time has passed is full again, and its next reset is unknown
+ * until the next sync.
+ */
+export function getCurrentRateLimitWindows(
+  source: RateLimitWindowSource,
+  now = Date.now(),
+) {
+  return getRateLimitWindows(source).map((window) => {
+    const resetAt = window.resetsAt == null ? Number.NaN : Date.parse(window.resetsAt)
+    return Number.isFinite(resetAt) && resetAt <= now
+      ? { ...window, remainingPercent: 100, resetsAt: null }
+      : window
+  })
+}
+
+/** A spent weekly window leaves the account unusable, whatever its shorter windows say. */
+export function isWeeklyWindowSpent(
+  windows: Array<Pick<RateLimitWindow, 'remainingPercent' | 'windowDurationMins'>>,
+) {
+  return windows.some(
+    (window) =>
+      window.windowDurationMins === WEEKLY_WINDOW_MINS &&
+      window.remainingPercent != null &&
+      window.remainingPercent <= 0,
+  )
+}
+
 function buildRateLimitWindow(
   key: RateLimitWindowKey,
   usedPercent: number | null,

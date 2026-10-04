@@ -1,6 +1,7 @@
 import { isClaudeAccountKey } from '../../shared/codex.js'
 import {
-  getRateLimitWindows,
+  getCurrentRateLimitWindows,
+  isWeeklyWindowSpent,
   type RateLimitWindowKey,
   type RateLimitWindowSource,
 } from '../../shared/rate-limit-windows.js'
@@ -10,6 +11,7 @@ interface NormalizedResetWindow {
   label: string
   remainingPercent: number | null
   resetsAt: number | null
+  windowDurationMins: number | null
 }
 
 interface NormalizedResetAccount {
@@ -79,19 +81,55 @@ export function buildResetPlan(
   }
 }
 
-/** Put the recommended Codex allowance first without changing the saved rows. */
+const USE_GROUP = { usable: 0, waiting: 1, unknown: 2, weeklySpent: 3 } as const
+
+/**
+ * Order the table by what to use next, without changing the saved rows:
+ * allowance usable now in the recommendation order, then rows waiting on a
+ * spent 5-hour window, then unknown balances, then rows whose weekly
+ * allowance is spent, since those stay unusable for days. Codex rows lead
+ * Claude rows within each group; Claude rows never enter the Codex plan.
+ */
 export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], now = Date.now()): T[] {
-  const plan = buildResetPlan(accounts, now)
-  const order = new Map(
-    [plan.current, ...plan.fallbacks]
-      .filter((item): item is ResetPlanRecommendation => item !== null)
-      .map((item, index) => [item.accountId, index]),
+  return accounts
+    .map((account, index) => ({ account, index, ...rankForUse(account, now) }))
+    .sort(
+      (left, right) =>
+        left.group - right.group ||
+        left.provider - right.provider ||
+        (left.recommendation && right.recommendation
+          ? compareRecommendations(left.recommendation, right.recommendation)
+          : 0) ||
+        (left.backAt === right.backAt ? 0 : left.backAt - right.backAt) ||
+        left.index - right.index,
+    )
+    .map(({ account }) => account)
+}
+
+function rankForUse(account: ResetPlanAccount, now: number) {
+  const normalized = normalizeAccount(account, now)
+  const recommendation = buildRecommendation(normalized)
+  const spent = normalized.windows.filter(
+    (window) => window.remainingPercent != null && window.remainingPercent <= 0,
   )
-  // Unusable/unknown balances stay below the usable recommendations. Keep
-  // their original order, including any rows for a different provider.
-  return [...accounts].sort((left, right) =>
-    (order.get(left.id) ?? accounts.length) - (order.get(right.id) ?? accounts.length),
-  )
+  const group = recommendation
+    ? USE_GROUP.usable
+    : spent.length === 0
+      ? USE_GROUP.unknown
+      : isWeeklyWindowSpent(spent)
+        ? USE_GROUP.weeklySpent
+        : USE_GROUP.waiting
+
+  return {
+    // Usable again once every spent window has reset; an unknown reset sorts last.
+    backAt: Math.max(
+      Number.NEGATIVE_INFINITY,
+      ...spent.map((window) => window.resetsAt ?? Number.POSITIVE_INFINITY),
+    ),
+    group,
+    provider: isClaudeAccountKey(account.account_key) ? 1 : 0,
+    recommendation,
+  }
 }
 
 function normalizeAccount(
@@ -101,11 +139,12 @@ function normalizeAccount(
   return {
     id: account.id,
     label: account.label ?? account.email ?? account.account_key,
-    windows: getRateLimitWindows(account).map((window) => ({
+    windows: getCurrentRateLimitWindows(account, now).map((window) => ({
       key: window.key,
       label: window.label,
       remainingPercent: window.remainingPercent,
       resetsAt: parseFutureTimestamp(window.resetsAt, now),
+      windowDurationMins: window.windowDurationMins,
     })),
   }
 }

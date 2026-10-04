@@ -35,6 +35,35 @@ test('unknown reset times use balance then label, instead of a NaN comparison', 
   assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['a', 'z', 'low'])
 })
 
+test('a spent weekly allowance sinks below every row with weekly left, whatever its 5-hour says', () => {
+  const claude = (id: string, overrides: Partial<ResetPlanAccount>) =>
+    account({ id, label: `${id}@example.test`, account_key: `claude:${id}@example.test`, ...overrides })
+  const rows = [
+    claude('fresh', { primary_remaining_percent: 95, primary_resets_at: isoAfterHours(4.5), secondary_remaining_percent: 32, secondary_resets_at: isoAfterHours(105) }),
+    claude('weekly-out-late', { primary_remaining_percent: 88, primary_resets_at: isoAfterHours(2.5), secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(121) }),
+    claude('weekly-out-soon', { primary_remaining_percent: 0, primary_resets_at: isoAfterHours(-1), secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(73) }),
+    claude('five-hour-out', { primary_remaining_percent: 0, primary_resets_at: isoAfterHours(1), secondary_remaining_percent: 20, secondary_resets_at: isoAfterHours(64) }),
+    claude('refilled', { primary_remaining_percent: 51, primary_resets_at: isoAfterHours(-2), secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(-0.5) }),
+  ]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['fresh', 'refilled', 'five-hour-out', 'weekly-out-soon', 'weekly-out-late'])
+})
+
+test('a spent weekly Codex row sits below a usable Claude row', () => {
+  const codex = account({ id: 'codex', secondary_remaining_percent: 0 })
+  const claude = account({ id: 'claude', account_key: 'claude:fixture@example.com' })
+  assert.deepEqual(orderAccountsForUse([codex, claude], NOW).map((row) => row.id), ['claude', 'codex'])
+})
+
+test('a window whose reset has passed counts as full again', () => {
+  const plan = buildResetPlan(
+    [account({ primary_remaining_percent: 0, primary_resets_at: isoAfterHours(-0.1), secondary_remaining_percent: 40 })],
+    NOW,
+  )
+  assert.equal(plan.current?.usablePercent, 40)
+  assert.equal(plan.current?.limitingWindowLabel, 'Weekly')
+  assert.ok(plan.upcomingResets.every((event) => event.windowKey !== 'primary'), 'a passed reset is not upcoming')
+})
+
 test('order updates after a reset passes and after a new usage snapshot exhausts a plan', () => {
   const rows = [
     account({ id: 'soon', primary_resets_at: isoAfterHours(1) }),

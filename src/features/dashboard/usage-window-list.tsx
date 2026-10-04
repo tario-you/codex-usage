@@ -1,18 +1,30 @@
 import type { DashboardAccountRow } from '../../lib/dashboard'
 import { formatTimestamp } from '../../shared/codex'
-import { getRateLimitWindows, type RateLimitWindowKey } from '../../shared/rate-limit-windows'
+import {
+  getCurrentRateLimitWindows,
+  getRateLimitWindows,
+  isWeeklyWindowSpent,
+  WEEKLY_WINDOW_MINS,
+  type RateLimitWindowKey,
+} from '../../shared/rate-limit-windows'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 import { formatResetCountdown } from './reset-countdown'
 
-export function UsageWindowList({ account, showDetails, savingUsageOverride, onSaveUsageOverride }: {
+export function UsageWindowList({ account, showDetails, savingUsageOverride, onSaveUsageOverride, now }: {
   account: DashboardAccountRow
   showDetails: boolean
   savingUsageOverride: string | null
   onSaveUsageOverride: (account: DashboardAccountRow, window: RateLimitWindowKey, remaining: number) => Promise<boolean>
+  now: number
 }) {
-  const windows = getRateLimitWindows(account)
+  // Details shows what the last sync measured, so a manual correction edits
+  // that. The plain view shows what is usable now: a passed reset is full
+  // again, and while the weekly window is spent its shorter windows are moot.
+  const current = showDetails ? getRateLimitWindows(account) : getCurrentRateLimitWindows(account, now)
+  const weeklyExhausted = isWeeklyWindowSpent(current)
+  const windows = showDetails || !weeklyExhausted ? current
+    : current.filter((window) => window.windowDurationMins == null || window.windowDurationMins >= WEEKLY_WINDOW_MINS)
   const isFreePlan = account.plan_type?.trim().toLowerCase() === 'free'
-  const weeklyExhausted = windows.some((window) => window.windowDurationMins === 10_080 && window.remainingPercent != null && window.remainingPercent <= 0)
   return windows.length === 0 ? <span className="text-muted-foreground">N/A</span> : (
     <div className="flex flex-col gap-1">
       {windows.map((window) => (
