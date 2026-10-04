@@ -1374,6 +1374,7 @@ export function DashboardPage() {
                               session={session}
                               unlinkingAccountId={unlinkingAccountId}
                               savingUsageOverride={savingUsageOverride}
+                              now={usageOrderNow}
                             />
                           </div>
                           <div className="hidden md:block">
@@ -1392,6 +1393,7 @@ export function DashboardPage() {
                               session={session}
                               unlinkingAccountId={unlinkingAccountId}
                               savingUsageOverride={savingUsageOverride}
+                              now={usageOrderNow}
                             />
                           </div>
                         </>
@@ -1668,6 +1670,7 @@ function AccountTable({
   savingUsageOverride,
   session,
   unlinkingAccountId,
+  now,
 }: {
   accounts: DashboardAccountRow[]
   usageVisibility: UsageVisibility
@@ -1685,6 +1688,7 @@ function AccountTable({
   savingUsageOverride: string | null
   session: Session
   unlinkingAccountId: string | null
+  now: number
 }) {
   const columnCount = showDetails ? (notes ? 9 : 6) : usageVisibility.codex ? 3 : 2
   const accountKeys = new Set(accounts.filter((account) => account.access_scope === 'owned').map(accountNoteKey))
@@ -1792,7 +1796,7 @@ function AccountTable({
                 </p>
               </TableCell>
               <TableCell className="py-1.5">
-                <UsageWindowList account={account} showDetails={showDetails} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} />
+                <UsageWindowList account={account} showDetails={showDetails} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
               </TableCell>
               <TableCell hidden={!showDetails} className="py-1.5 text-xs tabular-nums">
                 <ResetCreditsValue account={account} />
@@ -1898,6 +1902,7 @@ function AccountSummaryList({
   savingUsageOverride,
   session,
   unlinkingAccountId,
+  now,
 }: {
   accounts: DashboardAccountRow[]
   usageVisibility: UsageVisibility
@@ -1915,6 +1920,7 @@ function AccountSummaryList({
   savingUsageOverride: string | null
   session: Session
   unlinkingAccountId: string | null
+  now: number
 }) {
   return (
     <div className="divide-y divide-border">
@@ -1959,7 +1965,7 @@ function AccountSummaryList({
             </div>
 
             <div hidden={showDetails}>
-              <UsageWindowList account={account} showDetails={false} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} />
+              <UsageWindowList account={account} showDetails={false} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
             </div>
             <dl hidden={!showDetails} className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <MetaField
