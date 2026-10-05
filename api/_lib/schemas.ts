@@ -33,7 +33,11 @@ const rateLimitSnapshotSchema = z.object({
   secondary: rateLimitWindowSchema.nullable(),
 })
 
+// her-team#4148: whether this machine's auto-switcher can switch to the plan; absent when the agent doesn't know.
+const autoSwitchSchema = z.object({ inPool: z.boolean() })
+
 const chatgptAccountSchema = z.object({
+  autoSwitch: autoSwitchSchema.optional(),
   email: z.string().optional(),
   planType: z.string().optional(),
   type: z.literal('chatgpt'),
@@ -44,6 +48,7 @@ const apiKeyAccountSchema = z.object({
 })
 
 const claudeAccountSchema = z.object({
+  autoSwitch: autoSwitchSchema.optional(),
   email: z.string().optional(),
   planType: z.string().optional(),
   type: z.literal('claude'),

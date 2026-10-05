@@ -81,6 +81,7 @@ import { orderAccountsForUse } from './reset-plan'
 import { subscriptionEnd } from './reset-credit-choice'
 import { NoteEditor, NoteSecret } from './account-notes'
 import { AccountBrowserLink } from './account-browser-link'
+import { AutoSwitchCheck } from './auto-switch-check'
 import { BrowserSessionPreference } from './browser-session-preference'
 import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
@@ -1772,6 +1773,7 @@ function AccountTable({
                       {identity.primary}
                     </AccountBrowserLink>
                   </span>
+                  <AutoSwitchCheck metadata={account.metadata} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                   {isClaudeAccount(account) && (showDetails || (usageVisibility.codex && usageVisibility.claude)) ? <ClaudeBadge /> : null}
                   {account.plan_type ? (
                     <span className="text-[10px] uppercase leading-4 text-muted-foreground">
@@ -1936,6 +1938,7 @@ function AccountSummaryList({
               <div className="min-w-0">
                 <p className="flex flex-wrap items-baseline gap-x-2 font-medium text-foreground">
                   <AccountBrowserLink account={account} session={session} hasGoogleCredential={Boolean(notes?.byAccount.get(accountNoteKey(account))?.googlePassword)} showMethodSelector={showDetails}>{identity.primary}</AccountBrowserLink>
+                  <AutoSwitchCheck metadata={account.metadata} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                   {isClaudeAccount(account) && (showDetails || (usageVisibility.codex && usageVisibility.claude)) ? <ClaudeBadge /> : null}
                 </p>
                 {showDetails && identity.secondary ? (

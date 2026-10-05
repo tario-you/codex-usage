@@ -198,8 +198,25 @@ function windowValue(entry, windowDurationMins) {
   }
 }
 
-/** The dashboard's sync payload, built from Claude's usage endpoint response. */
-export function buildClaudeSyncPayload(data, { email = null, planType = null } = {}) {
+/**
+ * her-team#4148: the emails claude-auto-switch can switch to, by its own rule
+ * (store.mjs `enabled`: not turned off, and a token it can refresh). Null when
+ * this machine has no switcher store, so the dashboard keeps what it knew.
+ */
+export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePath()) {
+  if (!existsSync(storePath)) return null
+  const store = await readJsonFile(storePath).catch(() => null)
+  if (!Array.isArray(store?.accounts)) return null
+  const pool = new Set()
+  for (const account of store.accounts) {
+    if (account?.auto_switch_enabled === false || !account?.oauth?.accessToken || !account?.oauth?.refreshToken) continue
+    if (typeof account.email === 'string') pool.add(account.email.toLowerCase())
+  }
+  return pool
+}
+
+/** The dashboard's sync payload, built from Claude's usage endpoint response. `autoSwitch` is left out when unknown. */
+export function buildClaudeSyncPayload(data, { email = null, planType = null, autoSwitch = null } = {}) {
   const credits = { balance: '0', hasCredits: false, unlimited: false }
   const main = {
     credits,
@@ -216,7 +233,7 @@ export function buildClaudeSyncPayload(data, { email = null, planType = null } =
   }
   return {
     accountState: {
-      account: { type: 'claude', ...(email ? { email } : {}), ...(planType ? { planType } : {}) },
+      account: { type: 'claude', ...(email ? { email } : {}), ...(planType ? { planType } : {}), ...(typeof autoSwitch === 'boolean' ? { autoSwitch: { inPool: autoSwitch } } : {}) },
       requiresOpenaiAuth: false,
     },
     rateLimits: { rateLimits: main, rateLimitsByLimitId: byLimitId },
@@ -240,6 +257,7 @@ async function writeBackSwitcherOauth(storePath, login) {
  */
 export async function syncClaudeOnce({ config, device, fetcher = fetch, logins = null, storePath = resolveClaudeStorePath() }) {
   const found = logins ?? (await discoverClaudeLogins({ storePath }))
+  const pool = await readClaudeAutoSwitchPool(storePath)
   const results = []
   const byEmail = new Map()
   for (const login of found) {
@@ -261,7 +279,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       login.oauth = usage.oauth
       if (login.source === 'switcher') await writeBackSwitcherOauth(storePath, login).catch(() => {})
     }
-    const payload = buildClaudeSyncPayload(usage.data, { email, planType: profile.planType })
+    const payload = buildClaudeSyncPayload(usage.data, { email, planType: profile.planType, autoSwitch: pool ? pool.has(email) : null })
     const response = await fetcher(
       config.syncUrl,
       dashboardRequest({ ...payload, device, deviceToken: config.deviceToken }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),

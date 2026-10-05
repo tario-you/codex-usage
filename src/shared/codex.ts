@@ -24,7 +24,13 @@ export interface CodexRateLimitsResponse {
   rateLimitsByLimitId?: Record<string, CodexRateLimitSnapshot> | null
 }
 
+/** her-team#4148: whether the reporting machine's auto-switcher can switch to this plan. */
+export interface AutoSwitchMembership {
+  inPool: boolean
+}
+
 export interface CodexChatGptAccount {
+  autoSwitch?: AutoSwitchMembership
   email?: string
   planType?: string
   type: 'chatgpt'
@@ -36,6 +42,7 @@ export interface CodexApiKeyAccount {
 
 /** A Claude login reported by `sync --all`; its key is `claude:<email>`. */
 export interface ClaudeAccount {
+  autoSwitch?: AutoSwitchMembership
   email?: string
   planType?: string
   type: 'claude'
