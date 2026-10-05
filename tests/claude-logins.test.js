@@ -107,7 +107,10 @@ test('sync reports one row per email, prefers the login with a refresh token, an
   assert.equal(summary.total, 3)
   assert.equal(summary.synced, 2, 'three logins named two emails')
   assert.deepEqual(summary.results.map((r) => [r.email, r.ok, r.source, r.planType, r.usedPercent]), [['a@example.com', true, 'switcher', 'max', 70], ['b@example.com', true, 'cli', 'pro', 5]])
-  assert.deepEqual(posts.map((post) => post.accountState.account), [{ type: 'claude', email: 'a@example.com', planType: 'max' }, { type: 'claude', email: 'b@example.com', planType: 'pro' }])
+  assert.deepEqual(posts.map((post) => post.accountState.account), [
+    { type: 'claude', email: 'a@example.com', planType: 'max', autoSwitch: { inPool: true } },
+    { type: 'claude', email: 'b@example.com', planType: 'pro', autoSwitch: { inPool: false } },
+  ], 'a saved switcher login is in the pool; the CLI-only one is not')
   assert.equal(posts[0].deviceToken, 'dev-token')
   const store = JSON.parse(await readFile(storePath, 'utf8'))
   assert.equal(store.accounts[0].oauth.accessToken, 'acc-fresh', 'the refreshed switcher token is written back')

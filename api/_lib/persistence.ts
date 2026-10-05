@@ -25,6 +25,32 @@ interface PersistSnapshotInput {
   relink?: boolean
 }
 
+/**
+ * her-team#4148: the row's auto-switch pool mark. A sync that knows sets it
+ * with the time it checked; one that doesn't (an older agent, the plain
+ * `sync` of the current login) keeps the mark the last knowing sync left.
+ */
+async function autoSwitchMark(
+  ownerUserId: string,
+  accountKey: string,
+  account: NonNullable<CodexAccountReadResponse['account']>,
+  checkedAt: string,
+  machine: string | null,
+) {
+  const known = account.type === 'chatgpt' || account.type === 'claude' ? account.autoSwitch : undefined
+  if (known) return { in_pool: known.inPool, checked_at: checkedAt, machine }
+  const { data, error } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .select('metadata')
+    .eq('owner_user_id', ownerUserId)
+    .eq('account_key', accountKey)
+    .maybeSingle()
+  if (error) throw error
+  const metadata = data?.metadata
+  const previous = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata.auto_switch : undefined
+  return previous ?? null
+}
+
 /** The account keys the owner unlinked; background syncs skip them. */
 export async function isAccountUnlinked(ownerUserId: string, accountKey: string) {
   const { data, error } = await serviceRoleSupabase
@@ -73,6 +99,7 @@ export async function persistSnapshotForOwner({
     return { unlinked: true }
   }
   const nowIso = new Date().toISOString()
+  const autoSwitch = await autoSwitchMark(ownerUserId, accountKey, account, nowIso, device.machineName ?? device.label)
 
   const accountUpsert: Database['public']['Tables']['codex_accounts']['Insert'] =
     {
@@ -84,6 +111,7 @@ export async function persistSnapshotForOwner({
       last_snapshot_at: nowIso,
       metadata: {
         auth_type: account.type,
+        ...(autoSwitch ? { auto_switch: autoSwitch } : {}),
         device_id: device.deviceId,
         device_label: device.label,
         device_metadata: device.metadata ?? {},

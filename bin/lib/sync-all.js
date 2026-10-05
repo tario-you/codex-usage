@@ -185,6 +185,8 @@ export function buildSyncPayloadFromUsage(data, email = null, account = null) {
         type: 'chatgpt',
         ...(accountEmail ? { email: accountEmail } : {}),
         ...(planType ? { planType } : {}),
+        // her-team#4148: a saved login is one the auto-switch can pick unless it was turned off for it.
+        ...(account ? { autoSwitch: { inPool: account.auto_switch_enabled !== false } } : {}),
       },
       requiresOpenaiAuth: false,
     },
