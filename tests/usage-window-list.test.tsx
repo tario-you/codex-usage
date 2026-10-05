@@ -56,3 +56,10 @@ test('details keep the measured values so a manual correction edits them', () =>
   assert.match(html, /88%/)
   assert.match(html, /5-hour/)
 })
+
+test('the weekly window is listed above the 5-hour one, in the plain view and in details', () => {
+  for (const showDetails of [false, true]) {
+    const html = render(row([88, hoursFromNow(2.5)], [54, hoursFromNow(117)]), showDetails)
+    assert.ok(html.indexOf('Weekly') >= 0 && html.indexOf('5-hour') > html.indexOf('Weekly'), `showDetails=${showDetails}`)
+  }
+})

@@ -59,6 +59,17 @@ export function getCurrentRateLimitWindows(
   })
 }
 
+/**
+ * The order the dashboard shows an account's windows in: the longest first, so
+ * the weekly limit sits above the 5-hour one. Display only; anything that reads
+ * the windows to decide keeps getRateLimitWindows' order.
+ */
+export function longestWindowFirst<T extends Pick<RateLimitWindow, 'windowDurationMins'>>(windows: T[]) {
+  return [...windows].sort(
+    (a, b) => (b.windowDurationMins ?? -1) - (a.windowDurationMins ?? -1),
+  )
+}
+
 /** A spent weekly window leaves the account unusable, whatever its shorter windows say. */
 export function isWeeklyWindowSpent(
   windows: Array<Pick<RateLimitWindow, 'remainingPercent' | 'windowDurationMins'>>,
