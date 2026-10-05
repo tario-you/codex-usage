@@ -4,6 +4,7 @@ import {
   getCurrentRateLimitWindows,
   getRateLimitWindows,
   isWeeklyWindowSpent,
+  longestWindowFirst,
   WEEKLY_WINDOW_MINS,
   type RateLimitWindowKey,
 } from '../../shared/rate-limit-windows'
@@ -22,8 +23,8 @@ export function UsageWindowList({ account, showDetails, savingUsageOverride, onS
   // again, and while the weekly window is spent its shorter windows are moot.
   const current = showDetails ? getRateLimitWindows(account) : getCurrentRateLimitWindows(account, now)
   const weeklyExhausted = isWeeklyWindowSpent(current)
-  const windows = showDetails || !weeklyExhausted ? current
-    : current.filter((window) => window.windowDurationMins == null || window.windowDurationMins >= WEEKLY_WINDOW_MINS)
+  const windows = longestWindowFirst(showDetails || !weeklyExhausted ? current
+    : current.filter((window) => window.windowDurationMins == null || window.windowDurationMins >= WEEKLY_WINDOW_MINS))
   const isFreePlan = account.plan_type?.trim().toLowerCase() === 'free'
   return windows.length === 0 ? <span className="text-muted-foreground">N/A</span> : (
     <div className="flex flex-col gap-1">

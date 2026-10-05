@@ -68,6 +68,7 @@ import {
 import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
 import {
   getRateLimitWindows,
+  longestWindowFirst,
   type RateLimitWindowKey,
 } from '@/shared/rate-limit-windows'
 import {
@@ -1928,7 +1929,7 @@ function AccountSummaryList({
     <div className="divide-y divide-border">
       {accounts.map((account) => {
         const identity = getAccountIdentityLines(account)
-        const limitWindows = getRateLimitWindows(account)
+        const limitWindows = longestWindowFirst(getRateLimitWindows(account))
         const isOwnedAccount = account.access_scope === 'owned'
         const isUnlinking = unlinkingAccountId === account.id
 
