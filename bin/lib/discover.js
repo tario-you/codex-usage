@@ -183,7 +183,8 @@ export async function checkSavedLogins(candidates, fetcher = fetch) {
       statuses.set(candidate.email, { status: 'missing' })
       continue
     }
-    const usage = await fetchUsage(tokens, fetcher)
+    // A check renews nothing: tokens it renewed and did not save would sign the login out.
+    const usage = await fetchUsage(tokens, fetcher, { refresh: false })
     if (usage.error) {
       statuses.set(candidate.email, {
         detail: usage.error,

@@ -3,7 +3,7 @@
 import { repairClaudeLogin, repairProviders } from './lib/repair-claude.js'
 import { runBrowserAgent } from './lib/browser-sessions.js'
 import { spawn } from 'node:child_process'
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -31,6 +31,7 @@ import {
   wakeFromPoll,
   fetchUsage,
   readStore,
+  renewalOwnedElsewhere,
   resetSpendingOwnedElsewhere,
   resolveStorePath,
   syncAllOnce,
@@ -66,6 +67,7 @@ class StdioCodexClient {
     this.pending = new Map()
     this.requestId = 0
     this.notificationHandler = null
+    this.loginStamp = null
   }
 
   async connect() {
@@ -75,6 +77,7 @@ class StdioCodexClient {
 
     this.buffer = ''
     this.lastStderrMessage = ''
+    this.loginStamp = loginFileStamp(this.codexHome)
     this.child = await this.spawnAppServer()
 
     await this.request('initialize', {
@@ -99,6 +102,24 @@ class StdioCodexClient {
     child.kill('SIGTERM')
 
     this.rejectPending(new Error('Codex app-server closed.'))
+  }
+
+  /**
+   * A running Codex app-server keeps the login it started with. Once auth.json
+   * holds another account (a new sign-in or an account switch), it refuses to
+   * load it ("Skipping auth reload due to account id mismatch"), fails every
+   * renewal and reports no login until it restarts; on 2026-10-06 the watch
+   * here had waited that way for three days. A fresh app-server is started
+   * after auth.json changes, or after the old one exited.
+   */
+  async reconnectIfLoginChanged() {
+    if (this.child && loginFileStamp(this.codexHome) === this.loginStamp) {
+      return false
+    }
+
+    await this.close()
+    await this.connect()
+    return true
   }
 
   onNotification(handler) {
@@ -682,7 +703,7 @@ async function runSyncAllCommand(args, config, codexHome) {
       if (!resetOwnerNoted) console.log('Reset credits: the Codex auto-switch on this Mac spends them, so this agent leaves them alone.')
       resetOwnerNoted = true
     }
-    const summary = await syncAllOnce({ activeAuthFile, config, device, storePath, spendResets, resetHoldUntil })
+    const summary = await syncAllOnce({ activeAuthFile, config, device, storePath, spendResets, resetHoldUntil, renewalOwnedElsewhere: renewalOwnedElsewhere() })
     const spend = summary.resetSpend
     if (spend?.action === 'spent') {
       resetHoldUntil = Date.now() + RESET_SPEND_COOLDOWN_MS
@@ -847,7 +868,8 @@ async function repairLogins({ emails = null, onLink = null, storePath, provider 
     for (const account of store.accounts) {
       const tokens = account.auth_data
       if (!tokens?.access_token || !tokens?.refresh_token || !tokens?.account_id) continue
-      const usage = await fetchUsage(tokens)
+      // A check renews nothing: tokens it renewed and did not save would sign the login out.
+      const usage = await fetchUsage(tokens, fetch, { refresh: false })
       if (usage.error && /sign-in expired/i.test(usage.error) && account.email) targets.push(account.email.toLowerCase())
     }
   }
@@ -1109,6 +1131,9 @@ async function runWatchLoop(client, config, args) {
     isSyncing = true
 
     try {
+      if (await client.reconnectIfLoginChanged()) {
+        console.log('The Codex login changed; restarted the Codex app-server.')
+      }
       await syncOnce(client, config, args)
       console.log(`[${new Date().toLocaleTimeString()}] Sync complete.`)
     } catch (error) {
@@ -1425,6 +1450,16 @@ async function ensureCodexAppServerSupport() {
   }
 
   return codexAppServerSupportPromise
+}
+
+/** Size and modification time of auth.json: changes whenever the login is written. */
+function loginFileStamp(codexHome) {
+  try {
+    const stats = statSync(resolveAuthFilePath(codexHome ?? resolveCodexHome()))
+    return `${stats.size}:${stats.mtimeMs}`
+  } catch {
+    return null
+  }
 }
 
 function buildCodexAppServerExitError(code, signal, stderrMessage) {
