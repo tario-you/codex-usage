@@ -46,10 +46,27 @@ export async function writeStore(storePath, store) {
   await writeJsonFilePrivately(storePath, store)
 }
 
+// One login is one user in one workspace. A workspace id alone is shared by
+// every member of a team plan, and one email can own several workspaces
+// (2026-10-06: a free login signed in under the same email replaced the saved
+// Pro login, and the Codex desktop lost the only live copy of its sign-in).
 function loginIdentity(tokens) {
-  if (tokens?.account_id) return `id:${tokens.account_id}`
-  const email = decodeJwtPayload(tokens?.id_token ?? '')?.email
-  return email ? `email:${email.toLowerCase()}` : null
+  const claims = decodeJwtPayload(tokens?.id_token ?? '') ?? {}
+  const auth = claims['https://api.openai.com/auth'] ?? {}
+  const user = claims.sub ?? auth.chatgpt_user_id ?? auth.user_id ?? null
+  if (tokens?.account_id) return user ? `id:${tokens.account_id}:${user}` : `id:${tokens.account_id}`
+  return claims.email ? `email:${claims.email.toLowerCase()}` : null
+}
+
+/** When the login's current access token was issued; a later one is a newer generation. */
+function issuedAt(tokens) {
+  const iat = decodeJwtPayload(tokens?.access_token ?? '')?.iat
+  return Number.isFinite(iat) ? iat : 0
+}
+
+/** The login a Codex auth file holds, in the store's identity terms. */
+export function authFileIdentity(authFile) {
+  return authFile?.tokens ? loginIdentity(authFile.tokens) : null
 }
 
 /** Save a Codex auth file into the store; an account already there keeps its id. */
@@ -60,10 +77,16 @@ export function upsertStoreAccount(store, authFile, { now = new Date() } = {}) {
   const auth = claims['https://api.openai.com/auth'] ?? {}
   const email = typeof claims.email === 'string' ? claims.email : null
   const identity = loginIdentity(tokens)
+  // An email alone only adopts a row that holds no login yet.
   let account =
     store.accounts.find((entry) => loginIdentity(entry.auth_data) === identity) ??
-    (email ? store.accounts.find((entry) => entry.email?.toLowerCase() === email.toLowerCase()) : null)
+    (email
+      ? store.accounts.find((entry) => !entry.auth_data?.account_id && entry.email?.toLowerCase() === email.toLowerCase())
+      : null)
   const created = !account
+  // OpenAI rotates the refresh token on every renewal. A saved copy issued
+  // later than this file is the live one; this file's copy is already spent.
+  if (!created && issuedAt(account.auth_data) > issuedAt(tokens)) return { account, created, kept: true }
   if (!account) {
     account = {
       id: randomUUID(),
@@ -110,8 +133,13 @@ export async function refreshTokens(tokens, fetcher = fetch) {
   return refreshed
 }
 
-/** Usage for one saved login. A 401 gets one token refresh, then one retry. */
-export async function fetchUsage(tokens, fetcher = fetch) {
+/**
+ * Usage for one saved login. A 401 gets one token refresh, then one retry.
+ * `refresh: false` reads only: a renewal rotates the refresh token, so only
+ * the one owner of a login may renew it, and a renewal nobody saves signs
+ * that login out everywhere.
+ */
+export async function fetchUsage(tokens, fetcher = fetch, { refresh = true } = {}) {
   const call = (current) =>
     fetcher(USAGE_URL, {
       headers: { Authorization: `Bearer ${current.access_token}`, 'ChatGPT-Account-Id': current.account_id },
@@ -120,6 +148,7 @@ export async function fetchUsage(tokens, fetcher = fetch) {
   let current = tokens
   let refreshed = false
   let response = await call(current)
+  if (response.status === 401 && !refresh) return { error: 'sign-in expired (HTTP 401); not renewed here', unauthorized: true }
   if (response.status === 401) {
     const next = await refreshTokens(current, fetcher)
     if (!next) return { error: 'sign-in expired; run `login add` for this account again' }
@@ -199,15 +228,21 @@ export function buildSyncPayloadFromUsage(data, email = null, account = null) {
  * login are merged into the store as it is on disk at write time, so a
  * concurrent switch elsewhere keeps its own changes.
  */
-export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null, spendResets = false, resetHoldUntil = 0, now = Date.now() }) {
+export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null, spendResets = false, resetHoldUntil = 0, renewalOwnedElsewhere = false, now = Date.now() }) {
   const store = await readStore(storePath)
   const changedIds = new Set()
   const added = []
+  // The login in auth.json is renewed by Codex itself, which writes the result
+  // back to auth.json. Renewing it here would save the new tokens only in the
+  // store and leave every Codex process with a spent refresh token, signed
+  // out (2026-10-06). With the Codex switcher installed, its Switchboard
+  // renews every other saved login, so this agent only reads.
+  const activeIdentity = authFileIdentity(activeAuthFile)
   if (activeAuthFile) {
     try {
-      const { account, created } = upsertStoreAccount(store, activeAuthFile)
+      const { account, created, kept } = upsertStoreAccount(store, activeAuthFile)
       if (created) added.push(account)
-      changedIds.add(account.id)
+      if (!kept) changedIds.add(account.id)
     } catch {
       // A login this machine holds in another mode is not ours to save.
     }
@@ -221,9 +256,10 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
       results.push({ email: label, ok: false, reason: 'no saved login tokens' })
       continue
     }
-    const usage = await fetchUsage(tokens, fetcher)
+    const active = activeIdentity !== null && loginIdentity(tokens) === activeIdentity
+    const usage = await fetchUsage(tokens, fetcher, { refresh: !active && !renewalOwnedElsewhere })
     if (usage.error) {
-      results.push({ email: label, ok: false, reason: usage.error })
+      results.push({ email: label, ok: false, reason: active && usage.unauthorized ? 'waiting for Codex to renew this sign-in' : usage.error })
       continue
     }
     if (usage.refreshed) {
@@ -248,13 +284,15 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
     })
   }
   const resetSpend = spendResets
-    ? await spendResetWherePays({ changedIds, config, device, fetcher, fresh, holdUntil: resetHoldUntil, now })
+    ? await spendResetWherePays({ activeIdentity, changedIds, config, device, fetcher, fresh, holdUntil: resetHoldUntil, now, renewalOwnedElsewhere })
     : null
   if (changedIds.size > 0) {
     const latest = await readStore(storePath)
     for (const account of store.accounts) {
       if (!changedIds.has(account.id)) continue
       const target = latest.accounts.find((entry) => entry.id === account.id)
+      // Another writer renewed it during this pass: its copy is the live one.
+      if (target && issuedAt(target.auth_data) > issuedAt(account.auth_data)) continue
       if (target) target.auth_data = account.auth_data
       else latest.accounts.push(account)
     }
@@ -276,7 +314,7 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
  * report that plan again so the dashboard shows it back. One spend per
  * cooldown, so a slow usage endpoint can never lead to a second credit.
  */
-async function spendResetWherePays({ changedIds, config, device, fetcher, fresh, holdUntil, now }) {
+async function spendResetWherePays({ activeIdentity = null, changedIds, config, device, fetcher, fresh, holdUntil, now, renewalOwnedElsewhere = false }) {
   const decision = planResetSpend(fresh.map((entry) => entry.plan), { now })
   if (decision.action !== 'spend') return { action: 'wait', reason: decision.reason }
   if (now < holdUntil) return { action: 'wait', reason: 'cooldown' }
@@ -293,7 +331,8 @@ async function spendResetWherePays({ changedIds, config, device, fetcher, fresh,
     savedMs: decision.savedMs,
   }
   if (spent.outcome !== 'reset') return result
-  const usage = await fetchUsage(entry.account.auth_data, fetcher)
+  const active = activeIdentity !== null && loginIdentity(entry.account.auth_data) === activeIdentity
+  const usage = await fetchUsage(entry.account.auth_data, fetcher, { refresh: !active && !renewalOwnedElsewhere })
   if (usage.error) return result
   if (usage.refreshed) {
     entry.account.auth_data = { ...entry.account.auth_data, ...usage.tokens }
@@ -319,6 +358,25 @@ export function resetSpendingOwnedElsewhere({ home = os.homedir() } = {}) {
   try {
     const record = JSON.parse(readFileSync(file, 'utf8'))
     return record?.enabled === true && typeof record.bin === 'string' && existsSync(record.bin)
+  } catch {
+    return true
+  }
+}
+
+/**
+ * One owner renews each saved login. Where the Moonshot auto-switch is
+ * installed, its Switchboard renews every standby login under the switcher's
+ * lock and saves the result for every reader; a second renewer races it for
+ * the one refresh token, and the loser's copy is signed out. This agent then
+ * only reads. Turning off the Switchboard's "keep connected" hands renewal
+ * back here. An unreadable setting stands down, as the Switchboard defaults on.
+ */
+export function renewalOwnedElsewhere({ home = os.homedir() } = {}) {
+  if (!resetSpendingOwnedElsewhere({ home })) return false
+  const file = path.join(home, '.local/state/codex-auto-switch/dashboard-settings.json')
+  if (!existsSync(file)) return true
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))?.keepConnected !== false
   } catch {
     return true
   }

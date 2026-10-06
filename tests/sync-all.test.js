@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { statSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -8,8 +8,10 @@ import test from 'node:test'
 import { accountStateSchema, rateLimitsSchema } from '../api/_lib/schemas.ts'
 import {
   buildSyncPayloadFromUsage,
+  expiredEmailsFromResults,
   fetchUsage,
   readStore,
+  renewalOwnedElsewhere,
   syncAllOnce,
   upsertStoreAccount,
 } from '../bin/lib/sync-all.js'
@@ -132,4 +134,140 @@ test('every dashboard request the agent makes is bounded by a timeout', async ()
   const short = dashboardRequest({}, { timeoutMs: 5 })
   await new Promise((resolve) => setTimeout(resolve, 30))
   assert.equal(short.aborted ?? short.signal.aborted, true, 'the signal fires once the timeout passes')
+})
+
+// 2026-10-06: the Codex desktop on the owner's Mac lost its sign-in. This agent
+// renewed the login auth.json held and saved the renewal only in the store, so
+// every Codex process kept a spent refresh token; then a free login signed in
+// under the same email replaced the saved Pro login by email.
+const issued = (iat) => `e30.${Buffer.from(JSON.stringify({ iat })).toString('base64url')}.sig`
+const ownershipFetcher = (calls) => async (url, options = {}) => {
+  if (url === 'https://auth.openai.com/oauth/token') {
+    const body = JSON.parse(options.body)
+    calls.push(body.refresh_token)
+    return { ok: true, status: 200, json: async () => ({ access_token: `${body.refresh_token}-renewed`, refresh_token: `${body.refresh_token}-next` }) }
+  }
+  if (url === 'https://chatgpt.com/backend-api/wham/usage') {
+    const token = options.headers?.Authorization ?? ''
+    return token.endsWith('-renewed') ? { ok: true, status: 200, json: async () => usageBody(5) } : { ok: false, status: 401, json: async () => ({}) }
+  }
+  if (url === 'https://dashboard.test/api/sync') return { ok: true, status: 200, json: async () => ({}) }
+  throw new Error(`unexpected ${url}`)
+}
+const ownershipStore = async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-owner-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const storePath = path.join(dir, 'accounts.json')
+  const store = { version: 1, accounts: [] }
+  upsertStoreAccount(store, authFile('acc-active', 'active@example.com'))
+  upsertStoreAccount(store, authFile('acc-standby', 'standby@example.com'))
+  await writeFile(storePath, JSON.stringify(store))
+  return { storePath }
+}
+const ownershipPass = (storePath, calls, extra = {}) => syncAllOnce({
+  activeAuthFile: authFile('acc-active', 'active@example.com'),
+  config: { deviceToken: 'device-token', syncUrl: 'https://dashboard.test/api/sync' },
+  device: { codexHome: '/x', label: 'mac', machineName: 'mac' },
+  fetcher: ownershipFetcher(calls),
+  storePath,
+  ...extra,
+})
+
+test('a login from another workspace under the same email is saved beside the saved one, never over it', () => {
+  const store = { version: 1, accounts: [] }
+  const pro = upsertStoreAccount(store, authFile('acc-pro', 'same@example.com'))
+  const free = upsertStoreAccount(store, authFile('acc-free', 'Same@Example.com'))
+  assert.equal(free.created, true)
+  assert.notEqual(free.account.id, pro.account.id)
+  assert.equal(store.accounts.length, 2)
+  assert.equal(store.accounts.find((a) => a.id === pro.account.id).auth_data.refresh_token, 'refresh-acc-pro', 'the saved login keeps its own sign-in')
+})
+
+test('an email still adopts a saved row that holds no login yet', () => {
+  const store = { version: 1, accounts: [{ id: 'row-1', email: 'new@example.com', auth_data: null }] }
+  const saved = upsertStoreAccount(store, authFile('acc-new', 'new@example.com'))
+  assert.equal(saved.created, false)
+  assert.equal(saved.account.id, 'row-1')
+  assert.equal(store.accounts[0].auth_data.account_id, 'acc-new')
+})
+
+test('a saved copy issued after the auth file is kept: the auth file holds the spent generation', () => {
+  const store = { version: 1, accounts: [] }
+  const live = authFile('acc-a', 'a@example.com')
+  live.tokens = { ...live.tokens, access_token: issued(200), refresh_token: 'refresh-live' }
+  upsertStoreAccount(store, live)
+  const spent = authFile('acc-a', 'a@example.com')
+  spent.tokens = { ...spent.tokens, access_token: issued(100), refresh_token: 'refresh-spent' }
+  const result = upsertStoreAccount(store, spent)
+  assert.equal(result.kept, true)
+  assert.equal(store.accounts[0].auth_data.refresh_token, 'refresh-live')
+  const newer = authFile('acc-a', 'a@example.com')
+  newer.tokens = { ...newer.tokens, access_token: issued(300), refresh_token: 'refresh-newer' }
+  assert.notEqual(upsertStoreAccount(store, newer).kept, true)
+  assert.equal(store.accounts[0].auth_data.refresh_token, 'refresh-newer', 'a newer auth file still updates the saved copy')
+})
+
+test('sync --all never renews the login auth.json holds; Codex renews it and writes auth.json', async (t) => {
+  const { storePath } = await ownershipStore(t)
+  const calls = []
+  const summary = await ownershipPass(storePath, calls)
+  assert.deepEqual(calls, ['refresh-acc-standby'], 'only the standby login is renewed here')
+  const active = summary.results.find((r) => r.email === 'active@example.com')
+  assert.equal(active.ok, false)
+  assert.equal(active.reason, 'waiting for Codex to renew this sign-in')
+  assert.deepEqual(expiredEmailsFromResults(summary.results), [], 'the active login is not offered for a new sign-in')
+  const saved = JSON.parse(await readFile(storePath, 'utf8'))
+  assert.equal(saved.accounts.find((a) => a.email === 'active@example.com').auth_data.refresh_token, 'refresh-acc-active')
+  assert.equal(saved.accounts.find((a) => a.email === 'standby@example.com').auth_data.refresh_token, 'refresh-acc-standby-next')
+})
+
+test('with the switcher renewing saved logins, sync --all only reads', async (t) => {
+  const { storePath } = await ownershipStore(t)
+  const calls = []
+  const summary = await ownershipPass(storePath, calls, { renewalOwnedElsewhere: true })
+  assert.deepEqual(calls, [], 'no renewal races the Switchboard')
+  assert.match(summary.results.find((r) => r.email === 'standby@example.com').reason, /sign-in expired/)
+  const saved = JSON.parse(await readFile(storePath, 'utf8'))
+  assert.equal(saved.accounts.find((a) => a.email === 'standby@example.com').auth_data.refresh_token, 'refresh-acc-standby')
+})
+
+test('a renewal another process saved during the pass is kept over this pass\'s copy', async (t) => {
+  const { storePath } = await ownershipStore(t)
+  const calls = []
+  const fetcher = ownershipFetcher(calls)
+  const racing = async (url, options = {}) => {
+    const response = await fetcher(url, options)
+    if (url === 'https://auth.openai.com/oauth/token') {
+      const store = JSON.parse(await readFile(storePath, 'utf8'))
+      const row = store.accounts.find((a) => a.email === 'standby@example.com')
+      row.auth_data = { ...row.auth_data, access_token: issued(Math.floor(Date.now() / 1000) + 60), refresh_token: 'refresh-from-switchboard' }
+      await writeFile(storePath, JSON.stringify(store))
+    }
+    return response
+  }
+  await syncAllOnce({
+    activeAuthFile: authFile('acc-active', 'active@example.com'),
+    config: { deviceToken: 'device-token', syncUrl: 'https://dashboard.test/api/sync' },
+    device: { codexHome: '/x', label: 'mac', machineName: 'mac' },
+    fetcher: racing,
+    storePath,
+  })
+  const saved = JSON.parse(await readFile(storePath, 'utf8'))
+  assert.equal(saved.accounts.find((a) => a.email === 'standby@example.com').auth_data.refresh_token, 'refresh-from-switchboard')
+})
+
+test('renewal belongs to the switcher while it is installed and keeps standby logins connected', async (t) => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-renewal-owner-'))
+  t.after(() => rm(home, { force: true, recursive: true }))
+  const state = path.join(home, '.local/state/codex-auto-switch')
+  await mkdir(state, { recursive: true })
+  assert.equal(renewalOwnedElsewhere({ home }), false, 'no switcher: this agent renews')
+  const bin = path.join(home, 'codex-auto-switch')
+  await writeFile(bin, '#!/bin/sh\n')
+  await writeFile(path.join(state, 'installation.json'), JSON.stringify({ enabled: true, bin }))
+  assert.equal(renewalOwnedElsewhere({ home }), true, 'the Switchboard keeps logins connected by default')
+  await writeFile(path.join(state, 'dashboard-settings.json'), JSON.stringify({ keepConnected: false }))
+  assert.equal(renewalOwnedElsewhere({ home }), false, 'keep connected off hands renewal back')
+  await writeFile(path.join(state, 'dashboard-settings.json'), '{')
+  assert.equal(renewalOwnedElsewhere({ home }), true, 'an unreadable setting stands down')
 })
