@@ -416,6 +416,56 @@ export interface Database {
           },
         ]
       }
+      codex_readers: {
+        Row: {
+          id: string
+          owner_user_id: string
+          label: string
+          return_origin: string
+          code_hash: string | null
+          code_expires_at: string | null
+          token_hash: string | null
+          created_at: string
+          claimed_at: string | null
+          last_read_at: string | null
+          revoked_at: string | null
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          label: string
+          return_origin: string
+          code_hash?: string | null
+          code_expires_at?: string | null
+          token_hash?: string | null
+          created_at?: string
+          claimed_at?: string | null
+          last_read_at?: string | null
+          revoked_at?: string | null
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          label?: string
+          return_origin?: string
+          code_hash?: string | null
+          code_expires_at?: string | null
+          token_hash?: string | null
+          created_at?: string
+          claimed_at?: string | null
+          last_read_at?: string | null
+          revoked_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'codex_readers_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       codex_login_grants: {
         Row: {
           id: string
@@ -837,6 +887,26 @@ export interface Database {
           candidate_owner_user_id: string
         }
         Returns: boolean
+      }
+      reader_dashboard_accounts: {
+        Args: {
+          reader_owner: string
+        }
+        Returns: Database['public']['Views']['codex_dashboard_accounts']['Row'][]
+      }
+      reader_weighted_weekly_usage_history: {
+        Args: {
+          bucket_seconds?: number
+          range_start: string
+          reader_owner: string
+          usage_provider: string
+        }
+        Returns: {
+          fetched_at: string
+          total_remaining_percent: number
+          account_count: number
+          total_capacity_percent: number
+        }[]
       }
     }
     Enums: Record<string, never>

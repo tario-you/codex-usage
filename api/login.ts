@@ -7,6 +7,7 @@ import * as notes from './_lib/login/notes.js'
 import * as planSwitch from './_lib/login/plan-switch.js'
 import * as switches from './_lib/login/switches.js'
 import * as publish from './_lib/login/publish.js'
+import * as reader from './_lib/login/reader.js'
 import * as repair from './_lib/login/repair.js'
 import * as shares from './_lib/login/shares.js'
 import * as sync from './_lib/login/sync.js'
@@ -28,6 +29,7 @@ const loginRoutes: Record<string, RouteHandler> = {
   'POST /api/login/browser/poll': browser.POLL,
   'POST /api/login/browser/done': browser.DONE,
   'GET /api/login/notes': notes.GET,
+  'GET /api/login/reader/feed': reader.FEED,
   'GET /api/login/repair': repair.GET,
   'GET /api/login/shares': shares.GET,
   'GET /api/login/switch': planSwitch.GET,
@@ -42,6 +44,9 @@ const loginRoutes: Record<string, RouteHandler> = {
   'POST /api/login/switch/poll': planSwitch.POLL,
   'POST /api/login/switches': switches.POST,
   'POST /api/login/publish': publish.POST,
+  'POST /api/login/reader/claim': reader.CLAIM,
+  'POST /api/login/reader/revoke': reader.REVOKE,
+  'POST /api/login/reader/start': reader.START,
   'POST /api/login/repair': repair.POST,
   'POST /api/login/repair/done': repair.DONE,
   'POST /api/login/repair/known': repair.KNOWN,
