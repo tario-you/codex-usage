@@ -94,6 +94,8 @@ import { accountNoteKey, accountNoteProvider, normalizeNoteEmail, noteKey } from
 import { SharedLoginPanel } from './shared-login-panel'
 import { GettingStartedPanel } from './getting-started-panel'
 import { SwitchHistoryPanel } from './switch-history-panel'
+import { ReaderGrantPanel } from './reader-grant-panel'
+import { takePendingReaderGrant, type PendingReaderGrant } from './reader-grant'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 import { UsageWindowList } from './usage-window-list'
 import { formatResetCountdown } from './reset-countdown'
@@ -146,6 +148,9 @@ export function DashboardPage() {
   const [showGuide, setShowGuide] = useState(false)
   const [showSetup, setShowSetup] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
+  const [readerGrant, setReaderGrant] = useState<PendingReaderGrant | null>(() =>
+    typeof window === 'undefined' ? null : takePendingReaderGrant(window.location.href, window.sessionStorage, (url) => window.history.replaceState({}, '', url)),
+  )
   const accountNotes = useAccountNotes({ onInvalidSession: handleInvalidSession, session })
   const repairState = useRepairState(session)
   const planSwitchState = usePlanSwitchState(session)
@@ -1274,6 +1279,10 @@ export function DashboardPage() {
                     <SharedLoginPanel accounts={accounts} onInvalidSession={handleInvalidSession} session={session} />
                   </div>
                 </div>
+
+                {readerGrant ? (
+                  <ReaderGrantPanel onDone={() => setReaderGrant(null)} pending={readerGrant} session={session} />
+                ) : null}
 
                 <Card className="min-w-0" size="sm">
                   <CardHeader
