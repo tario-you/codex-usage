@@ -40,6 +40,7 @@ async function mockDb(run, respond = () => []) {
 test('a code goes back only to a Samantha Mac page on her own hosts', () => {
   assert.ok(reader.readerReturnUrl(page))
   assert.ok(reader.readerReturnUrl(page.replace('her-tario.', 'her.')))
+  assert.ok(reader.readerReturnUrl(page.replace('her-tario.', 'app.')), "Her's public address since 2026-10-06")
   for (const bad of [page.replace('https:', 'http:'), page.replace('moonshot.computer', 'evil.example'), `${page}?x=1`, `${page}#x`,
     page.replace('/back', '/elsewhere'), 'https://her-tario.moonshot.computer:8443/mac/0123456789abcdef0123456789abcdef/codexusage/back', 'javascript:alert(1)', 42]) {
     assert.equal(reader.readerReturnUrl(bad), null, String(bad))
