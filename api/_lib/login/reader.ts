@@ -27,7 +27,8 @@ import { getRemainingPercent } from '../../../src/shared/codex.js'
 export const READER_CODE_TTL_MS = 10 * 60 * 1000
 export const READER_LABEL = 'Samantha for Mac'
 // Her servers' own hosts, and only their Mac page's return path (structural: an allow list, never a pattern of words).
-export const READER_RETURN_HOSTS = new Set(['her-tario.moonshot.computer', 'her.moonshot.computer'])
+// app.moonshot.computer is Her's public address since 2026-10-06; her-tario.moonshot.computer stays its alias.
+export const READER_RETURN_HOSTS = new Set(['app.moonshot.computer', 'her-tario.moonshot.computer', 'her.moonshot.computer'])
 const RETURN_PATH = /^\/mac\/[a-f0-9]{32}\/codexusage\/back$/
 const RANGES = new Set<DashboardWeeklyUsageRange>(['1d', '7d', '30d'])
 
