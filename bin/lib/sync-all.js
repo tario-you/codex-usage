@@ -337,7 +337,8 @@ export function buildSyncPayloadFromHealth(account) {
     rate_limit: { primary_window: window(usage.primary), secondary_window: window(usage.secondary) },
     credits: usage.credits, rate_limit_reset_credits: { available_count: usage.resetCredits?.available ?? 0, applicable_available_count: usage.resetCredits?.applicable ?? null } },
   account.email, { subscription_cancelled: account.cancelled, subscription_expires_at: account.expiresAt, auto_switch_enabled: account.enabled });
-  payload.rateLimits.rateLimits.connection = { status: health.status ?? 'not-connected', checkedAt: health.checkedAt ?? null, accessLost: health.accessLost === true || account.accessLost === true };
+  payload.rateLimits.rateLimits.connection = { status: health.status ?? 'not-connected', checkedAt: health.checkedAt ?? null, accessLost: health.accessLost === true || account.accessLost === true,
+    ...(['available', 'exhausted', 'unknown'].includes(usage.kind) ? { usageKind: usage.kind } : {}) };
   return payload;
 }
 

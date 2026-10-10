@@ -18,6 +18,7 @@ interface NormalizedResetWindow {
 }
 
 interface NormalizedResetAccount {
+  usageKind?: string
   cancelled: boolean
   accessLost: boolean
   connectionStatus: string | null
@@ -127,7 +128,7 @@ function orderPlan(account: NormalizedResetAccount): UsePlan {
     connectionStatus: account.connectionStatus,
     checkedAt: account.checkedAt,
     available: recommendation != null,
-    exhausted: spent.length > 0,
+    exhausted: account.usageKind === 'exhausted' || spent.length > 0,
     weeklySpent: isWeeklyWindowSpent(spent),
     credits: account.credits,
     endsAt: account.endsAt,
@@ -144,11 +145,12 @@ function normalizeAccount(
   account: ResetPlanAccount,
   now: number,
 ): NormalizedResetAccount {
-  const raw = account.raw_rate_limits as { resetCredits?: { applicable?: number | null; available?: number }; subscription?: { cancelled?: boolean; endsAt?: number | null }; connection?: { status?: string; checkedAt?: number; accessLost?: boolean } } | null
+  const raw = account.raw_rate_limits as { resetCredits?: { applicable?: number | null; available?: number }; subscription?: { cancelled?: boolean; endsAt?: number | null }; connection?: { status?: string; checkedAt?: number; accessLost?: boolean; usageKind?: string } } | null
   const expiresAt = Number.isFinite(raw?.subscription?.endsAt) ? raw!.subscription!.endsAt! * 1000 : null
   const subscriptionEnd = planEligible(account.plan_type) === true && expiresAt != null && expiresAt <= now ? expiresAt : null
   const endsAt = earliest(planEndsAt(account), subscriptionEnd)
   return {
+    usageKind: raw?.connection?.usageKind,
     cancelled: raw?.subscription?.cancelled === true,
     accessLost: account.access_lost === true || raw?.connection?.accessLost === true,
     connectionStatus: raw?.connection?.status ?? account.connection_status ?? null,
@@ -175,6 +177,7 @@ function normalizeAccount(
 function buildRecommendation(
   account: NormalizedResetAccount,
 ): ResetPlanRecommendation | null {
+  if (account.usageKind === 'exhausted' || account.usageKind === 'unknown') return null
   const usablePercent = getUsablePercent(
     account.windows.map((window) => window.remainingPercent),
   )

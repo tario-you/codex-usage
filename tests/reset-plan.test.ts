@@ -16,6 +16,15 @@ test('current structured health overrides an old email-level sign-in badge', () 
   assert.equal(buildResetPlan(rows, NOW).current?.accountId, 'renewed')
 })
 
+test('a live exhausted verdict outranks stale apparent room in a snapshot', () => {
+  const rows = [account({ id: 'free', plan_type: 'free' }), account({ id: 'exhausted', plan_type: 'prolite', primary_remaining_percent: 1,
+    raw_rate_limits: { resetCredits: { available: 2 }, connection: { status: 'connected', checkedAt: NOW, usageKind: 'exhausted' } } })]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map(row => row.id), ['exhausted', 'free'])
+  const plan = buildResetPlan(rows, NOW)
+  assert.equal(plan.current, null)
+  assert.deepEqual(plan.resetFallbacks.map(row => row.accountId), ['exhausted'])
+})
+
 test('paid reset holders lead free quota and share the reset spending order', () => {
   const rows = [
     account({ id: 'free', plan_type: 'free' }),
