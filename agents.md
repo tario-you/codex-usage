@@ -1,6 +1,6 @@
 # Agent Instructions
 
-- Use order excludes cancelled, lost-access and unusably stale sign-ins using structured plan and connection state. Show them only as unusable, without a rank or switch action. Never regain a lost-email account with saved tokens. Saved Proton sessions remain switcher-only and must never be inspected, copied, refreshed, replaced, revoked, repaired or reauthenticated by agents.
+- Rank live paid Codex plans by usable room across Pro and Pro Lite. Cancellation at a future paid end preserves access until that end; ended, lost-access and unusably stale sign-ins have no rank or switch action and show gray. Hide Free plans. Saved Proton sessions are switcher-only: the switcher may pick them; agents never inspect, copy, refresh, replace, revoke, repair or reauthenticate them, or regain lost-email access with saved tokens.
 
 Ignore this if you are Claude Code.
 

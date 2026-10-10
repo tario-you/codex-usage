@@ -11,7 +11,8 @@ export function planWeight(planType) {
 }
 
 export function isUsablePlan(plan, now = Date.now()) {
-  if (plan.cancelled === true || plan.accessLost === true) return false
+  if (plan.accessLost === true) return false
+  if (plan.cancelled === true && !(planEligible(plan.planType) === true && finite(plan.endsAt) > now)) return false
   if (plan.connectionStatus != null && plan.connectionStatus !== 'connected') return false
   if (finite(plan.endsAt) != null && plan.endsAt <= now) return false
   if (finite(plan.endsAt) != null && plan.exhausted && !(plan.credits > 0) && (plan.returnsAt == null || plan.returnsAt >= plan.endsAt)) return false
@@ -48,8 +49,9 @@ export function comparePlansForUse(left, right, now) {
     return Number(b.lastChance) - Number(a.lastChance) || b.score - a.score
   }
   if (left.available && right.available) {
-    return compareTimes(left.expiresAt, right.expiresAt) || compareTimes(left.endsAt, right.endsAt)
-      || (right.usablePercent ?? 0) - (left.usablePercent ?? 0)
+    const room = (right.usablePercent ?? 0) - (left.usablePercent ?? 0)
+    const expiry = compareTimes(left.expiresAt, right.expiresAt) || compareTimes(left.endsAt, right.endsAt)
+    return ((left.provider ?? 0) === 0 ? room || expiry : expiry || room)
       || String(left.label ?? '').localeCompare(String(right.label ?? ''))
   }
   return compareTimes(left.returnsAt, right.returnsAt)

@@ -10,13 +10,15 @@ import {
 } from '../../shared/rate-limit-windows'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 import { formatResetCountdown } from './reset-countdown'
+import { isAccountUsableForUse } from './reset-plan'
 
-export function UsageWindowList({ account, showDetails, savingUsageOverride, onSaveUsageOverride, now }: {
+export function UsageWindowList({ account, showDetails, savingUsageOverride, onSaveUsageOverride, now, inactive = !isAccountUsableForUse(account, now) }: {
   account: DashboardAccountRow
   showDetails: boolean
   savingUsageOverride: string | null
   onSaveUsageOverride: (account: DashboardAccountRow, window: RateLimitWindowKey, remaining: number) => Promise<boolean>
   now: number
+  inactive?: boolean
 }) {
   // Details shows what the last sync measured, so a manual correction edits
   // that. The plain view shows what is usable now: a passed reset is full
@@ -31,7 +33,7 @@ export function UsageWindowList({ account, showDetails, savingUsageOverride, onS
       {windows.map((window) => (
         <div className="flex items-center gap-2" key={window.key}>
           <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${
-            isFreePlan ? 'bg-muted-foreground'
+            inactive || isFreePlan ? 'bg-muted-foreground'
               : window.windowDurationMins === 300 && weeklyExhausted ? 'bg-red-500'
               : window.remainingPercent == null ? 'bg-muted-foreground/40'
                 : window.remainingPercent <= 0 ? 'bg-red-500'
