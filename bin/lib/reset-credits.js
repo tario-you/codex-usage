@@ -7,10 +7,7 @@
  * holds a quarter of a Pro (as in the usage forecast), so among equal plans
  * the one whose own reset is furthest away is reset first.
  *
- * A plan marked cancelled (Switchboard's `subscription_cancelled`) ends at
- * its `subscription_expires_at`. When it ends before its own reset would bring
- * it back, this is its credit's last chance, so it goes before every other
- * plan. The Moonshot auto-switch uses the same rule (moonshot-mobile #13080).
+ * Cancelled, lost-access and unusably stale plans are excluded (owner 10-10).
  *
  * This module has no Node imports: the CLI spends with it and the dashboard
  * shows its choice.
@@ -19,10 +16,8 @@ export const RESET_CONSUME_URL = 'https://chatgpt.com/backend-api/wham/rate-limi
 /** After a spend, no second spend until the next passes have seen the reset land. */
 export const RESET_SPEND_COOLDOWN_MS = 15 * 60 * 1000
 
-/** One Pro Lite holds a quarter of a Pro's capacity. */
-export function planWeight(planType) {
-  return String(planType ?? '').trim().toLowerCase() === 'prolite' ? 0.25 : 1
-}
+import { isUsablePlan, orderPlansForUse, planEligible, resetPriority, useGroup } from './plan-order.js'
+export { planWeight } from './plan-order.js'
 
 /**
  * The plan whose credit to spend, or null. Each plan is
@@ -30,20 +25,9 @@ export function planWeight(planType) {
  * times in milliseconds; `credits` counts the credits usable now.
  */
 export function resetCreditTarget(plans, { now = Date.now() } = {}) {
-  let best = null
-  for (const plan of plans) {
-    if (!plan.exhausted || !(plan.credits > 0)) continue
-    const returnsAt = Number.isFinite(plan.returnsAt) ? plan.returnsAt : null
-    const endsAt = plan.cancelled && Number.isFinite(plan.endsAt) ? plan.endsAt : null
-    const lastChance = returnsAt != null && endsAt != null && endsAt > now && endsAt <= returnsAt
-    const until = lastChance ? endsAt : returnsAt
-    const savedMs = until == null ? 0 : Math.max(0, until - now)
-    const score = planWeight(plan.planType) * savedMs
-    if (!best || (lastChance && !best.lastChance) || (lastChance === best.lastChance && score > best.score)) {
-      best = { lastChance, plan, savedMs, score }
-    }
-  }
-  return best
+  const ranked = orderPlansForUse(plans.map(plan => ({ ...plan, original: plan, endsAt: plan.cancelled ? plan.endsAt : null })), { now })
+  const plan = ranked.find(plan => useGroup(plan, now) === 1)
+  return plan ? { ...resetPriority(plan, now), plan: plan.original } : null
 }
 
 /**
@@ -52,7 +36,7 @@ export function resetCreditTarget(plans, { now = Date.now() } = {}) {
  */
 export function planResetSpend(plans, { now = Date.now() } = {}) {
   if (plans.length === 0) return { action: 'wait', reason: 'no-plans' }
-  const open = plans.find((plan) => !plan.exhausted)
+  const open = plans.find((plan) => !plan.exhausted && planEligible(plan.planType) !== false && isUsablePlan(plan, now))
   if (open) return { action: 'wait', reason: 'usage-left', plan: open }
   const target = resetCreditTarget(plans, { now })
   if (!target) return { action: 'wait', reason: 'no-credits' }

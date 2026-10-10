@@ -7,6 +7,7 @@ import {
 } from '../../shared/rate-limit-windows.js'
 
 import { planEndsAt } from './plan-end.js'
+import { comparePlansForUse, isUsablePlan, planEligible, resetPriority, useGroup, type UsePlan } from '../../../bin/lib/plan-order.js'
 
 interface NormalizedResetWindow {
   key: RateLimitWindowKey
@@ -17,10 +18,17 @@ interface NormalizedResetWindow {
 }
 
 interface NormalizedResetAccount {
+  cancelled: boolean
+  accessLost: boolean
+  connectionStatus: string | null
+  checkedAt: number | null
   endsAt: number | null
   id: string
   label: string
   windows: NormalizedResetWindow[]
+  planType: string | null
+  credits: number
+  provider: number
 }
 
 export interface ResetPlanRecommendation {
@@ -49,6 +57,7 @@ export interface ResetPlan {
   fallbacks: ResetPlanRecommendation[]
   nextAvailable: ResetPlanEvent | null
   upcomingResets: ResetPlanEvent[]
+  resetFallbacks: Array<{ accountId: string; accountLabel: string; savedMs: number }>
 }
 
 export interface ResetPlanAccount extends RateLimitWindowSource {
@@ -58,6 +67,11 @@ export interface ResetPlanAccount extends RateLimitWindowSource {
   label: string | null
   /** When the owner says the plan stops working; null or absent when unknown. */
   plan_ends_at?: string | null
+  plan_type?: string | null
+  raw_rate_limits?: unknown
+  last_snapshot_at?: string | null
+  connection_status?: string | null
+  access_lost?: boolean
 }
 
 export function buildResetPlan(
@@ -68,19 +82,22 @@ export function buildResetPlan(
   // product and never a switch target, so it stays out of the ordering. A plan
   // that has ended is no target either.
   const normalizedAccounts = accounts
-    .filter((account) => !isClaudeAccountKey(account.account_key))
+    .filter((account) => !isClaudeAccountKey(account.account_key) && planEligible(account.plan_type) !== false)
     .map((account) => normalizeAccount(account, now))
-    .filter((account) => account.endsAt == null || account.endsAt > now)
+    .filter((account) => isUsablePlan(orderPlan(account), now))
+    .sort((a, b) => comparePlansForUse(orderPlan(a), orderPlan(b), now))
   const recommendations = normalizedAccounts
     .map(buildRecommendation)
     .filter(
       (recommendation): recommendation is ResetPlanRecommendation =>
         recommendation !== null,
     )
-    .sort(compareRecommendations)
+
   const upcomingResets = buildUpcomingResets(normalizedAccounts)
 
   return {
+    resetFallbacks: normalizedAccounts.filter(account => useGroup(orderPlan(account), now) === 1)
+      .map(account => ({ accountId: account.id, accountLabel: account.label, savedMs: resetPriority(orderPlan(account), now).savedMs })),
     current: recommendations[0] ?? null,
     fallbacks: recommendations.slice(1),
     nextAvailable:
@@ -91,60 +108,35 @@ export function buildResetPlan(
   }
 }
 
-const USE_GROUP = { usable: 0, waiting: 1, unknown: 2, weeklySpent: 3, ended: 4 } as const
-
-/**
- * Order the table by what to use next, without changing the saved rows:
- * allowance usable now in the recommendation order, then rows waiting on a
- * spent 5-hour window, then unknown balances, then rows whose weekly
- * allowance is spent, since those stay unusable for days, then plans that
- * have ended or end before they are usable again. Codex rows lead Claude rows
- * within each group; Claude rows never enter the Codex plan.
- */
+/** Table and automatic recovery read the same portable quota/reset order. */
 export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], now = Date.now()): T[] {
-  return accounts
-    .map((account, index) => ({ account, index, ...rankForUse(account, now) }))
-    .sort(
-      (left, right) =>
-        left.group - right.group ||
-        left.provider - right.provider ||
-        (left.recommendation && right.recommendation
-          ? compareRecommendations(left.recommendation, right.recommendation)
-          : 0) ||
-        (left.backAt === right.backAt ? 0 : left.backAt - right.backAt) ||
-        left.index - right.index,
-    )
+  return accounts.map((account, index) => ({ account, index, plan: orderPlan(normalizeAccount(account, now)) }))
+    .filter(({ plan }) => isUsablePlan(plan, now))
+    .sort((a, b) => comparePlansForUse(a.plan, b.plan, now) || a.index - b.index)
     .map(({ account }) => account)
 }
 
-function rankForUse(account: ResetPlanAccount, now: number) {
-  const normalized = normalizeAccount(account, now)
-  const ended = normalized.endsAt != null && normalized.endsAt <= now
-  const recommendation = ended ? null : buildRecommendation(normalized)
-  const spent = normalized.windows.filter(
-    (window) => window.remainingPercent != null && window.remainingPercent <= 0,
-  )
-  // Usable again once every spent window has reset; an unknown reset sorts last.
-  const backAt = Math.max(
-    Number.NEGATIVE_INFINITY,
-    ...spent.map((window) => window.resetsAt ?? Number.POSITIVE_INFINITY),
-  )
-  const endsBeforeBack = normalized.endsAt != null && spent.length > 0 && backAt >= normalized.endsAt
-  const group = recommendation
-    ? USE_GROUP.usable
-    : ended || endsBeforeBack
-      ? USE_GROUP.ended
-      : spent.length === 0
-        ? USE_GROUP.unknown
-        : isWeeklyWindowSpent(spent)
-          ? USE_GROUP.weeklySpent
-          : USE_GROUP.waiting
-
+function orderPlan(account: NormalizedResetAccount): UsePlan {
+  const recommendation = buildRecommendation(account)
+  const spent = account.windows.filter(window => window.remainingPercent != null && window.remainingPercent <= 0)
+  const returnsAt = spent.length && spent.every(window => window.resetsAt != null)
+    ? Math.max(...spent.map(window => window.resetsAt!)) : null
   return {
-    backAt,
-    group,
-    provider: isClaudeAccountKey(account.account_key) ? 1 : 0,
-    recommendation,
+    cancelled: account.cancelled,
+    accessLost: account.accessLost,
+    connectionStatus: account.connectionStatus,
+    checkedAt: account.checkedAt,
+    available: recommendation != null,
+    exhausted: spent.length > 0,
+    weeklySpent: isWeeklyWindowSpent(spent),
+    credits: account.credits,
+    endsAt: account.endsAt,
+    expiresAt: recommendation?.expiresAt ?? null,
+    returnsAt,
+    usablePercent: recommendation?.usablePercent ?? null,
+    label: account.label,
+    planType: account.planType,
+    provider: account.provider,
   }
 }
 
@@ -152,9 +144,19 @@ function normalizeAccount(
   account: ResetPlanAccount,
   now: number,
 ): NormalizedResetAccount {
-  const endsAt = planEndsAt(account)
+  const raw = account.raw_rate_limits as { resetCredits?: { applicable?: number | null; available?: number }; subscription?: { cancelled?: boolean; endsAt?: number | null }; connection?: { status?: string; checkedAt?: number; accessLost?: boolean } } | null
+  const expiresAt = Number.isFinite(raw?.subscription?.endsAt) ? raw!.subscription!.endsAt! * 1000 : null
+  const subscriptionEnd = planEligible(account.plan_type) === true && expiresAt != null && expiresAt <= now ? expiresAt : null
+  const endsAt = earliest(planEndsAt(account), subscriptionEnd)
   return {
+    cancelled: raw?.subscription?.cancelled === true,
+    accessLost: account.access_lost === true || raw?.connection?.accessLost === true,
+    connectionStatus: account.connection_status ?? raw?.connection?.status ?? null,
+    checkedAt: raw?.connection?.checkedAt ?? (Number.isFinite(Date.parse(account.last_snapshot_at ?? '')) ? Date.parse(account.last_snapshot_at!) : null),
     endsAt,
+    planType: account.plan_type ?? null,
+    credits: isClaudeAccountKey(account.account_key) ? 0 : raw?.resetCredits?.applicable ?? raw?.resetCredits?.available ?? 0,
+    provider: isClaudeAccountKey(account.account_key) ? 1 : 0,
     id: account.id,
     label: account.label ?? account.email ?? account.account_key,
     windows: getCurrentRateLimitWindows(account, now).map((window) => {
@@ -163,8 +165,7 @@ function normalizeAccount(
         key: window.key,
         label: window.label,
         remainingPercent: window.remainingPercent,
-        // A reset on or after the plan's end never comes.
-        resetsAt: resetsAt != null && endsAt != null && resetsAt >= endsAt ? null : resetsAt,
+        resetsAt,
         windowDurationMins: window.windowDurationMins,
       }
     }),
@@ -209,32 +210,6 @@ function buildRecommendation(
   }
 }
 
-/**
- * Room that expires first is used first. Room expires at the plan's next
- * reset or at its end, whichever is sooner; room with neither never expires,
- * so it waits. Equal expiry goes to the plan that ends sooner, then to the
- * one with more room.
- */
-function compareRecommendations(
-  left: ResetPlanRecommendation,
-  right: ResetPlanRecommendation,
-) {
-  return (
-    compareTimes(left.expiresAt, right.expiresAt) ||
-    compareTimes(left.planEndsAt, right.planEndsAt) ||
-    right.usablePercent - left.usablePercent ||
-    left.accountLabel.localeCompare(right.accountLabel)
-  )
-}
-
-/** Earlier first; an unknown time sorts after every known one. */
-function compareTimes(left: number | null, right: number | null) {
-  if (left === right) return 0
-  if (left == null) return 1
-  if (right == null) return -1
-  return left - right
-}
-
 function earliest(left: number | null, right: number | null) {
   if (left == null) return right
   if (right == null) return left
@@ -253,7 +228,7 @@ function buildUpcomingResets(accounts: NormalizedResetAccount[]) {
   const resetWindows = accounts
     .flatMap((account) =>
       account.windows.flatMap((window) =>
-        window.resetsAt == null
+        window.resetsAt == null || (account.endsAt != null && window.resetsAt >= account.endsAt)
           ? []
           : [{ account, at: window.resetsAt, window }],
       ),

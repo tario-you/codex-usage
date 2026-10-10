@@ -9,6 +9,45 @@ import {
 
 const NOW = Date.parse('2026-07-15T18:00:00.000Z')
 
+test('paid reset holders lead free quota and share the reset spending order', () => {
+  const rows = [
+    account({ id: 'free', plan_type: 'free' }),
+    account({ id: 'spent', plan_type: 'prolite', secondary_remaining_percent: 0 }),
+    account({ id: 'credit-soon', plan_type: 'prolite', secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(48), raw_rate_limits: { resetCredits: { applicable: 1 } } }),
+    account({ id: 'credit-late', plan_type: 'prolite', secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(96), raw_rate_limits: { resetCredits: { applicable: 2 } } }),
+    account({ id: 'open', plan_type: 'prolite', primary_remaining_percent: 12 }),
+  ]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map(row => row.id), ['open', 'credit-late', 'credit-soon', 'spent', 'free'])
+  assert.equal(buildResetPlan([rows[0]], NOW).current, null, 'free quota is never recommended')
+})
+
+test('a reset can rescue a paid plan before it ends, but cannot revive an ended plan', () => {
+  const credit = { resetCredits: { applicable: 1, available: 1 } }
+  const rows = [
+    account({ id: 'free', plan_type: 'free_workspace' }),
+    account({ id: 'long-wait', plan_type: 'pro', secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(120), raw_rate_limits: credit }),
+    account({ id: 'last-chance', plan_type: 'prolite', secondary_remaining_percent: 0, plan_ends_at: isoAfterHours(2), raw_rate_limits: credit }),
+    account({ id: 'ended', plan_type: 'pro', secondary_remaining_percent: 0, plan_ends_at: isoAfterHours(-1), raw_rate_limits: credit }),
+    account({ id: 'inapplicable', plan_type: 'pro', secondary_remaining_percent: 0, raw_rate_limits: { resetCredits: { applicable: 0, available: 9 } } }),
+  ]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map(row => row.id), ['last-chance', 'long-wait', 'inapplicable', 'free'])
+})
+
+test('cancelled, lost-access and unusably stale logins leave every order and recommendation', () => {
+  const rows = [
+    account({ id: 'current', plan_type: 'prolite', last_snapshot_at: new Date(NOW).toISOString() }),
+    account({ id: 'cancelled', raw_rate_limits: { subscription: { cancelled: true, endsAt: (NOW + 86400000) / 1000 } } }),
+    account({ id: 'lost', access_lost: true }),
+    account({ id: 'expired', connection_status: 'needs-login' }),
+    account({ id: 'stale', last_snapshot_at: isoAfterHours(-13) }),
+  ]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map(row => row.id), ['current'])
+  const plan = buildResetPlan(rows, NOW)
+  assert.equal(plan.current?.accountId, 'current')
+  assert.deepEqual(plan.fallbacks, [])
+  assert.ok(plan.upcomingResets.every(event => event.accountId === 'current'))
+})
+
 test('table order follows the recommendation and keeps exhausted and unknown rows at the bottom', () => {
   const rows = [
     account({ id: 'empty', primary_remaining_percent: 0 }),
@@ -241,7 +280,7 @@ test('an ended plan never ranks, whatever room it had', () => {
   assert.equal(plan.current?.accountId, 'usable')
   assert.deepEqual(plan.fallbacks, [])
   assert.ok(plan.upcomingResets.every((event) => event.accountId !== 'ended'), 'an ended plan has no resets to come')
-  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['usable', 'weekly-spent', 'ended'])
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['usable', 'weekly-spent'])
 })
 
 test('a spent plan whose next reset comes after its end is never resumed', () => {
@@ -253,7 +292,7 @@ test('a spent plan whose next reset comes after its end is never resumed', () =>
   assert.equal(plan.current, null)
   assert.equal(plan.nextAvailable?.accountId, 'back-before-end')
   assert.ok(plan.upcomingResets.every((event) => event.at < NOW + 20 * 60 * 60 * 1000 || event.accountId !== 'back-after-end'), 'no reset after the plan ends')
-  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['back-before-end', 'back-after-end'])
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['back-before-end'])
 })
 
 function account(overrides: Partial<ResetPlanAccount>): ResetPlanAccount {
