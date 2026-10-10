@@ -123,6 +123,48 @@ test('a fresh claim with nothing usable still hands out an account', () => {
   assert.equal(decision.accountId, 'a')
 })
 
+test('a recipient leaves a plan that has ended, even with room left on it', () => {
+  const decision = chooseNextAccount({
+    accounts: [
+      account({ id: 'ended', plan_ends_at: isoAfterHours(-1) }),
+      account({ id: 'live', primary_remaining_percent: 40 }),
+    ],
+    currentAccountId: 'ended',
+    now: NOW,
+  })
+
+  assert.equal(decision.reason, 'switch')
+  assert.equal(decision.accountId, 'live')
+})
+
+test('a recipient moves to the plan whose room is lost first, its end counted', () => {
+  const decision = chooseNextAccount({
+    accounts: [
+      account({ id: 'empty', primary_remaining_percent: 0, primary_used_percent: 100 }),
+      account({ id: 'resets-in-5h', primary_resets_at: isoAfterHours(5) }),
+      account({ id: 'ends-in-2h', primary_resets_at: isoAfterHours(5), plan_ends_at: isoAfterHours(2) }),
+    ],
+    currentAccountId: 'empty',
+    now: NOW,
+  })
+
+  assert.equal(decision.reason, 'switch')
+  assert.equal(decision.accountId, 'ends-in-2h')
+})
+
+test('a fresh claim with nothing usable never hands out an ended plan', () => {
+  const decision = chooseNextAccount({
+    accounts: [
+      account({ id: 'ended', primary_remaining_percent: 0, primary_used_percent: 100, plan_ends_at: isoAfterHours(-1) }),
+      account({ id: 'spent', primary_remaining_percent: 0, primary_used_percent: 100, primary_resets_at: null }),
+    ],
+    currentAccountId: null,
+    now: NOW,
+  })
+
+  assert.equal(decision.accountId, 'spent')
+})
+
 function account(overrides: Partial<PoolAccount> & { id: string }): PoolAccount {
   const primaryRemaining = overrides.primary_remaining_percent ?? 100
   const secondaryRemaining = overrides.secondary_remaining_percent ?? 100

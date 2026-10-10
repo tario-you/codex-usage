@@ -4,6 +4,7 @@ import * as claim from './_lib/login/claim.js'
 import * as grantsRevoke from './_lib/login/grants-revoke.js'
 import * as grantsStart from './_lib/login/grants-start.js'
 import * as notes from './_lib/login/notes.js'
+import * as planEnd from './_lib/login/plan-end.js'
 import * as planSwitch from './_lib/login/plan-switch.js'
 import * as switches from './_lib/login/switches.js'
 import * as publish from './_lib/login/publish.js'
@@ -39,6 +40,7 @@ const loginRoutes: Record<string, RouteHandler> = {
   'POST /api/login/grants/start': grantsStart.POST,
   'POST /api/login/notes': notes.POST,
   'POST /api/login/notes/delete': notes.DELETE,
+  'POST /api/login/plan-end': planEnd.POST,
   'POST /api/login/switch': planSwitch.POST,
   'POST /api/login/switch/done': planSwitch.DONE,
   'POST /api/login/switch/poll': planSwitch.POLL,

@@ -13,7 +13,7 @@ const account = (remaining: number, reset: number | null) => ({
   secondary_remaining_percent: remaining, secondary_used_percent: 100 - remaining,
   secondary_window_mins: 10080, secondary_resets_at: reset == null ? null : at(reset),
 })
-const forecast = (remaining: number, rate: number, accounts: ReturnType<typeof account>[]) => {
+const forecast = (remaining: number, rate: number, accounts: Parameters<typeof forecastWeeklyUsage>[1]) => {
   const result = forecastWeeklyUsage([
     { fetchedAt: at(-1), totalRemainingPercent: remaining + rate },
     { fetchedAt: at(0), totalRemainingPercent: remaining },
@@ -60,6 +60,27 @@ test('missing, past, invalid and nonweekly resets never create refills', () => {
     { ...account(20, 1), secondary_window_mins: 300 }, account(20, 200)])
   assert.equal(result.resets?.length, 0)
   assert.equal(result.runsOutAt, at(10))
+})
+
+test('a plan end drops what that plan has left and stops its refills', () => {
+  const ending = { ...account(60, 30), plan_ends_at: at(20) }
+  const result = forecast(100, 0, [ending, account(40, null)])
+  assert.deepEqual(result.timeline?.filter(p => p.at === at(20)).map(p => p.remainingPercent), [100, 40])
+  assert.equal(result.resets?.length, 0, 'its reset after the end never comes')
+  assert.equal(projectedRemainingAt(result, T0 + 100 * HOUR), 40)
+})
+
+test('spend comes out of the plan that ends before its reset first', () => {
+  // 4%/h for 12 h is 48: all of it from the plan ending at hour 12, so only its last 2 are lost there.
+  const result = forecast(100, 4, [account(50, 15), { ...account(50, null), plan_ends_at: at(12) }])
+  assert.deepEqual(result.timeline?.filter(p => p.at === at(12)).map(p => p.remainingPercent), [52, 50])
+  assert.equal(projectedRemainingAt(result, T0 + 15 * HOUR), 100, 'the other plan refills at its reset')
+})
+
+test('a plan that already ended counts for nothing from the start', () => {
+  const result = forecast(100, 0, [{ ...account(70, 30), plan_ends_at: at(-5) }, account(30, null)])
+  assert.deepEqual(result.timeline?.slice(0, 3).map(p => p.remainingPercent), [100, 100, 30])
+  assert.equal(result.resets?.length, 0)
 })
 
 test('a refill exactly when allowance empties avoids a positive-duration gap', () => {

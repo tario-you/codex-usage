@@ -6,6 +6,7 @@ import { formatTimestamp } from '@/shared/codex'
 
 import { formatWait } from '../../../bin/lib/reset-credits.js'
 
+import { formatPlanEnd } from './plan-end'
 import { resetCreditChoice } from './reset-credit-choice'
 import {
   buildResetPlan,
@@ -41,7 +42,7 @@ export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRo
         </span>
         <span className="text-muted-foreground">
           {plan.current
-            ? formatUsableBalance(plan.current)
+            ? formatUsableBalance(plan.current, now)
             : plan.nextAvailable
               ? `${plan.nextAvailable.windowLabel} resets in ${formatTimeUntil(plan.nextAvailable.at, now)}`
               : 'Sync again to rebuild the plan.'}
@@ -91,7 +92,7 @@ export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRo
                     <span className="w-4 text-muted-foreground">1.</span>
                     <span className="min-w-0">
                       <span className="font-medium text-foreground">{plan.current.accountLabel}</span>
-                      <span className="text-muted-foreground"> · {formatUsableBalance(plan.current)}</span>
+                      <span className="text-muted-foreground"> · {formatUsableBalance(plan.current, now)}</span>
                     </span>
                   </li>
                 ) : null}
@@ -100,7 +101,7 @@ export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRo
                     <span className="w-4 text-muted-foreground">{index + (plan.current ? 2 : 1)}.</span>
                     <span className="min-w-0">
                       <span className="font-medium text-foreground">{fallback.accountLabel}</span>
-                      <span className="text-muted-foreground"> · {formatUsableBalance(fallback)}</span>
+                      <span className="text-muted-foreground"> · {formatUsableBalance(fallback, now)}</span>
                     </span>
                   </li>
                 ))}
@@ -159,12 +160,13 @@ function NextAvailable({ event, now }: { event: ResetPlanEvent; now: number }) {
   )
 }
 
-function formatUsableBalance(recommendation: ResetPlanRecommendation) {
+function formatUsableBalance(recommendation: ResetPlanRecommendation, now: number) {
   const limitingWindow = recommendation.limitingWindowLabel
     ? ` (${recommendation.limitingWindowLabel})`
     : ''
+  const end = recommendation.planEndsAt != null ? `, ${formatPlanEnd(recommendation.planEndsAt, now)}` : ''
 
-  return `${recommendation.usablePercent}% usable${limitingWindow}`
+  return `${recommendation.usablePercent}% usable${limitingWindow}${end}`
 }
 
 function formatTimeUntil(timestamp: number, now: number) {

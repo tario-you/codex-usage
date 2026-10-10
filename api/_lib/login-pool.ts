@@ -33,7 +33,7 @@ export async function loadPoolAccounts(ownerUserId: string) {
     const { data: rows, error } = await serviceRoleSupabase
       .from('codex_dashboard_accounts')
       .select(
-        'id, account_key, email, label, plan_type, primary_remaining_percent, primary_resets_at, primary_used_percent, primary_window_mins, secondary_remaining_percent, secondary_resets_at, secondary_used_percent, secondary_window_mins',
+        'id, account_key, email, label, plan_type, plan_ends_at, primary_remaining_percent, primary_resets_at, primary_used_percent, primary_window_mins, secondary_remaining_percent, secondary_resets_at, secondary_used_percent, secondary_window_mins',
       )
       .in('id', accountIds)
 
