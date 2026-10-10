@@ -26,6 +26,7 @@ const rateLimitSnapshotSchema = z.object({
   credits: creditsSchema.nullable(),
   resetCredits: resetCreditsSchema.nullish(),
   subscription: subscriptionSchema.nullish(),
+  connection: z.object({ status: z.string(), checkedAt: z.number().nullable(), accessLost: z.boolean() }).nullish(),
   limitId: z.string().nullable(),
   limitName: z.string().nullable(),
   planType: z.string().nullable(),

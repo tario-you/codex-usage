@@ -8,6 +8,7 @@ import test from 'node:test'
 import { accountStateSchema, rateLimitsSchema } from '../api/_lib/schemas.ts'
 import {
   buildSyncPayloadFromUsage,
+  buildSyncPayloadFromHealth,
   expiredEmailsFromResults,
   fetchUsage,
   readStore,
@@ -31,6 +32,23 @@ const usageBody = (used, extras = []) => ({
   credits: { has_credits: false, unlimited: false, balance: '0' },
   rate_limit_reset_credits: { available_count: 2, applicable_available_count: 1 },
 })
+
+test('switcher health sync preserves plan, reset balance and unusable access without opening a saved session', async () => {
+  const account = { id: 'expired', email: 'fixture@example.com', connected: true, plan: 'pro', enabled: true, cancelled: true,
+    expiresAt: '2026-10-07T00:00:00Z', health: { status: 'needs-login', checkedAt: 123,
+      usage: { plan: 'prolite', kind: 'exhausted', usedPercent: 100, secondary: { usedPercent: 100, minutes: 10080, resetsAt: 1792185073 }, resetCredits: { available: 3, applicable: 3 } } } };
+  const payload = buildSyncPayloadFromHealth(account);
+  const limits = rateLimitsSchema.parse(payload.rateLimits).rateLimits;
+  assert.equal(limits.planType, 'prolite');
+  assert.equal(limits.secondary.usedPercent, 100);
+  assert.deepEqual(limits.connection, { status: 'needs-login', checkedAt: 123, accessLost: false });
+  assert.deepEqual(limits.resetCredits, { available: 3, applicable: 3 });
+  let posted = 0;
+  const result = await syncAllOnce({ config: { syncUrl: 'https://dashboard.test/api/sync', deviceToken: 'fixture' }, storePath: '/does-not-exist/no-saved-sessions', renewalOwnedElsewhere: true,
+    switcherSnapshot: async () => ({ accounts: [account] }), fetcher: async url => { assert.equal(url, 'https://dashboard.test/api/sync'); posted++; return { ok: true }; } });
+  assert.equal(result.synced, 1);
+  assert.equal(posted, 1);
+});
 
 test('the usage endpoint response becomes a payload the dashboard sync schema accepts', () => {
   const payload = buildSyncPayloadFromUsage(usageBody(42, [{ limit_name: 'Spark', metered_feature: 'codex_spark', rate_limit: { primary_window: { used_percent: 1, limit_window_seconds: 18000, reset_at: 5 } } }]), 'a@example.com')
@@ -221,12 +239,14 @@ test('sync --all never renews the login auth.json holds; Codex renews it and wri
   assert.equal(saved.accounts.find((a) => a.email === 'standby@example.com').auth_data.refresh_token, 'refresh-acc-standby-next')
 })
 
-test('with the switcher renewing saved logins, sync --all only reads', async (t) => {
+test('with the switcher owning saved logins, sync --all publishes its health and leaves sessions alone', async (t) => {
   const { storePath } = await ownershipStore(t)
   const calls = []
-  const summary = await ownershipPass(storePath, calls, { renewalOwnedElsewhere: true })
+  const summary = await ownershipPass(storePath, calls, { renewalOwnedElsewhere: true, switcherSnapshot: async () => ({ accounts: [
+    { connected: true, email: 'standby@example.com', plan: 'pro', enabled: true, health: { status: 'needs-login', checkedAt: 123 } },
+  ] }) })
   assert.deepEqual(calls, [], 'no renewal races the Switchboard')
-  assert.match(summary.results.find((r) => r.email === 'standby@example.com').reason, /sign-in expired/)
+  assert.equal(summary.results.find((r) => r.email === 'standby@example.com').ok, true, 'unusable health is still reported')
   const saved = JSON.parse(await readFile(storePath, 'utf8'))
   assert.equal(saved.accounts.find((a) => a.email === 'standby@example.com').auth_data.refresh_token, 'refresh-acc-standby')
 })

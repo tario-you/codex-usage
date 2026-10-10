@@ -89,7 +89,7 @@ import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
 import { ReconnectSignIn } from './reconnect-signin'
-import { type RepairDevice, useRepairState } from './repair-signins-state'
+import { expiredEmailSet, type RepairDevice, useRepairState } from './repair-signins-state'
 import { useAccountNotes, type AccountNotesController } from './account-notes-state'
 import { accountNoteKey, accountNoteProvider, normalizeNoteEmail, noteKey } from './account-note-identity'
 import { SharedLoginPanel } from './shared-login-panel'
@@ -209,7 +209,14 @@ export function DashboardPage() {
 
   const accounts = accountsQuery.data ?? []
   const visibleAccounts = filterUsageAccounts(accounts, usageVisibility)
-  const orderedAccounts = orderAccountsForUse(visibleAccounts, usageOrderNow)
+  const expired = expiredEmailSet(repairState.data)
+  const orderSources = visibleAccounts.map(account => ({ ...account,
+    connection_status: expired.has((account.email ?? '').toLowerCase()) ? 'needs-login' : null }))
+  const orderedAccounts = orderAccountsForUse(orderSources, usageOrderNow)
+  const orderedIds = new Set(orderedAccounts.map(account => account.id))
+  const unusableAccounts = visibleAccounts.filter(account => !orderedIds.has(account.id))
+  const unusableIds = new Set(unusableAccounts.map(account => account.id))
+  const displayedAccounts = [...orderedAccounts, ...unusableAccounts]
   const inviters = invitersQuery.data ?? []
   const weeklyUsageHistory = weeklyUsageHistoryQuery.data ?? []
   const summary = buildSummary(visibleAccounts)
@@ -1361,7 +1368,7 @@ export function DashboardPage() {
                             visible={usageVisibility}
                           />
                           {usageVisibility.codex && visibleAccounts.some((account) => !isClaudeAccount(account)) ? (
-                            <ResetPlanPanel accounts={visibleAccounts} now={usageOrderNow} />
+                            <ResetPlanPanel accounts={orderSources} now={usageOrderNow} />
                           ) : null}
                           {visibleAccounts.length === 0 ? (
                             <p className="px-4 py-3 text-sm text-muted-foreground">
@@ -1372,7 +1379,8 @@ export function DashboardPage() {
                           ) : null}
                           <div className="md:hidden">
                             <AccountSummaryList
-                              accounts={orderedAccounts}
+                              accounts={displayedAccounts}
+                              unusableIds={unusableIds}
                               usageVisibility={usageVisibility}
                               showDetails={showDetails}
                               repairDevices={repairState.data}
@@ -1391,7 +1399,8 @@ export function DashboardPage() {
                           </div>
                           <div className="hidden md:block">
                             <AccountTable
-                              accounts={orderedAccounts}
+                              accounts={displayedAccounts}
+                              unusableIds={unusableIds}
                               usageVisibility={usageVisibility}
                               showDetails={showDetails}
                               repairDevices={repairState.data}
@@ -1671,6 +1680,7 @@ function ResetCreditsValue({ account }: { account: DashboardAccountRow }) {
 
 function AccountTable({
   accounts,
+  unusableIds,
   usageVisibility,
   showDetails,
   repairDevices,
@@ -1684,6 +1694,7 @@ function AccountTable({
   unlinkingAccountId,
   now,
 }: {
+  unusableIds: Set<string | null>
   accounts: DashboardAccountRow[]
   usageVisibility: UsageVisibility
   showDetails: boolean
@@ -1775,7 +1786,7 @@ function AccountTable({
           return (
             <TableRow key={account.id}>
               <TableCell hidden={!showDetails} className="px-3 py-1.5 text-right text-xs text-muted-foreground tabular-nums">
-                {index + 1}
+                {unusableIds.has(account.id) ? '·' : index + 1}
               </TableCell>
               <TableCell className="px-4 py-1.5">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
@@ -1833,7 +1844,7 @@ function AccountTable({
                 </>
               ) : null}
               <TableCell hidden={!showDetails && !usageVisibility.codex} className="px-4 py-1.5 text-right">
-                {isOwnedAccount && !isClaudeAccount(account) ? <UsePlanControl device={planSwitchDevice} email={account.email} session={session} /> : null}
+                {isOwnedAccount && !isClaudeAccount(account) ? unusableIds.has(account.id) ? <span className="text-xs text-muted-foreground">unusable</span> : account.plan_type === 'free' || account.plan_type === 'free_workspace' ? <span className="text-xs text-muted-foreground">free plan</span> : <UsePlanControl device={planSwitchDevice} email={account.email} session={session} /> : null}
                 {showDetails && isOwnedAccount ? (
                   <span className="ml-2 inline-flex items-center gap-0.5">
                     {notes && account.email ? (
@@ -1905,6 +1916,7 @@ function AccountTable({
 
 function AccountSummaryList({
   accounts,
+  unusableIds,
   usageVisibility,
   showDetails,
   repairDevices,
@@ -1918,6 +1930,7 @@ function AccountSummaryList({
   unlinkingAccountId,
   now,
 }: {
+  unusableIds: Set<string | null>
   accounts: DashboardAccountRow[]
   usageVisibility: UsageVisibility
   showDetails: boolean
@@ -1964,7 +1977,7 @@ function AccountSummaryList({
                 ) : null}
                 {isOwnedAccount && !isClaudeAccount(account) ? (
                   <p className="mt-1">
-                    <UsePlanControl device={planSwitchDevice} email={account.email} session={session} />
+                    {unusableIds.has(account.id) ? <span className="text-xs text-muted-foreground">unusable</span> : account.plan_type === 'free' || account.plan_type === 'free_workspace' ? <span className="text-xs text-muted-foreground">free plan</span> : <UsePlanControl device={planSwitchDevice} email={account.email} session={session} />}
                   </p>
                 ) : null}
                 {!isOwnedAccount ? (

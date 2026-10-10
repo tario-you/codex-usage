@@ -11,6 +11,7 @@ export interface CodexRateLimitWindow {
 }
 
 export interface CodexRateLimitSnapshot {
+  connection?: { status: string; checkedAt: number | null; accessLost: boolean } | null
   credits: CodexCreditsSnapshot | null
   limitId: string | null
   limitName: string | null

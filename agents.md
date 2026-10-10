@@ -1,5 +1,7 @@
 # Agent Instructions
 
+- Use order excludes cancelled, lost-access and unusably stale sign-ins using structured plan and connection state. Show them only as unusable, without a rank or switch action. Never regain a lost-email account with saved tokens. Saved Proton sessions remain switcher-only and must never be inspected, copied, refreshed, replaced, revoked, repaired or reauthenticated by agents.
+
 Ignore this if you are Claude Code.
 
 If you are OpenAI Codex, for all UI changes, you must read `Uncodixfy/Uncodixfy.md`.

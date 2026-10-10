@@ -3,6 +3,7 @@ import {
   type ResetCreditTarget,
   type ResetPlanState,
 } from '../../../bin/lib/reset-credits.js'
+import { isUsablePlan } from '../../../bin/lib/plan-order.js'
 import { isClaudeAccountKey } from '../../shared/codex.js'
 
 export interface ResetCreditChoiceRow {
@@ -10,6 +11,10 @@ export interface ResetCreditChoiceRow {
   email: string | null
   id: string | null
   label: string | null
+  last_snapshot_at?: string | null
+  connection_status?: string | null
+  access_lost?: boolean
+  plan_ends_at?: string | null
   plan_type: string | null
   primary_resets_at: string | null
   primary_used_percent: number | null
@@ -33,6 +38,8 @@ export function resetCreditChoice(rows: ResetCreditChoiceRow[], now = Date.now()
   for (const row of rows) {
     if (!row.id || isClaudeAccountKey(row.account_key)) continue
     const plan = planFromRow(row, now)
+    if (!isUsablePlan({ ...plan, connectionStatus: row.connection_status, accessLost: row.access_lost,
+      checkedAt: Number.isFinite(Date.parse(row.last_snapshot_at ?? '')) ? Date.parse(row.last_snapshot_at!) : null }, now)) continue
     plans.push(plan)
     labels.set(row.id, row.label ?? row.email ?? row.account_key ?? row.id)
   }

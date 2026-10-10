@@ -228,7 +228,20 @@ export function buildSyncPayloadFromUsage(data, email = null, account = null) {
  * login are merged into the store as it is on disk at write time, so a
  * concurrent switch elsewhere keeps its own changes.
  */
-export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null, spendResets = false, resetHoldUntil = 0, renewalOwnedElsewhere = false, now = Date.now() }) {
+export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null, spendResets = false, resetHoldUntil = 0, renewalOwnedElsewhere = false, switcherSnapshot = readSwitcherSnapshot, now = Date.now() }) {
+  if (renewalOwnedElsewhere) {
+    // The switcher alone owns saved sessions. Publish its structured health,
+    // including unusable rows, without opening or probing those sessions here.
+    const state = await switcherSnapshot();
+    const results = [];
+    for (const account of state.accounts.filter(a => a.connected)) {
+      const payload = buildSyncPayloadFromHealth(account);
+      const response = await fetcher(config.syncUrl, dashboardRequest({ ...payload, device, deviceToken: config.deviceToken }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }));
+      results.push({ email: account.email ?? account.id, ok: response.ok, planType: payload.accountState.account.planType ?? null,
+        usedPercent: account.health?.usage?.usedPercent ?? null, ...(response.ok ? {} : { reason: `dashboard rejected the sync (HTTP ${response.status})` }) });
+    }
+    return { added: [], resetSpend: spendResets ? { action: 'wait', reason: 'switcher-owned' } : null, results, storePath, synced: results.filter(r => r.ok).length, total: results.length };
+  }
   const store = await readStore(storePath)
   const changedIds = new Set()
   const added = []
@@ -306,6 +319,26 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
     synced: results.filter((result) => result.ok).length,
     total: store.accounts.length,
   }
+}
+
+async function readSwitcherSnapshot() {
+  const key = JSON.parse(readFileSync(path.join(os.homedir(), '.local/state/codex-auto-switch/dashboard-key.json'), 'utf8')).token;
+  const response = await fetch('http://127.0.0.1:3211/api/state', { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000), redirect: 'error' });
+  if (!response.ok) throw new Error('The switcher could not report connection health');
+  const state = await response.json();
+  if (!Array.isArray(state.accounts)) throw new Error('The switcher did not report its login list');
+  return state;
+}
+
+export function buildSyncPayloadFromHealth(account) {
+  const health = account.health ?? {}, usage = health.usage ?? {};
+  const window = value => value ? { used_percent: value.usedPercent, reset_at: value.resetsAt, limit_window_seconds: value.minutes * 60 } : null;
+  const payload = buildSyncPayloadFromUsage({ plan_type: usage.plan ?? usage.planType ?? account.plan,
+    rate_limit: { primary_window: window(usage.primary), secondary_window: window(usage.secondary) },
+    credits: usage.credits, rate_limit_reset_credits: { available_count: usage.resetCredits?.available ?? 0, applicable_available_count: usage.resetCredits?.applicable ?? null } },
+  account.email, { subscription_cancelled: account.cancelled, subscription_expires_at: account.expiresAt, auto_switch_enabled: account.enabled });
+  payload.rateLimits.rateLimits.connection = { status: health.status ?? 'not-connected', checkedAt: health.checkedAt ?? null, accessLost: health.accessLost === true || account.accessLost === true };
+  return payload;
 }
 
 /**

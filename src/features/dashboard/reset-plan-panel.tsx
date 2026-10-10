@@ -7,7 +7,6 @@ import { formatTimestamp } from '@/shared/codex'
 import { formatWait } from '../../../bin/lib/reset-credits.js'
 
 import { formatPlanEnd } from './plan-end'
-import { resetCreditChoice } from './reset-credit-choice'
 import {
   buildResetPlan,
   type ResetPlanEvent,
@@ -25,7 +24,7 @@ export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRo
   const [isOpen, setIsOpen] = useState(false)
   const plan = buildResetPlan(accounts, now)
   // With nothing usable, the agent spends the reset credit that saves the most.
-  const resetCredit = plan.current ? null : resetCreditChoice(accounts, now)
+  const resetCredit = plan.resetFallbacks[0] ?? null
 
   const fallbacks = plan.fallbacks.slice(0, MAX_FALLBACKS)
   const nextReset = plan.upcomingResets[0] ?? null
@@ -36,14 +35,18 @@ export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRo
         <span className="font-medium text-foreground">
           {plan.current
             ? `Use ${plan.current.accountLabel}`
-            : plan.nextAvailable
+            : resetCredit
+              ? `Use ${resetCredit.accountLabel}'s reset`
+              : plan.nextAvailable
               ? `Resume with ${plan.nextAvailable.accountLabel}`
               : 'No usable balance yet'}
         </span>
         <span className="text-muted-foreground">
           {plan.current
             ? formatUsableBalance(plan.current, now)
-            : plan.nextAvailable
+            : resetCredit
+              ? `refills paid quota, saves ${formatWait(resetCredit.savedMs)}`
+              : plan.nextAvailable
               ? `${plan.nextAvailable.windowLabel} resets in ${formatTimeUntil(plan.nextAvailable.at, now)}`
               : 'Sync again to rebuild the plan.'}
         </span>
@@ -69,9 +72,7 @@ export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRo
             {resetCredit ? (
               <span className="text-muted-foreground">
                 or spend {resetCredit.accountLabel}&apos;s reset{' '}
-                {resetCredit.lastChance
-                  ? `(last chance: its plan ends in ${formatWait(resetCredit.savedMs)})`
-                  : `(saves ${formatWait(resetCredit.savedMs)})`}
+                (saves {formatWait(resetCredit.savedMs)})
               </span>
             ) : null}
             {nextReset ? (
@@ -105,7 +106,13 @@ export function ResetPlanPanel({ accounts, now }: { accounts: DashboardAccountRo
                     </span>
                   </li>
                 ))}
-                {!plan.current && plan.nextAvailable ? (
+                {plan.resetFallbacks.map((reset, index) => (
+                  <li className="flex items-baseline gap-2" key={reset.accountId}>
+                    <span className="w-4 text-muted-foreground">{index + fallbacks.length + (plan.current ? 2 : 1)}.</span>
+                    <span>{reset.accountLabel} · spend a reset</span>
+                  </li>
+                ))}
+                {!plan.current && !resetCredit && plan.nextAvailable ? (
                   <li className="text-muted-foreground">
                     <NextAvailable event={plan.nextAvailable} now={now} />
                   </li>

@@ -37,8 +37,8 @@ test('a reset goes to the plan whose own reset is furthest away, weighted by pla
   assert.equal(pick([out('none', 6 * DAY, { credits: 0 })]), null)
 })
 
-test('a cancelled plan that ends before its own reset spends its last-chance credit first', () => {
-  assert.equal(pick([out('pro', 6.8 * DAY), out('ending', 6 * DAY, { planType: 'prolite', cancelled: true, endsInMs: 3 * DAY })]), 'ending')
+test('cancelled plans cannot spend resets, even before their reported end', () => {
+  assert.equal(pick([out('pro', 6.8 * DAY), out('ending', 6 * DAY, { planType: 'prolite', cancelled: true, endsInMs: 3 * DAY })]), 'pro')
   assert.equal(pick([out('pro', 2.8 * DAY), out('returns', 2 * DAY, { planType: 'prolite', cancelled: true, endsInMs: 16 * DAY })]), 'pro', 'a cancelled plan that comes back first is scored like any other')
   assert.equal(pick([out('pro', 2.8 * DAY), out('renews', 6 * DAY, { planType: 'prolite', endsInMs: DAY })]), 'pro', 'an end date alone is a renewal')
   assert.equal(pick([out('pro', 2.8 * DAY), out('gone', 6 * DAY, { planType: 'prolite', cancelled: true, endsInMs: -DAY })]), 'pro', 'a plan that already ended is no last chance')
@@ -78,7 +78,7 @@ test('the dashboard names the same plan the agent would reset', () => {
   const rows = [row('geoff', 'pro', 2.8 * DAY), row('lite', 'prolite', 6.2 * DAY), row('claude', 'max', 6.9 * DAY, {})]
   rows[2].account_key = 'claude:claude@x.com'
   assert.equal(resetCreditChoice(rows, NOW).accountLabel, 'geoff')
-  assert.equal(resetCreditChoice([...rows, row('ending', 'prolite', 6 * DAY, { subscription: { cancelled: true, endsAt: Math.round((NOW + 3 * DAY) / 1000) } })], NOW).accountLabel, 'ending')
+  assert.equal(resetCreditChoice([...rows, row('ending', 'prolite', 6 * DAY, { subscription: { cancelled: true, endsAt: Math.round((NOW + 3 * DAY) / 1000) } })], NOW).accountLabel, 'geoff')
   assert.equal(resetCreditChoice([row('past', 'pro', -DAY)], NOW), null, 'a window whose reset has passed is back')
 })
 
