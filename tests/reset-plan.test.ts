@@ -9,6 +9,13 @@ import {
 
 const NOW = Date.parse('2026-07-15T18:00:00.000Z')
 
+test('current structured health overrides an old email-level sign-in badge', () => {
+  const rows = [account({ id: 'renewed', plan_type: 'prolite', connection_status: 'needs-login',
+    raw_rate_limits: { connection: { status: 'connected', checkedAt: NOW, accessLost: false } } })]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map(row => row.id), ['renewed'])
+  assert.equal(buildResetPlan(rows, NOW).current?.accountId, 'renewed')
+})
+
 test('paid reset holders lead free quota and share the reset spending order', () => {
   const rows = [
     account({ id: 'free', plan_type: 'free' }),

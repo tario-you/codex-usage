@@ -151,7 +151,7 @@ function normalizeAccount(
   return {
     cancelled: raw?.subscription?.cancelled === true,
     accessLost: account.access_lost === true || raw?.connection?.accessLost === true,
-    connectionStatus: account.connection_status ?? raw?.connection?.status ?? null,
+    connectionStatus: raw?.connection?.status ?? account.connection_status ?? null,
     checkedAt: raw?.connection?.checkedAt ?? (Number.isFinite(Date.parse(account.last_snapshot_at ?? '')) ? Date.parse(account.last_snapshot_at!) : null),
     endsAt,
     planType: account.plan_type ?? null,
