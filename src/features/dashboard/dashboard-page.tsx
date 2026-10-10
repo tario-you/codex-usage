@@ -210,8 +210,11 @@ export function DashboardPage() {
   const accounts = accountsQuery.data ?? []
   const visibleAccounts = filterUsageAccounts(accounts, usageVisibility)
   const expired = expiredEmailSet(repairState.data)
-  const orderSources = visibleAccounts.map(account => ({ ...account,
-    connection_status: expired.has((account.email ?? '').toLowerCase()) ? 'needs-login' : null }))
+  const orderSources = visibleAccounts.map(account => {
+    const health = account.raw_rate_limits as { connection?: { status?: string } } | null
+    return { ...account, connection_status: health?.connection?.status
+      ?? (expired.has((account.email ?? '').toLowerCase()) ? 'needs-login' : null) }
+  })
   const orderedAccounts = orderAccountsForUse(orderSources, usageOrderNow)
   const orderedIds = new Set(orderedAccounts.map(account => account.id))
   const unusableAccounts = visibleAccounts.filter(account => !orderedIds.has(account.id))
@@ -1804,7 +1807,7 @@ function AccountTable({
                   ) : null}
                   <PlanEndDate account={account} canEdit={showDetails && isOwnedAccount} now={now} session={session} />
                   {showDetails ? <SubscriptionEnd rawRateLimits={account.raw_rate_limits} /> : null}
-                  {showDetails && isOwnedAccount ? (
+                  {showDetails && isOwnedAccount && !unusableIds.has(account.id) ? (
                     <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                   ) : null}
                   {!isOwnedAccount ? (
@@ -1972,7 +1975,7 @@ function AccountSummaryList({
                     {identity.secondary}
                   </p>
                 ) : null}
-                {showDetails && isOwnedAccount ? (
+                {showDetails && isOwnedAccount && !unusableIds.has(account.id) ? (
                   <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                 ) : null}
                 {isOwnedAccount && !isClaudeAccount(account) ? (

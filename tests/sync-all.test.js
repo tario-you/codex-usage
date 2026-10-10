@@ -41,7 +41,7 @@ test('switcher health sync preserves plan, reset balance and unusable access wit
   const limits = rateLimitsSchema.parse(payload.rateLimits).rateLimits;
   assert.equal(limits.planType, 'prolite');
   assert.equal(limits.secondary.usedPercent, 100);
-  assert.deepEqual(limits.connection, { status: 'needs-login', checkedAt: 123, accessLost: false });
+  assert.deepEqual(limits.connection, { status: 'needs-login', checkedAt: 123, accessLost: false, usageKind: 'exhausted' });
   assert.deepEqual(limits.resetCredits, { available: 3, applicable: 3 });
   let posted = 0;
   const result = await syncAllOnce({ config: { syncUrl: 'https://dashboard.test/api/sync', deviceToken: 'fixture' }, storePath: '/does-not-exist/no-saved-sessions', renewalOwnedElsewhere: true,
