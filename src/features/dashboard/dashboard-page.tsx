@@ -1824,7 +1824,7 @@ function AccountTable({
                 </p>
               </TableCell>
               <TableCell className="py-1.5">
-                <UsageWindowList account={account} showDetails={showDetails} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
+                <UsageWindowList account={account} inactive={unusableIds.has(account.id)} showDetails={showDetails} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
               </TableCell>
               <TableCell hidden={!showDetails} className="py-1.5 text-xs tabular-nums">
                 <ResetCreditsValue account={account} />
@@ -1997,7 +1997,7 @@ function AccountSummaryList({
             </div>
 
             <div hidden={showDetails}>
-              <UsageWindowList account={account} showDetails={false} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
+              <UsageWindowList account={account} inactive={unusableIds.has(account.id)} showDetails={false} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
             </div>
             <dl hidden={!showDetails} className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <MetaField

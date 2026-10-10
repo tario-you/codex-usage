@@ -9,6 +9,18 @@ import {
 
 const NOW = Date.parse('2026-07-15T18:00:00.000Z')
 
+test('live paid room leads across Pro and Pro Lite, including cancellation at a future end', () => {
+  const rows = [
+    account({ id: 'active', plan_type: 'prolite', primary_remaining_percent: 18, primary_resets_at: isoAfterHours(1) }),
+    account({ id: 'pro', plan_type: 'pro', primary_remaining_percent: 28, primary_resets_at: isoAfterHours(2) }),
+    account({ id: 'ending', plan_type: 'prolite', primary_remaining_percent: 49, primary_resets_at: isoAfterHours(20),
+      raw_rate_limits: { subscription: { cancelled: true, endsAt: (NOW + 86400000) / 1000 }, connection: { status: 'connected', checkedAt: NOW } } }),
+    account({ id: 'ended', plan_type: 'pro', primary_remaining_percent: 84, plan_ends_at: isoAfterHours(-1) }),
+  ]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map(row => row.id), ['ending', 'pro', 'active'])
+  assert.equal(buildResetPlan(rows, NOW).current?.accountId, 'ending')
+})
+
 test('current structured health overrides an old email-level sign-in badge', () => {
   const rows = [account({ id: 'renewed', plan_type: 'prolite', connection_status: 'needs-login',
     raw_rate_limits: { connection: { status: 'connected', checkedAt: NOW, accessLost: false } } })]
@@ -52,7 +64,7 @@ test('a reset can rescue a paid plan before it ends, but cannot revive an ended 
 test('cancelled, lost-access and unusably stale logins leave every order and recommendation', () => {
   const rows = [
     account({ id: 'current', plan_type: 'prolite', last_snapshot_at: new Date(NOW).toISOString() }),
-    account({ id: 'cancelled', raw_rate_limits: { subscription: { cancelled: true, endsAt: (NOW + 86400000) / 1000 } } }),
+    account({ id: 'cancelled', raw_rate_limits: { subscription: { cancelled: true, endsAt: (NOW - 1) / 1000 } } }),
     account({ id: 'lost', access_lost: true }),
     account({ id: 'expired', connection_status: 'needs-login' }),
     account({ id: 'stale', last_snapshot_at: isoAfterHours(-13) }),
@@ -75,7 +87,7 @@ test('table order follows the recommendation and keeps exhausted and unknown row
   ]
   const original = [...rows]
   const ordered = orderAccountsForUse(rows, NOW)
-  assert.deepEqual(ordered.map((row) => row.id), ['soon-high', 'soon-low', 'later', 'empty', 'unknown', 'weekly-empty'])
+  assert.deepEqual(ordered.map((row) => row.id), ['later', 'soon-high', 'soon-low', 'empty', 'unknown', 'weekly-empty'])
   assert.equal(ordered[0].id, buildResetPlan(rows, NOW).current?.accountId)
   assert.deepEqual(rows, original, 'the query cache is not reordered in place')
   assert.ok(ordered.every((row) => rows.includes(row)), 'keep original account identities and controls')
@@ -138,7 +150,7 @@ test('Claude rows are preserved without becoming Codex recommendations', () => {
   assert.deepEqual(orderAccountsForUse([], NOW), [])
 })
 
-test('uses the account whose available allowance expires first', () => {
+test('uses the paid account with most room before its earlier reset', () => {
   const plan = buildResetPlan(
     [
       account({
@@ -157,10 +169,10 @@ test('uses the account whose available allowance expires first', () => {
     NOW,
   )
 
-  assert.equal(plan.current?.accountId, 'soon')
+  assert.equal(plan.current?.accountId, 'later')
   assert.deepEqual(
     plan.fallbacks.map((fallback) => fallback.accountId),
-    ['later'],
+    ['soon'],
   )
 })
 

@@ -117,6 +117,10 @@ export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], n
     .map(({ account }) => account)
 }
 
+export function isAccountUsableForUse(account: ResetPlanAccount, now: number): boolean {
+  return isUsablePlan(orderPlan(normalizeAccount(account, now)), now)
+}
+
 function orderPlan(account: NormalizedResetAccount): UsePlan {
   const recommendation = buildRecommendation(account)
   const spent = account.windows.filter(window => window.remainingPercent != null && window.remainingPercent <= 0)
@@ -147,7 +151,7 @@ function normalizeAccount(
 ): NormalizedResetAccount {
   const raw = account.raw_rate_limits as { resetCredits?: { applicable?: number | null; available?: number }; subscription?: { cancelled?: boolean; endsAt?: number | null }; connection?: { status?: string; checkedAt?: number; accessLost?: boolean; usageKind?: string } } | null
   const expiresAt = Number.isFinite(raw?.subscription?.endsAt) ? raw!.subscription!.endsAt! * 1000 : null
-  const subscriptionEnd = planEligible(account.plan_type) === true && expiresAt != null && expiresAt <= now ? expiresAt : null
+  const subscriptionEnd = planEligible(account.plan_type) === true && expiresAt != null && (expiresAt <= now || raw?.subscription?.cancelled === true) ? expiresAt : null
   const endsAt = earliest(planEndsAt(account), subscriptionEnd)
   return {
     usageKind: raw?.connection?.usageKind,

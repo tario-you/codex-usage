@@ -13,6 +13,7 @@ function row(primary: [number, string | null], secondary: [number, string | null
   return {
     access_scope: 'owned',
     id: 'fixture',
+    account_key: 'chatgpt:fixture@example.test',
     plan_type: 'max',
     primary_remaining_overridden: false,
     primary_remaining_percent: primary[0],
@@ -41,6 +42,14 @@ test('a spent weekly window hides the 5-hour line in the plain view', () => {
   assert.doesNotMatch(html, /5-hour/)
   assert.match(html, /Weekly/)
   assert.match(html, /0%/)
+})
+
+test('an ended plan is gray despite its cached remaining usage', () => {
+  const account = { ...row([84, hoursFromNow(2)], [84, hoursFromNow(100)]), plan_ends_at: hoursFromNow(-1) }
+  const html = render(account)
+  assert.doesNotMatch(html, /bg-emerald-500|bg-amber-500|bg-red-500/)
+  assert.match(html, /bg-muted-foreground/)
+  assert.match(html, /84%/)
 })
 
 test('a passed reset shows a full, green window with no countdown', () => {

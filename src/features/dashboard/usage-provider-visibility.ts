@@ -1,4 +1,5 @@
 import { isClaudeAccountKey } from '../../shared/codex'
+import { planEligible } from '../../../bin/lib/plan-order.js'
 
 export type UsageVisibility = Record<'codex' | 'claude', boolean>
 export const DEFAULT_USAGE_VISIBILITY: UsageVisibility = { codex: true, claude: false }
@@ -19,6 +20,6 @@ export function saveUsageVisibility(visible: UsageVisibility) {
   catch { /* The selection still applies for this page when storage is blocked. */ }
 }
 
-export function filterUsageAccounts<T extends { account_key: string }>(accounts: T[], visible: UsageVisibility): T[] {
-  return accounts.filter((account) => visible[isClaudeAccountKey(account.account_key) ? 'claude' : 'codex'])
+export function filterUsageAccounts<T extends { account_key: string; plan_type?: string | null }>(accounts: T[], visible: UsageVisibility): T[] {
+  return accounts.filter((account) => planEligible(account.plan_type) !== false && visible[isClaudeAccountKey(account.account_key) ? 'claude' : 'codex'])
 }

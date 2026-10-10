@@ -2,6 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { filterUsageAccounts, readUsageVisibility, saveUsageVisibility } from '../src/features/dashboard/usage-provider-visibility'
 
+test('Free plans are hidden even with reset credits and both providers visible', () => {
+  const accounts = [
+    { account_key: 'paid', plan_type: 'prolite' },
+    { account_key: 'free', plan_type: 'free', resetCredits: 9 },
+    { account_key: 'workspace', plan_type: 'free_workspace' },
+    { account_key: 'claude:paid', plan_type: 'max' },
+  ]
+  assert.deepEqual(filterUsageAccounts(accounts, { codex: true, claude: true }), [accounts[0], accounts[3]])
+})
+
 test('provider selection keeps only matching accounts, including same-email accounts on different providers', () => {
   const accounts = [
     { account_key: 'codex-account', email: 'same@example.test' },
