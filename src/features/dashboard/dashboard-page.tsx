@@ -1804,7 +1804,7 @@ function AccountTable({
                   ) : null}
                   <PlanEndDate account={account} canEdit={showDetails && isOwnedAccount} now={now} session={session} />
                   {showDetails ? <SubscriptionEnd rawRateLimits={account.raw_rate_limits} /> : null}
-                  {showDetails && isOwnedAccount ? (
+                  {showDetails && isOwnedAccount && !unusableIds.has(account.id) ? (
                     <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                   ) : null}
                   {!isOwnedAccount ? (
@@ -1972,7 +1972,7 @@ function AccountSummaryList({
                     {identity.secondary}
                   </p>
                 ) : null}
-                {showDetails && isOwnedAccount ? (
+                {showDetails && isOwnedAccount && !unusableIds.has(account.id) ? (
                   <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                 ) : null}
                 {isOwnedAccount && !isClaudeAccount(account) ? (

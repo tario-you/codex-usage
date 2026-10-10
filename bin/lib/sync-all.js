@@ -228,8 +228,8 @@ export function buildSyncPayloadFromUsage(data, email = null, account = null) {
  * login are merged into the store as it is on disk at write time, so a
  * concurrent switch elsewhere keeps its own changes.
  */
-export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null, spendResets = false, resetHoldUntil = 0, renewalOwnedElsewhere = false, switcherSnapshot = readSwitcherSnapshot, now = Date.now() }) {
-  if (renewalOwnedElsewhere) {
+export async function syncAllOnce({ config, storePath, device, fetcher = fetch, activeAuthFile = null, spendResets = false, resetHoldUntil = 0, renewalOwnedElsewhere = false, switcherOwned = storePath === resolveDefaultSwitcherStorePath() && resetSpendingOwnedElsewhere(), switcherSnapshot = readSwitcherSnapshot, now = Date.now() }) {
+  if (renewalOwnedElsewhere || switcherOwned) {
     // The switcher alone owns saved sessions. Publish its structured health,
     // including unusable rows, without opening or probing those sessions here.
     const state = await switcherSnapshot();
