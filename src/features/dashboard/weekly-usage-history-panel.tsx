@@ -74,9 +74,13 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
           {visible.codex ? (
             <p className="mt-1 text-xs text-muted-foreground">Codex capacity: Pro = 100%, ProLite = 25%. Account rows show each plan’s own percentage.</p>
           ) : null}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Plan order: room that expires first is used first. A plan&apos;s room expires at its next reset or on its end date,
+            whichever is sooner; ties go to the plan that ends sooner, then to the one with more room. Ended plans never rank.
+          </p>
           {series.some((item) => item.projection) ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              Dashed: 7-day estimate from latest sync, using soonest-reset plans first. Jumps: weekly refills.
+              Dashed: 7-day estimate from latest sync, spending the room that expires first. Rises: weekly refills; drops: plans ending.
               Only reported resets included; session limits and sign-in availability may limit use.
             </p>
           ) : null}

@@ -17,6 +17,7 @@ export interface Database {
           email: string | null
           plan_type: string | null
           plan_started_at: string | null
+          plan_ends_at: string | null
           display_name: string | null
           source_key: string
           source_label: string | null
@@ -34,6 +35,7 @@ export interface Database {
           email?: string | null
           plan_type?: string | null
           plan_started_at?: string | null
+          plan_ends_at?: string | null
           display_name?: string | null
           source_key: string
           source_label?: string | null
@@ -51,6 +53,7 @@ export interface Database {
           email?: string | null
           plan_type?: string | null
           plan_started_at?: string | null
+          plan_ends_at?: string | null
           display_name?: string | null
           source_key?: string
           source_label?: string | null
@@ -806,6 +809,7 @@ export interface Database {
           label: string | null
           plan_type: string | null
           plan_started_at: string | null
+          plan_ends_at: string | null
           source_key: string
           source_label: string | null
           codex_home: string | null

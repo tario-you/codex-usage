@@ -2,6 +2,7 @@ import {
   buildResetPlan,
   type ResetPlanAccount,
 } from '../../src/features/dashboard/reset-plan.js'
+import { hasPlanEnded } from '../../src/features/dashboard/plan-end.js'
 import { getRateLimitWindows } from '../../src/shared/rate-limit-windows.js'
 
 // Pure pool logic with no database or environment imports, so it can be unit
@@ -23,10 +24,12 @@ export interface PoolDecision {
  *
  * A recipient stays on its current account while that account still has a
  * known positive usable balance (or no usage data at all, so missing data
- * never causes churn). Once it hits zero, the recipient moves to the account
- * the reset plan recommends, which is the same ordering the dashboard shows:
- * nearest upcoming reset first, then the higher balance. When every account
- * is exhausted the recipient stays put and learns when the next reset lands.
+ * never causes churn) and its plan has not ended. Otherwise the recipient
+ * moves to the account the reset plan recommends, which is the same ordering
+ * the dashboard shows: the room that expires first (at a reset or at the
+ * plan's end), then the plan that ends sooner, then the higher balance. When
+ * every account is exhausted the recipient stays put and learns when the next
+ * reset lands; an ended plan is never a target.
  */
 export function chooseNextAccount({
   accounts,
@@ -40,7 +43,7 @@ export function chooseNextAccount({
   const current = accounts.find((account) => account.id === currentAccountId) ?? null
   const currentUsable = current ? usablePercent(current) : null
 
-  if (current && (currentUsable == null || currentUsable > 0)) {
+  if (current && !hasPlanEnded(current, now) && (currentUsable == null || currentUsable > 0)) {
     return {
       accountId: current.id,
       nextAvailableAt: null,
@@ -76,7 +79,7 @@ export function chooseNextAccount({
 
   const fallback =
     accounts.find((account) => account.id === plan.nextAvailable?.accountId) ??
-    accounts[0] ??
+    accounts.find((account) => !hasPlanEnded(account, now)) ??
     null
 
   return {

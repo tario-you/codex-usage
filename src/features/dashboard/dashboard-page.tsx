@@ -84,6 +84,7 @@ import { NoteEditor, NoteSecret } from './account-notes'
 import { AccountBrowserLink } from './account-browser-link'
 import { AutoSwitchCheck } from './auto-switch-check'
 import { BrowserSessionPreference } from './browser-session-preference'
+import { PlanEndDate } from './plan-end-date'
 import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
@@ -1790,6 +1791,7 @@ function AccountTable({
                       {account.plan_type}
                     </span>
                   ) : null}
+                  <PlanEndDate account={account} canEdit={showDetails && isOwnedAccount} now={now} session={session} />
                   {showDetails ? <SubscriptionEnd rawRateLimits={account.raw_rate_limits} /> : null}
                   {showDetails && isOwnedAccount ? (
                     <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
@@ -1951,6 +1953,7 @@ function AccountSummaryList({
                   <AutoSwitchCheck metadata={account.metadata} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />
                   {isClaudeAccount(account) && (showDetails || (usageVisibility.codex && usageVisibility.claude)) ? <ClaudeBadge /> : null}
                 </p>
+                <PlanEndDate account={account} canEdit={showDetails && isOwnedAccount} now={now} session={session} />
                 {showDetails && identity.secondary ? (
                   <p className="truncate text-sm text-muted-foreground">
                     {identity.secondary}

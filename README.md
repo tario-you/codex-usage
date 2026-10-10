@@ -18,7 +18,8 @@ _Current dashboard with anonymized example data._
 - Collects the rate-limit windows reported by the local Codex CLI.
 - Displays the real duration of each available window, including weekly-only
   accounts.
-- Plans account order from usable balance and upcoming reset times.
+- Plans account order from usable balance, upcoming reset times and each
+  plan's end date.
 - Projects which reset will make an exhausted account usable again.
 - Tracks historical weekly capacity across linked accounts.
 
@@ -354,6 +355,17 @@ column, with a pencil to edit them inline. Emails that have a note but no
 synced plan appear as "note only" rows at the bottom, and the plus in the table
 header adds one. Notes are encrypted at rest with the shared-login key, decrypted
 only for your own session, and never returned to people you invite.
+
+### Plan end dates
+
+When a plan stops on a known day (cancelled, a one-month plan), choose
+"set end date" beside its name in the Details view. The date is a field of
+the plan, not part of its note, and everyone who sees the row sees it. The plan
+order uses the room that expires first: a plan's room expires at its next reset
+or on its end date, whichever is sooner, and a tie goes to the plan that ends
+sooner, then to more room. A plan that has ended never ranks. The table, the
+Codex reset plan, the weekly forecast and the shared-login pool all read the
+same order. Apply `20261010070000_plan_ends_at.sql` before deploying.
 
 
 ### Open an account on the web

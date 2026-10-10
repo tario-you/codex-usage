@@ -196,6 +196,66 @@ test('a Claude login is never the next Codex plan, even with the most left', () 
   assert.ok(plan.upcomingResets.every((event) => event.accountId !== 'claude'), 'the reset schedule is Codex-only too')
 })
 
+test('two plans whose room expires at the same reset: the one that ends sooner goes first', () => {
+  // The 10-09 case: two Claude plans whose 5-hour windows reset in the same hour, one ending 2 days before the other.
+  const claude = (id: string, overrides: Partial<ResetPlanAccount>) =>
+    account({ id, label: id, account_key: `claude:${id}@example.test`, ...overrides })
+  const rows = [
+    claude('more-room-ends-later', { primary_remaining_percent: 100, primary_resets_at: isoAfterHours(4.6), secondary_remaining_percent: 100, plan_ends_at: isoAfterHours(19 * 24) }),
+    claude('less-room-ends-sooner', { primary_remaining_percent: 93, primary_resets_at: isoAfterHours(4.6), secondary_remaining_percent: 86, plan_ends_at: isoAfterHours(17 * 24) }),
+  ]
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['less-room-ends-sooner', 'more-room-ends-later'])
+  assert.deepEqual(
+    orderAccountsForUse(rows.map((row) => ({ ...row, plan_ends_at: null })), NOW).map((row) => row.id),
+    ['more-room-ends-later', 'less-room-ends-sooner'],
+    'without end dates the tie still goes to more room',
+  )
+})
+
+test('room expires at the plan end when the plan ends before its next reset', () => {
+  const plan = buildResetPlan(
+    [
+      account({ id: 'reset-soon', label: 'Reset soon', primary_resets_at: isoAfterHours(3), secondary_resets_at: isoAfterHours(40) }),
+      account({ id: 'ends-sooner', label: 'Ends sooner', primary_resets_at: null, secondary_resets_at: null, plan_ends_at: isoAfterHours(2) }),
+      account({ id: 'never-expires', label: 'Never expires', primary_resets_at: null, secondary_resets_at: null }),
+      account({ id: 'ends-later', label: 'Ends later', primary_resets_at: null, secondary_resets_at: null, plan_ends_at: isoAfterHours(30 * 24) }),
+    ],
+    NOW,
+  )
+
+  assert.deepEqual(
+    [plan.current?.accountId, ...plan.fallbacks.map((fallback) => fallback.accountId)],
+    ['ends-sooner', 'reset-soon', 'ends-later', 'never-expires'],
+  )
+  assert.equal(plan.current?.expiresAt, NOW + 2 * 60 * 60 * 1000)
+  assert.equal(plan.current?.planEndsAt, NOW + 2 * 60 * 60 * 1000)
+})
+
+test('an ended plan never ranks, whatever room it had', () => {
+  const rows = [
+    account({ id: 'ended', label: 'Ended', primary_resets_at: isoAfterHours(0.5), plan_ends_at: isoAfterHours(-1) }),
+    account({ id: 'weekly-spent', label: 'Weekly spent', secondary_remaining_percent: 0 }),
+    account({ id: 'usable', label: 'Usable', primary_remaining_percent: 10 }),
+  ]
+  const plan = buildResetPlan(rows, NOW)
+  assert.equal(plan.current?.accountId, 'usable')
+  assert.deepEqual(plan.fallbacks, [])
+  assert.ok(plan.upcomingResets.every((event) => event.accountId !== 'ended'), 'an ended plan has no resets to come')
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['usable', 'weekly-spent', 'ended'])
+})
+
+test('a spent plan whose next reset comes after its end is never resumed', () => {
+  const rows = [
+    account({ id: 'back-after-end', label: 'Back after end', secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(30), plan_ends_at: isoAfterHours(20) }),
+    account({ id: 'back-before-end', label: 'Back before end', secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(40), plan_ends_at: isoAfterHours(50) }),
+  ]
+  const plan = buildResetPlan(rows, NOW)
+  assert.equal(plan.current, null)
+  assert.equal(plan.nextAvailable?.accountId, 'back-before-end')
+  assert.ok(plan.upcomingResets.every((event) => event.at < NOW + 20 * 60 * 60 * 1000 || event.accountId !== 'back-after-end'), 'no reset after the plan ends')
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['back-before-end', 'back-after-end'])
+})
+
 function account(overrides: Partial<ResetPlanAccount>): ResetPlanAccount {
   const primaryRemaining = overrides.primary_remaining_percent ?? 100
   const secondaryRemaining = overrides.secondary_remaining_percent ?? 100
