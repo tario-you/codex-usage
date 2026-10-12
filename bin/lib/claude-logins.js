@@ -159,13 +159,18 @@ export async function refreshClaudeOauth(oauth, fetcher = fetch) {
   }
 }
 
-/** Usage for one Claude login. A 401 gets one token refresh when a refresh token exists, then one retry. */
-export async function fetchClaudeUsage(oauth, fetcher = fetch) {
+/**
+ * Usage for one Claude login. A 401 gets one token refresh when a refresh token exists, then one retry.
+ * With `refresh: false` it only reads: claude-auto-switch alone renews its logins, so a second renewer
+ * never spends a refresh token another process still holds.
+ */
+export async function fetchClaudeUsage(oauth, fetcher = fetch, { refresh = true } = {}) {
   const call = (current) => fetcher(CLAUDE_USAGE_URL, { headers: headers(current.accessToken), signal: AbortSignal.timeout(20_000) })
   let current = oauth
   let refreshed = false
   let response = await call(current)
   if (response.status === 401) {
+    if (!refresh) return { error: 'sign-in expired; claude-auto-switch renews it' }
     const next = await refreshClaudeOauth(current, fetcher)
     if (!next) return { error: 'sign-in expired; sign in to Claude Code again on this machine' }
     current = next
@@ -255,7 +260,7 @@ async function writeBackSwitcherOauth(storePath, login) {
  * account; the one carrying a refresh token wins so an expired token can be
  * renewed next pass.
  */
-export async function syncClaudeOnce({ config, device, fetcher = fetch, logins = null, storePath = resolveClaudeStorePath() }) {
+export async function syncClaudeOnce({ config, device, fetcher = fetch, logins = null, storePath = resolveClaudeStorePath(), refresh = true }) {
   const found = logins ?? (await discoverClaudeLogins({ storePath }))
   const pool = await readClaudeAutoSwitchPool(storePath)
   const results = []
@@ -270,7 +275,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
     if (!known || (!known.login.oauth.refreshToken && login.oauth.refreshToken)) byEmail.set(profile.email, { login, profile })
   }
   for (const [email, { login, profile }] of byEmail) {
-    const usage = await fetchClaudeUsage(login.oauth, fetcher)
+    const usage = await fetchClaudeUsage(login.oauth, fetcher, { refresh })
     if (usage.error) {
       results.push({ email, source: login.source, ok: false, reason: usage.error })
       continue
