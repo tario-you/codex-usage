@@ -73,6 +73,18 @@ test('a 401 gets one refresh and one retry; a login with no refresh token is an 
   assert.match(expired.error, /sign-in expired/)
 })
 
+test('the read-only pass never refreshes: a 401 leaves the refresh token to claude-auto-switch', async () => {
+  const calls = []
+  const fetcher = async (url) => {
+    calls.push(url)
+    if (url === CLAUDE_USAGE_URL) return json({ error: { message: 'unauthorized' } }, 401)
+    throw new Error(`unexpected ${url}`)
+  }
+  const expired = await fetchClaudeUsage({ accessToken: 'acc-old', refreshToken: 'ref-old' }, fetcher, { refresh: false })
+  assert.match(expired.error, /sign-in expired/)
+  assert.deepEqual(calls, [CLAUDE_USAGE_URL])
+})
+
 test('sync reports one row per email, prefers the login with a refresh token, and writes a refreshed switcher token back', async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-claude-sync-'))
   t.after(() => rm(dir, { force: true, recursive: true }))

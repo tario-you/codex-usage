@@ -8,7 +8,7 @@ import path from 'node:path'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 if (process.argv.slice(2).join(' ') !== '--apply') throw new Error('Use --apply')
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-const files = ['bin/switcher-health-agent.js', 'bin/lib/sync-all.js', 'bin/lib/login-file.js', 'bin/lib/reset-credits.js', 'bin/lib/plan-order.js', 'bin/lib/dashboard-request.js']
+const files = ['bin/switcher-health-agent.js', 'bin/lib/sync-all.js', 'bin/lib/login-file.js', 'bin/lib/reset-credits.js', 'bin/lib/plan-order.js', 'bin/lib/dashboard-request.js', 'bin/lib/claude-logins.js']
 if (run('git', ['-C', root, 'status', '--porcelain', '--', ...files, 'scripts/install-switcher-health-sync.mjs']).trim()) throw new Error('Commit the uploader before installing its snapshot')
 const revision = run('git', ['-C', root, 'rev-parse', 'HEAD']).trim()
 const home = os.homedir(), label = 'com.tarioyou.codex-usage-sync-all'
