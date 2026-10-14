@@ -6,6 +6,7 @@ import {
   orderAccountsForUse,
   type ResetPlanAccount,
 } from '../src/features/dashboard/reset-plan'
+import { expiredEmailSet, ownConnectionStatus, type RepairDevice } from '../src/features/dashboard/repair-signins-state'
 
 const NOW = Date.parse('2026-07-15T18:00:00.000Z')
 
@@ -321,6 +322,22 @@ test('a spent plan whose next reset comes after its end is never resumed', () =>
   assert.equal(plan.nextAvailable?.accountId, 'back-before-end')
   assert.ok(plan.upcomingResets.every((event) => event.at < NOW + 20 * 60 * 60 * 1000 || event.accountId !== 'back-after-end'), 'no reset after the plan ends')
   assert.deepEqual(orderAccountsForUse(rows, NOW).map((row) => row.id), ['back-before-end'])
+})
+
+test('a row grays only from its own fresh reading: a machine\'s expired list never reaches a Claude row, and an old list counts for nothing', () => {
+  const device = (reportedAt: string): RepairDevice => ({ id: 'mac', label: 'mac', machineName: null, lastSeenAt: reportedAt, reportedAt,
+    expired: ['shared@example.com'], missing: [], link: null, lastResult: null, pending: null })
+  const fresh = expiredEmailSet([device(isoAfterHours(-0.05))], NOW)
+  assert.deepEqual([...fresh], ['shared@example.com'])
+  assert.equal(expiredEmailSet([device(isoAfterHours(-96))], NOW).size, 0, 'a list its machine stopped sending is not today\'s reading')
+  const claude = account({ id: 'claude', account_key: 'claude:shared@example.com', email: 'shared@example.com', last_snapshot_at: isoAfterHours(-0.02) })
+  const codexBare = account({ id: 'codex-bare', email: 'shared@example.com', last_snapshot_at: isoAfterHours(-0.02) })
+  const codexOwn = account({ id: 'codex-own', email: 'shared@example.com', raw_rate_limits: { connection: { status: 'connected', checkedAt: NOW } } })
+  assert.equal(ownConnectionStatus(claude, fresh), null)
+  assert.equal(ownConnectionStatus(codexBare, fresh), 'needs-login')
+  assert.equal(ownConnectionStatus(codexOwn, fresh), 'connected')
+  const rows = [claude, codexBare, codexOwn].map(row => ({ ...row, connection_status: ownConnectionStatus(row, fresh) }))
+  assert.deepEqual(orderAccountsForUse(rows, NOW).map(row => row.id).sort(), ['claude', 'codex-own'])
 })
 
 function account(overrides: Partial<ResetPlanAccount>): ResetPlanAccount {

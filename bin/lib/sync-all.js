@@ -240,7 +240,10 @@ export async function syncAllOnce({ config, storePath, device, fetcher = fetch, 
       results.push({ email: account.email ?? account.id, ok: response.ok, planType: payload.accountState.account.planType ?? null,
         usedPercent: account.health?.usage?.usedPercent ?? null, ...(response.ok ? {} : { reason: `dashboard rejected the sync (HTTP ${response.status})` }) });
     }
-    return { added: [], resetSpend: spendResets ? { action: 'wait', reason: 'switcher-owned' } : null, results, storePath, synced: results.filter(r => r.ok).length, total: results.length };
+    // The switcher's own reading names the logins a fresh sign-in would fix: the dashboard's expired list.
+    const expired = state.accounts.filter(a => a.connected && a.health?.status === 'needs-login')
+      .map(a => String(a.email ?? '').trim().toLowerCase()).filter(email => email.includes('@'));
+    return { added: [], expired, resetSpend: spendResets ? { action: 'wait', reason: 'switcher-owned' } : null, results, storePath, synced: results.filter(r => r.ok).length, total: results.length };
   }
   const store = await readStore(storePath)
   const changedIds = new Set()
@@ -414,6 +417,17 @@ export function renewalOwnedElsewhere({ home = os.homedir() } = {}) {
   } catch {
     return true
   }
+}
+
+/**
+ * Send this machine's expired sign-ins, so the dashboard's list follows today's
+ * reading instead of the last one a retired loop sent. It only reports: any
+ * repair request in the answer is left alone, as saved sessions are the switcher's.
+ */
+export async function reportExpiredSignIns({ config, expired, providers, fetcher = fetch }) {
+  const response = await fetcher(new URL('/api/login/repair/poll', config.syncUrl),
+    dashboardRequest({ deviceToken: config.deviceToken, expired, missing: [], providers }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }))
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
 }
 
 /** Emails whose saved sign-in is dead: the only failures a fresh sign-in fixes. */

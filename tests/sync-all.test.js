@@ -13,6 +13,7 @@ import {
   fetchUsage,
   readStore,
   renewalOwnedElsewhere,
+  reportExpiredSignIns,
   syncAllOnce,
   upsertStoreAccount,
 } from '../bin/lib/sync-all.js'
@@ -48,6 +49,17 @@ test('switcher health sync preserves plan, reset balance and unusable access wit
     switcherSnapshot: async () => ({ accounts: [account] }), fetcher: async url => { assert.equal(url, 'https://dashboard.test/api/sync'); posted++; return { ok: true }; } });
   assert.equal(result.synced, 1);
   assert.equal(posted, 1);
+  assert.deepEqual(result.expired, ['fixture@example.com']);
+});
+
+test('the health agent reports its expired sign-ins and leaves any repair request alone', async () => {
+  const calls = [];
+  await reportExpiredSignIns({ config: { syncUrl: 'https://dashboard.test/api/sync', deviceToken: 'fixture' }, expired: ['fixture@example.com'], providers: ['codex'],
+    fetcher: async (url, init) => { calls.push({ url: String(url), body: JSON.parse(init.body) }); return { ok: true, json: async () => ({ pending: { emails: ['fixture@example.com'] } }) }; } });
+  assert.deepEqual(calls, [{ url: 'https://dashboard.test/api/login/repair/poll',
+    body: { deviceToken: 'fixture', expired: ['fixture@example.com'], missing: [], providers: ['codex'] } }]);
+  await assert.rejects(reportExpiredSignIns({ config: { syncUrl: 'https://dashboard.test/api/sync', deviceToken: 'fixture' }, expired: [], providers: ['codex'],
+    fetcher: async () => ({ ok: false, status: 401 }) }), /HTTP 401/);
 });
 
 test('the usage endpoint response becomes a payload the dashboard sync schema accepts', () => {
