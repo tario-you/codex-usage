@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { dashboardRequest } from './dashboard-request.js'
 import { dashboardWake } from './wake.js'
+import { followSystemProxy } from './system-proxy.js'
 
 export const BROWSER_SESSION_ROOT = path.join(os.homedir(), 'Library/Application Support/Google/Chrome')
 const PROVIDER_URLS = { codex: 'https://chatgpt.com/auth/login_with', claude: 'https://claude.ai/login' }
@@ -107,6 +108,7 @@ export async function runBrowserAgent(config, { wake = dashboardWake } = {}) {
   if (process.platform !== 'darwin' || !existsSync(CHROME_APP)) throw new Error('This helper requires Google Chrome on macOS.')
   console.log('Browser helper ready. Account clicks open separate Chrome sessions; sign in once per account.')
   for (;;) {
+    await followSystemProxy({ before: async () => wake.close() })
     try { await runBrowserPass(config, { wake }) } catch { console.error('Browser helper could not reach the dashboard; retrying.') }
     await wake.wait(BROWSER_POLL_MS)
   }

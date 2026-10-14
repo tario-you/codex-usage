@@ -181,10 +181,15 @@ export async function fetchClaudeUsage(oauth, fetcher = fetch, { refresh = true 
   return { data: await readJson(response), oauth: current, refreshed }
 }
 
+/** Why a profile read failed: a 401 is an expired sign-in; anything else (a 403 off the system proxy, a 429) says so. */
+export function profileFailure(status) {
+  return status === 401 ? 'profile unavailable; the sign-in may have expired' : `profile request failed (HTTP ${status})`
+}
+
 export async function fetchClaudeProfile(oauth, fetcher = fetch) {
   const response = await fetcher(CLAUDE_PROFILE_URL, { headers: headers(oauth.accessToken), signal: AbortSignal.timeout(20_000) })
   const body = await readJson(response)
-  if (!response.ok) return null
+  if (!response.ok) return { failure: profileFailure(response.status) }
   const organizationType = typeof body?.organization?.organization_type === 'string' ? body.organization.organization_type : null
   return {
     email: typeof body?.account?.email === 'string' ? body.account.email.toLowerCase() : null,
@@ -266,9 +271,9 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
   const results = []
   const byEmail = new Map()
   for (const login of found) {
-    const profile = await fetchClaudeProfile(login.oauth, fetcher).catch(() => null)
+    const profile = await fetchClaudeProfile(login.oauth, fetcher).catch((error) => ({ failure: `profile request failed (${error?.cause?.code ?? error?.name ?? 'network'})` }))
     if (!profile?.email) {
-      results.push({ email: login.email, source: login.source, ok: false, reason: 'profile unavailable; the sign-in may have expired' })
+      results.push({ email: login.email, source: login.source, ok: false, reason: profile?.failure ?? 'profile unavailable; the sign-in may have expired' })
       continue
     }
     const known = byEmail.get(profile.email)

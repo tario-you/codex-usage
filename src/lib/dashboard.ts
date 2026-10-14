@@ -12,6 +12,7 @@ import {
   getRemainingPercent,
   isClaudeAccountKey,
   isFreshTimestamp,
+  isSyncStopped,
   type CodexRateLimitSnapshot,
 } from '@/shared/codex'
 import { getRateLimitWindows } from '@/shared/rate-limit-windows'
@@ -59,6 +60,8 @@ export interface DashboardSummary {
   lowBalanceCount: number
   mostRecentSync: string | null
   staleAccounts: number
+  /** The newest reading of any account is over an hour old: the uploader has stopped. */
+  syncStopped: boolean
 }
 
 export function dashboardAccountsQueryOptions(userId: string) {
@@ -210,6 +213,7 @@ export function buildSummary(rows: DashboardAccountRow[]): DashboardSummary {
     mostRecentSync,
     staleAccounts: rows.filter((row) => !isFreshTimestamp(row.last_snapshot_at))
       .length,
+    syncStopped: isSyncStopped(mostRecentSync, rows.length),
   }
 }
 
