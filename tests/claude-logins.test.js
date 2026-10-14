@@ -128,3 +128,22 @@ test('sync reports one row per email, prefers the login with a refresh token, an
   assert.equal(store.accounts[0].oauth.accessToken, 'acc-fresh', 'the refreshed switcher token is written back')
   assert.equal(store.accounts[0].oauth.refreshToken, 'ref-fresh')
 })
+
+test('a refused profile read says its status, never an expired sign-in (her-team#12378)', async () => {
+  const logins = [
+    { id: 'off-route', source: 'switcher', email: 'a@example.com', oauth: { accessToken: 'acc-403' } },
+    { id: 'expired', source: 'switcher', email: 'b@example.com', oauth: { accessToken: 'acc-401' } },
+    { id: 'down', source: 'switcher', email: 'c@example.com', oauth: { accessToken: 'acc-net' } },
+  ]
+  const fetcher = async (url, options = {}) => {
+    const token = options.headers?.Authorization ?? ''
+    if (token.endsWith('acc-net')) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } })
+    return json({ error: { type: 'forbidden' } }, token.endsWith('acc-403') ? 403 : 401)
+  }
+  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json' })
+  assert.deepEqual(summary.results.map((r) => r.reason), [
+    'profile request failed (HTTP 403)',
+    'profile unavailable; the sign-in may have expired',
+    'profile request failed (UND_ERR_CONNECT_TIMEOUT)',
+  ])
+})

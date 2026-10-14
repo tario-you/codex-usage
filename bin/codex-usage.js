@@ -22,6 +22,7 @@ import {
 import { uploadSwitchEvents } from './lib/switch-events.js'
 import { PLAN_SWITCH_POLL_SECONDS, runPlanSwitchPass } from './lib/plan-switch.js'
 import { dashboardWake } from './lib/wake.js'
+import { followSystemProxy } from './lib/system-proxy.js'
 import {
   DEFAULT_SYNC_ALL_INTERVAL_SECONDS,
   MIN_SYNC_ALL_INTERVAL_SECONDS,
@@ -296,6 +297,8 @@ class StdioCodexClient {
 }
 
 async function main() {
+  // Before any child or request: run on the Mac's system proxy (bin/lib/system-proxy.js).
+  await followSystemProxy()
   const [, , command, ...restArgs] = process.argv
 
   if (!command || command === '--help' || command === '-h') {
@@ -776,6 +779,7 @@ async function runSyncAllCommand(args, config, codexHome) {
   let lastSyncAt = Date.now()
   while (true) {
     await dashboardWake.wait(REPAIR_POLL_SECONDS * 1000, { maxMs: lastSyncAt + everySeconds * 1000 - Date.now() })
+    await followSystemProxy({ before: async () => dashboardWake.close() })
     let syncNow = Date.now() - lastSyncAt >= everySeconds * 1000
     // A "Use" click on a Plans row lands here too: switch through Switchboard, then sync at once.
     if (await runPlanSwitchPass({ codexHome, config, storePath })) syncNow = true
@@ -1131,6 +1135,8 @@ async function runWatchLoop(client, config, args) {
     isSyncing = true
 
     try {
+      // The app-server child goes down first; the re-run starts its own.
+      await followSystemProxy({ before: async () => client.close() })
       if (await client.reconnectIfLoginChanged()) {
         console.log('The Codex login changed; restarted the Codex app-server.')
       }

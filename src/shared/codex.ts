@@ -174,3 +174,10 @@ export function isFreshTimestamp(
 
   return Date.now() - date.getTime() <= freshnessWindowMs
 }
+
+/** her-team#12378: a sync gone quiet for over an hour shows itself, never only under Details. */
+export const SYNC_STOPPED_MS = 60 * 60 * 1000
+
+export function isSyncStopped(mostRecentSync: string | null, accountsTracked: number) {
+  return accountsTracked > 0 && !isFreshTimestamp(mostRecentSync, SYNC_STOPPED_MS)
+}

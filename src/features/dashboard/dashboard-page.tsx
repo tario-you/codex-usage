@@ -1311,6 +1311,11 @@ export function DashboardPage() {
                           {showDetails && summary.staleAccounts > 0
                             ? ` · ${summary.staleAccounts} stale`
                             : ''}
+                          {summary.syncStopped ? (
+                            <span className="text-destructive font-medium">
+                              {' '}· sync stopped: no new reading for over an hour
+                            </span>
+                          ) : null}
                         </CardDescription>
                       </div>
                       <div className="flex items-center gap-2">
