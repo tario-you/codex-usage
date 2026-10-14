@@ -5,7 +5,8 @@
 import { readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { syncAllOnce, resolveStorePath } from './lib/sync-all.js'
+import { reportExpiredSignIns, syncAllOnce, resolveStorePath } from './lib/sync-all.js'
+import { repairProviders } from './lib/repair-claude.js'
 import { syncClaudeOnce } from './lib/claude-logins.js'
 import { followSystemProxy } from './lib/system-proxy.js'
 const configPath = process.argv[2] ?? path.join(os.homedir(), '.codex/codex-usage-sync.json')
@@ -20,6 +21,8 @@ for (;;) {
     config = JSON.parse(readFileSync(configPath, 'utf8'))
     const result = await syncAllOnce({ config, storePath: resolveStorePath(), switcherOwned: true })
     console.log('Published ' + result.synced + ' login health rows.')
+    await reportExpiredSignIns({ config, expired: result.expired ?? [], providers: repairProviders() })
+      .catch(error => console.error('Expired sign-in report did not send (' + why(error) + ').'))
   } catch (error) {
     console.error('Connection health sync did not finish (' + why(error) + '); retrying in one minute.')
   }

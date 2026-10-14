@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryClient } from '@/lib/query-client'
 import type { Session } from '@supabase/supabase-js'
+import { isClaudeAccountKey } from '../../shared/codex'
 
 export interface RepairDevice {
   providers?: ('codex' | 'claude')[]
@@ -37,10 +38,30 @@ export function useRepairState(session: Session | null) {
   })
 }
 
-export function expiredEmailSet(devices: RepairDevice[] | undefined) {
+/** A machine's expired list counts while its agent still sends it; one that stopped reporting says nothing about today. */
+export const EXPIRED_REPORT_FRESH_MS = 10 * 60 * 1000
+
+/** Codex sign-ins each machine reported expired, from reports still fresh. */
+export function expiredEmailSet(devices: RepairDevice[] | undefined, now = Date.now()) {
   const set = new Set<string>()
-  for (const device of devices ?? []) for (const email of device.expired) set.add(email.toLowerCase())
+  for (const device of devices ?? []) {
+    const at = Date.parse(device.reportedAt ?? '')
+    if (!Number.isFinite(at) || now - at > EXPIRED_REPORT_FRESH_MS) continue
+    for (const email of device.expired) set.add(email.toLowerCase())
+  }
   return set
+}
+
+/**
+ * A row's connection comes from its own reading. Only a Codex row that carries
+ * none falls back to its machine's fresh expired list: that list names Codex
+ * sign-ins, so a Claude row sharing the email never takes it.
+ */
+export function ownConnectionStatus(account: { account_key: string; email: string | null; raw_rate_limits?: unknown }, expired: Set<string>) {
+  const own = (account.raw_rate_limits as { connection?: { status?: string } } | null)?.connection?.status
+  if (own) return own
+  if (isClaudeAccountKey(account.account_key)) return null
+  return expired.has((account.email ?? '').toLowerCase()) ? 'needs-login' : null
 }
 
 /** Prefer an existing request, otherwise the most recently online holder of this login. */

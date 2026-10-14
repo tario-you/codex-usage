@@ -89,7 +89,7 @@ import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
 import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
 import { ReconnectSignIn } from './reconnect-signin'
-import { expiredEmailSet, type RepairDevice, useRepairState } from './repair-signins-state'
+import { expiredEmailSet, ownConnectionStatus, type RepairDevice, useRepairState } from './repair-signins-state'
 import { useAccountNotes, type AccountNotesController } from './account-notes-state'
 import { accountNoteKey, accountNoteProvider, normalizeNoteEmail, noteKey } from './account-note-identity'
 import { SharedLoginPanel } from './shared-login-panel'
@@ -209,12 +209,8 @@ export function DashboardPage() {
 
   const accounts = accountsQuery.data ?? []
   const visibleAccounts = filterUsageAccounts(accounts, usageVisibility)
-  const expired = expiredEmailSet(repairState.data)
-  const orderSources = visibleAccounts.map(account => {
-    const health = account.raw_rate_limits as { connection?: { status?: string } } | null
-    return { ...account, connection_status: health?.connection?.status
-      ?? (expired.has((account.email ?? '').toLowerCase()) ? 'needs-login' : null) }
-  })
+  const expired = expiredEmailSet(repairState.data, usageOrderNow)
+  const orderSources = visibleAccounts.map(account => ({ ...account, connection_status: ownConnectionStatus(account, expired) }))
   const orderedAccounts = orderAccountsForUse(orderSources, usageOrderNow)
   const orderedIds = new Set(orderedAccounts.map(account => account.id))
   const unusableAccounts = visibleAccounts.filter(account => !orderedIds.has(account.id))
