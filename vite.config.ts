@@ -231,8 +231,9 @@ export default defineConfig({
     rolldownOptions: {
       preserveEntrySignatures: false,
       output: {
-        // Libraries sit in their own chunks, so a deploy that changes only our code leaves them cached (assets are
-        // immutable) and a returning visitor downloads just the small app chunk again.
+        // Libraries sit in one chunk of their own, so a deploy that changes only our code leaves it cached (assets are
+        // immutable) and a returning visitor downloads just the app chunk again. One chunk, not several: through a
+        // slow VPN the first render waits on the slowest request, so more parallel files cost more than their bytes.
         codeSplitting: {
           groups: [{ name: 'vendor', test: /node_modules[\\/]|rolldown[\\/]runtime/ }],
         },
