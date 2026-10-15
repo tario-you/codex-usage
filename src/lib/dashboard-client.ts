@@ -6,13 +6,19 @@ import type { Database } from './database.types'
 // The browser signs in and reads tables; it never uses realtime, storage or functions. So it builds the auth and
 // table clients alone instead of createClient, which pulls all of them (about 80 KB) into the first script. Options,
 // the storage key and the token on each read match createClient's, so a saved sign-in carries over.
+/** Where createClient keeps a saved sign-in: sb-<project ref>-auth-token. */
+export function authStorageKey(url: string) {
+  const trimmed = url.trim()
+  return `sb-${new URL(trimmed.endsWith('/') ? trimmed : `${trimmed}/`).hostname.split('.')[0]}-auth-token`
+}
+
 export function createDashboardClient(url: string, key: string, fetchImpl: typeof fetch = (...args) => fetch(...args)) {
   const trimmed = url.trim()
   const baseUrl = new URL(trimmed.endsWith('/') ? trimmed : `${trimmed}/`)
   const auth = new AuthClient({
     url: new URL('auth/v1', baseUrl).href,
     headers: { Authorization: `Bearer ${key}`, apikey: key },
-    storageKey: `sb-${baseUrl.hostname.split('.')[0]}-auth-token`,
+    storageKey: authStorageKey(url),
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,

@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 
+import { authStorageKey } from './dashboard-client'
+import { clientEnv } from './env'
+import { readPendingSession } from './pending-session'
 import { queryClient } from './query-client'
 import { supabase } from './supabase'
 
@@ -34,6 +37,7 @@ export function useAuthSession() {
   const [isLoading, setIsLoading] = useState(Boolean(supabase))
   const [redirectError, setRedirectError] = useState<string | null>(null)
   const [session, setSession] = useState<Session | null>(null)
+  const [pendingSession] = useState(readSavedSession)
 
   useEffect(() => {
     if (!supabase) {
@@ -99,7 +103,19 @@ export function useAuthSession() {
     isLoading,
     redirectError,
     session,
+    pendingSession: isLoading ? pendingSession : null,
   }
+}
+
+function readSavedSession() {
+  if (!supabase || !clientEnv || typeof window === 'undefined') return null
+  let store: Storage | null = null
+  try {
+    store = window.localStorage
+  } catch {
+    // Blocked storage only costs the early paint.
+  }
+  return readPendingSession(store, authStorageKey(clientEnv.VITE_SUPABASE_URL), window.location.href)
 }
 
 async function hydrateAuthState() {
