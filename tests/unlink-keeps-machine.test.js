@@ -117,8 +117,8 @@ test('unlinking one account keeps the machine syncing every other plan and stays
   }
 })
 
-// tario@opentrade.live's reading comes from claude-auto-switch, hours after it was made: it carries its own time, and a
-// reading no newer than the row's (the other uploader posting the same one) changes nothing.
+// An account read only through the Claude app gets its reading from claude-auto-switch, hours after it was made: it
+// carries its own time, and a reading no newer than the row's (the other uploader posting the same one) changes nothing.
 test('a reading made earlier goes up dated when it was made, and never replaces a newer one', async () => {
   const originalFetch = globalThis.fetch
   const tables = {

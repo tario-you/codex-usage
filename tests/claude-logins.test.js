@@ -190,7 +190,7 @@ test('a saved switcher login with a reading in the switcher\'s file is published
 })
 
 
-// tario@opentrade.live has no saved switcher login (kept out of switching, her-team#6467): only the switcher's read of
+// An account kept out of switching (her-team#6467) has no saved switcher login: only the switcher's read of
 // the Claude app's live login ever saw it, and the dashboard showed a 2.5-day-old row as if it were current.
 test('an account read only through the Claude app goes up with the time of its newest reading', async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-claude-app-only-'))
