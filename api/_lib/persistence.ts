@@ -23,6 +23,12 @@ interface PersistSnapshotInput {
   rateLimits: CodexRateLimitsResponse
   /** An explicit owner action (pairing, publishing) links an unlinked account again; background syncs leave it unlinked. */
   relink?: boolean
+  /**
+   * When the reading was taken (ms since epoch), for one another process made earlier: claude-auto-switch reads an
+   * account the Claude app is signed in to, and that reading is the only one there is once the app moves on. The row
+   * carries its real time, and a reading no newer than the row's leaves the row as it is.
+   */
+  readAt?: number
 }
 
 /**
@@ -78,7 +84,8 @@ export async function persistSnapshotForOwner({
   ownerUserId,
   rateLimits,
   relink = false,
-}: PersistSnapshotInput): Promise<{ unlinked: boolean }> {
+  readAt,
+}: PersistSnapshotInput): Promise<{ unlinked: boolean; older?: boolean }> {
   const account = accountState.account
   if (!account) {
     throw new Error('No logged-in Codex account was found on this machine.')
@@ -99,7 +106,14 @@ export async function persistSnapshotForOwner({
     return { unlinked: true }
   }
   const nowIso = new Date().toISOString()
+  const readIso = readAt ? new Date(Math.min(readAt, Date.now())).toISOString() : nowIso
+  if (readAt && (await isOlderThanRow(ownerUserId, accountKey, readIso))) {
+    return { unlinked: false, older: true }
+  }
   const autoSwitch = await autoSwitchMark(ownerUserId, accountKey, account, nowIso, device.machineName ?? device.label)
+  const planType =
+    rateLimits.rateLimits.planType ??
+    (account.type === 'chatgpt' || account.type === 'claude' ? account.planType ?? null : null)
 
   const accountUpsert: Database['public']['Tables']['codex_accounts']['Insert'] =
     {
@@ -108,7 +122,7 @@ export async function persistSnapshotForOwner({
       display_name: email ? null : device.label,
       email,
       last_seen_at: nowIso,
-      last_snapshot_at: nowIso,
+      last_snapshot_at: readIso,
       metadata: {
         auth_type: account.type,
         ...(autoSwitch ? { auto_switch: autoSwitch } : {}),
@@ -120,11 +134,8 @@ export async function persistSnapshotForOwner({
         transport: 'stdio',
       },
       owner_user_id: ownerUserId,
-      plan_type:
-        rateLimits.rateLimits.planType ??
-        (account.type === 'chatgpt' || account.type === 'claude'
-          ? account.planType ?? null
-          : null),
+      // A reading made elsewhere may not know the plan; it leaves the row's.
+      ...(planType || !readAt ? { plan_type: planType } : {}),
       source_key: device.deviceKey,
       source_label: device.label,
     }
@@ -143,11 +154,23 @@ export async function persistSnapshotForOwner({
 
   await insertSnapshot({
     accountId: accountRecord.id,
-    fetchedAt: nowIso,
+    fetchedAt: readIso,
     rateLimits,
     sourceKey: device.deviceKey,
   })
   return { unlinked: false }
+}
+
+/** True when the row already holds a reading at least as new as `readIso`. */
+async function isOlderThanRow(ownerUserId: string, accountKey: string, readIso: string) {
+  const { data, error } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .select('last_snapshot_at')
+    .eq('owner_user_id', ownerUserId)
+    .eq('account_key', accountKey)
+    .maybeSingle()
+  if (error) throw error
+  return Boolean(data?.last_snapshot_at) && Date.parse(data!.last_snapshot_at!) >= Date.parse(readIso)
 }
 
 /**

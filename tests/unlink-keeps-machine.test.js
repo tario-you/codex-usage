@@ -116,3 +116,34 @@ test('unlinking one account keeps the machine syncing every other plan and stays
     globalThis.fetch = originalFetch
   }
 })
+
+// tario@opentrade.live's reading comes from claude-auto-switch, hours after it was made: it carries its own time, and a
+// reading no newer than the row's (the other uploader posting the same one) changes nothing.
+test('a reading made earlier goes up dated when it was made, and never replaces a newer one', async () => {
+  const originalFetch = globalThis.fetch
+  const tables = {
+    codex_devices: [{ id: 'device-1', owner_user_id: owner, device_key: deviceKey, device_token_hash: hashToken(deviceToken), label: 'mac', machine_name: 'mac', codex_home: null, metadata: {}, revoked_at: null }],
+    codex_accounts: [{ id: 'team-row', owner_user_id: owner, account_key: 'claude:team@example.com', plan_type: 'max', last_snapshot_at: '2026-10-12T18:22:46.000Z' }],
+  }
+  const app = { rateLimits: { ...rateLimits.rateLimits, planType: null }, rateLimitsByLimitId: null }
+  const team = { account: { email: 'team@example.com', type: 'claude' }, requiresOpenaiAuth: false }
+  globalThis.fetch = fakeSupabase(tables)
+  try {
+    const readAt = Date.parse('2026-10-14T21:24:26.000Z')
+    const newer = await post(sync.POST, { accountState: team, deviceToken, rateLimits: app, readAt })
+    assert.equal(newer.status, 200, await newer.clone().text())
+    assert.equal(tables.codex_accounts[0].last_snapshot_at, '2026-10-14T21:24:26.000Z')
+    assert.equal(tables.codex_accounts[0].plan_type, 'max', 'a reading that never saw the plan leaves it')
+    assert.deepEqual(tables.codex_usage_snapshots.map(row => row.fetched_at), ['2026-10-14T21:24:26.000Z'])
+
+    const again = await post(sync.POST, { accountState: team, deviceToken, rateLimits: app, readAt })
+    assert.equal((await again.json()).older, true)
+    assert.equal(tables.codex_usage_snapshots.length, 1, 'the same reading twice is one snapshot')
+
+    const future = await post(sync.POST, { accountState: team, deviceToken, rateLimits: app, readAt: Date.now() + 3_600_000 })
+    assert.equal(future.status, 200)
+    assert.ok(Date.parse(tables.codex_accounts[0].last_snapshot_at) <= Date.now(), 'a clock ahead never dates a row in the future')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

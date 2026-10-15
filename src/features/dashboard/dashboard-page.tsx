@@ -66,7 +66,7 @@ import {
   buildConnectCommand,
   DASHBOARD_CONNECTED_QUERY_KEY,
 } from '@/shared/cli'
-import { formatRelativeTimestamp, formatTimestamp } from '@/shared/codex'
+import { formatRelativeTimestamp, formatTimestamp, isFreshTimestamp } from '@/shared/codex'
 import {
   getRateLimitWindows,
   longestWindowFirst,
@@ -1810,6 +1810,11 @@ function AccountTable({
                     </span>
                   ) : null}
                   <PlanEndDate account={account} canEdit={showDetails && isOwnedAccount} now={now} session={session} />
+                  {!showDetails && account.last_snapshot_at && !isFreshTimestamp(account.last_snapshot_at) ? (
+                    <span className="text-[10px] leading-4 text-muted-foreground" title={formatTimestamp(account.last_snapshot_at)}>
+                      read {formatRelativeTimestamp(account.last_snapshot_at).toLowerCase()}
+                    </span>
+                  ) : null}
                   {showDetails ? <SubscriptionEnd rawRateLimits={account.raw_rate_limits} /> : null}
                   {showDetails && isOwnedAccount && !unusableIds.has(account.id) ? (
                     <ReconnectSignIn devices={repairDevices} email={account.email} session={session} lastUpdate={account.last_snapshot_at} provider={isClaudeAccount(account) ? 'claude' : 'codex'} />

@@ -37,17 +37,44 @@ export const CLAUDE_SWITCHER_READINGS_PATH = path.join(os.homedir(), '.local', '
 // The switcher reads each login at least every 5 minutes; a reading older than this says its tick is not running.
 export const SWITCHER_READING_MAX_AGE_MS = 30 * 60_000
 
+const hasNumbers = (verdict) => typeof verdict?.session?.utilization === 'number' || typeof verdict?.weekly?.utilization === 'number'
+
+/** An entry's newest reading with usage numbers in it, the one before a failed read included: { at, verdict }. */
+function newestReading(entry) {
+  if (hasNumbers(entry?.verdict) && typeof entry.at === 'number') return { at: entry.at, verdict: entry.verdict }
+  if (hasNumbers(entry?.lastKnown?.verdict) && typeof entry.lastKnown.at === 'number') return { at: entry.lastKnown.at, verdict: entry.lastKnown.verdict }
+  return null
+}
+
+async function readSwitcherCache(readingsPath) {
+  if (!readingsPath || !existsSync(readingsPath)) return {}
+  const cache = await readJsonFile(readingsPath).catch(() => null)
+  return cache && typeof cache === 'object' ? cache : {}
+}
+
 /** Each saved switcher login's newest reading with usage numbers in it, by login id: { at, verdict }. */
 export async function readSwitcherReadings(readingsPath = CLAUDE_SWITCHER_READINGS_PATH) {
   const readings = new Map()
-  if (!readingsPath || !existsSync(readingsPath)) return readings
-  const cache = await readJsonFile(readingsPath).catch(() => null)
-  const hasNumbers = (verdict) => typeof verdict?.session?.utilization === 'number' || typeof verdict?.weekly?.utilization === 'number'
-  for (const [key, entry] of Object.entries(cache && typeof cache === 'object' ? cache : {})) {
-    if (!key.startsWith('login:')) continue
-    const newest = hasNumbers(entry?.verdict) && typeof entry.at === 'number' ? { at: entry.at, verdict: entry.verdict }
-      : hasNumbers(entry?.lastKnown?.verdict) && typeof entry.lastKnown.at === 'number' ? { at: entry.lastKnown.at, verdict: entry.lastKnown.verdict } : null
+  for (const [key, entry] of Object.entries(await readSwitcherCache(readingsPath))) {
+    const newest = key.startsWith('login:') ? newestReading(entry) : null
     if (newest) readings.set(key.slice('login:'.length), newest)
+  }
+  return readings
+}
+
+/**
+ * The switcher also reads whatever login the Claude app and the CLI hold each tick, keyed by token with the account's
+ * email beside it. Some of those accounts have no saved switcher login: tario@opentrade.live is kept out of switching
+ * (her-team#6467), so it is read only while the app is signed in to it, and no one can read it after. The newest such
+ * reading of each account, by email: { at, verdict }.
+ */
+export async function readSwitcherReadingsByEmail(readingsPath = CLAUDE_SWITCHER_READINGS_PATH) {
+  const readings = new Map()
+  for (const [key, entry] of Object.entries(await readSwitcherCache(readingsPath))) {
+    if (key.startsWith('login:') || typeof entry?.email !== 'string') continue
+    const newest = newestReading(entry)
+    const email = entry.email.toLowerCase()
+    if (newest && !(readings.get(email)?.at >= newest.at)) readings.set(email, newest)
   }
   return readings
 }
@@ -324,6 +351,26 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
     }
     byEmail.set(email, { login, profile: { email, planType: login.oauth.subscriptionType ?? null }, usage: { data: usageFromReading(reading.verdict) } })
   }
+  const publish = async (email, source, data, { planType = null, readAt } = {}) => {
+    const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null })
+    const response = await fetcher(
+      config.syncUrl,
+      dashboardRequest({ ...payload, device, deviceToken: config.deviceToken, ...(readAt ? { readAt } : {}) }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
+    )
+    if (!response.ok) {
+      results.push({ email, source, ok: false, reason: `dashboard rejected the sync (HTTP ${response.status})` })
+      return
+    }
+    results.push({
+      email,
+      source,
+      ok: true,
+      planType,
+      ...(readAt ? { readAt } : {}),
+      usedPercent: payload.rateLimits.rateLimits.primary?.usedPercent ?? null,
+      weeklyUsedPercent: payload.rateLimits.rateLimits.secondary?.usedPercent ?? null,
+    })
+  }
   for (const [email, { login, profile, usage: kept }] of byEmail) {
     const usage = kept ?? (await fetchClaudeUsage(login.oauth, fetcher, { refresh }))
     if (usage.error) {
@@ -334,23 +381,16 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       login.oauth = usage.oauth
       if (login.source === 'switcher') await writeBackSwitcherOauth(storePath, login).catch(() => {})
     }
-    const payload = buildClaudeSyncPayload(usage.data, { email, planType: profile.planType, autoSwitch: pool ? pool.has(email) : null })
-    const response = await fetcher(
-      config.syncUrl,
-      dashboardRequest({ ...payload, device, deviceToken: config.deviceToken }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
-    )
-    if (!response.ok) {
-      results.push({ email, source: login.source, ok: false, reason: `dashboard rejected the sync (HTTP ${response.status})` })
-      continue
-    }
-    results.push({
-      email,
-      source: login.source,
-      ok: true,
-      planType: profile.planType,
-      usedPercent: payload.rateLimits.rateLimits.primary?.usedPercent ?? null,
-      weeklyUsedPercent: payload.rateLimits.rateLimits.secondary?.usedPercent ?? null,
-    })
+    await publish(email, login.source, usage.data, { planType: profile.planType })
   }
-  return { results, synced: results.filter((result) => result.ok).length, total: found.length }
+  // An account the switcher read through the app or the CLI, with no saved login and no live read this pass, goes up
+  // with the time its reading was taken; the dashboard keeps whichever of its readings is newer.
+  const savedEmails = new Set(found.filter((login) => login.source === 'switcher' && login.email).map((login) => login.email))
+  let elsewhere = 0
+  for (const [email, reading] of await readSwitcherReadingsByEmail(readingsPath)) {
+    if (savedEmails.has(email) || byEmail.has(email)) continue
+    elsewhere += 1
+    await publish(email, 'app', usageFromReading(reading.verdict), { readAt: Math.min(reading.at, now) })
+  }
+  return { results, synced: results.filter((result) => result.ok).length, total: found.length + elsewhere }
 }
