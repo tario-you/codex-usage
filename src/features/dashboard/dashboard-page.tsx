@@ -58,6 +58,7 @@ import {
   type DashboardInviterRow,
   type DashboardWeeklyUsageRange,
 } from '@/lib/dashboard'
+import { clearDashboardCache } from '@/lib/dashboard-cache'
 import { clientEnvError } from '@/lib/env'
 import { queryClient } from '@/lib/query-client'
 import { supabase } from '@/lib/supabase'
@@ -477,6 +478,7 @@ export function DashboardPage() {
     setIsTerminalCommandCopied(false)
     setIsInviteLinkCopied(false)
     clearPendingInviteToken()
+    clearDashboardCache()
 
     if (!supabase) {
       return
@@ -490,6 +492,7 @@ export function DashboardPage() {
 
   async function handleInvalidSession(message = INVALID_SESSION_MESSAGE) {
     setHasAttemptedInviteAccept(false)
+    clearDashboardCache()
 
     if (!supabase) {
       return message
