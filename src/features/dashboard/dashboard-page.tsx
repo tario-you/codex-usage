@@ -1,4 +1,6 @@
 import {
+  Suspense,
+  lazy,
   useEffect,
   useEffectEvent,
   useState,
@@ -88,20 +90,25 @@ import { BrowserSessionPreference } from './browser-session-preference'
 import { PlanEndDate } from './plan-end-date'
 import { UsePlanControl } from './plan-switch'
 import { planSwitchTarget, usePlanSwitchState, type PlanSwitchDevice } from './plan-switch-state'
-import { ConnectPlanForm, RepairSignInsBanner } from './repair-signins'
 import { ReconnectSignIn } from './reconnect-signin'
 import { expiredEmailSet, ownConnectionStatus, type RepairDevice, useRepairState } from './repair-signins-state'
 import { useAccountNotes, type AccountNotesController } from './account-notes-state'
 import { accountNoteKey, accountNoteProvider, normalizeNoteEmail, noteKey } from './account-note-identity'
-import { SharedLoginPanel } from './shared-login-panel'
-import { GettingStartedPanel } from './getting-started-panel'
-import { SwitchHistoryPanel } from './switch-history-panel'
-import { ReaderGrantPanel } from './reader-grant-panel'
 import { takePendingReaderGrant, type PendingReaderGrant } from './reader-grant'
 import { RemainingPercentageEditor } from './remaining-percentage-editor'
 import { UsageWindowList } from './usage-window-list'
 import { formatResetCountdown } from './reset-countdown'
 import { filterUsageAccounts, readUsageVisibility, saveUsageVisibility, type UsageVisibility } from './usage-provider-visibility'
+
+// The first script carries what paints the accounts table, the chart and reset plan above it included, so nothing
+// shifts once it shows. Panels hidden until a click (setup, sharing, switch history, a reader grant) load when first
+// rendered, after the table.
+const ConnectPlanForm = lazy(() => import('./repair-signins').then((module) => ({ default: module.ConnectPlanForm })))
+const RepairSignInsBanner = lazy(() => import('./repair-signins').then((module) => ({ default: module.RepairSignInsBanner })))
+const SharedLoginPanel = lazy(() => import('./shared-login-panel').then((module) => ({ default: module.SharedLoginPanel })))
+const GettingStartedPanel = lazy(() => import('./getting-started-panel').then((module) => ({ default: module.GettingStartedPanel })))
+const SwitchHistoryPanel = lazy(() => import('./switch-history-panel').then((module) => ({ default: module.SwitchHistoryPanel })))
+const ReaderGrantPanel = lazy(() => import('./reader-grant-panel').then((module) => ({ default: module.ReaderGrantPanel })))
 
 interface PairingCommandState {
   command: string
@@ -1140,8 +1147,10 @@ export function DashboardPage() {
                           <CopiedPill />
                         ) : null}
                       </div>
-                      <ConnectPlanForm devices={repairState.data} session={session} />
-                      <RepairSignInsBanner devices={repairState.data} session={session} />
+                      <Suspense fallback={null}>
+                        <ConnectPlanForm devices={repairState.data} session={session} />
+                        <RepairSignInsBanner devices={repairState.data} session={session} />
+                      </Suspense>
                       <BrowserSessionPreference userId={session.user.id} />
                       <ThemeToggle />
                     </CardContent>
@@ -1231,14 +1240,16 @@ export function DashboardPage() {
                   ) : null}
 
                   {guideVisible ? (
-                    <GettingStartedPanel
-                      onAddMachine={() => void handleStartPairing()}
-                      onDismiss={() => {
-                        setShowGuide(false)
-                        setGuideHidden(true)
-                      }}
-                      onInviteViewer={() => void handleCreateInvite()}
-                    />
+                    <Suspense fallback={null}>
+                      <GettingStartedPanel
+                        onAddMachine={() => void handleStartPairing()}
+                        onDismiss={() => {
+                          setShowGuide(false)
+                          setGuideHidden(true)
+                        }}
+                        onInviteViewer={() => void handleCreateInvite()}
+                      />
+                    </Suspense>
                   ) : null}
 
                   {pairingError || inviteCreateError || pairingCommand || shareInvite ? (
@@ -1286,12 +1297,16 @@ export function DashboardPage() {
                   ) : null}
 
                   <div id="share-codex-login">
-                    <SharedLoginPanel accounts={accounts} onInvalidSession={handleInvalidSession} session={session} />
+                    <Suspense fallback={null}>
+                      <SharedLoginPanel accounts={accounts} onInvalidSession={handleInvalidSession} session={session} />
+                    </Suspense>
                   </div>
                 </div>
 
                 {readerGrant ? (
-                  <ReaderGrantPanel onDone={() => setReaderGrant(null)} pending={readerGrant} session={session} />
+                  <Suspense fallback={null}>
+                    <ReaderGrantPanel onDone={() => setReaderGrant(null)} pending={readerGrant} session={session} />
+                  </Suspense>
                 ) : null}
 
                 <Card className="min-w-0" size="sm">
@@ -1432,7 +1447,7 @@ export function DashboardPage() {
 
                 <details className="border-t border-border pt-3">
                   <summary className="cursor-pointer text-sm text-muted-foreground">Switch history</summary>
-                  <div className="mt-3"><SwitchHistoryPanel session={session} /></div>
+                  <div className="mt-3"><Suspense fallback={null}><SwitchHistoryPanel session={session} /></Suspense></div>
                 </details>
 
               </div>
