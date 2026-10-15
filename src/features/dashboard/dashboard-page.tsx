@@ -137,8 +137,11 @@ export function DashboardPage() {
   const {
     isLoading: authIsLoading,
     redirectError: authRedirectError,
-    session,
+    session: signedInSession,
+    pendingSession,
   } = useAuthSession()
+  // Paints from the saved sign-in while it refreshes; reads start once it has (src/lib/pending-session.ts).
+  const session = signedInSession ?? pendingSession
   const [inviteToken, setInviteToken] = useState<string | null>(() =>
     getInitialInviteToken(),
   )
@@ -190,7 +193,7 @@ export function DashboardPage() {
     useState<DashboardWeeklyUsageRange>('7d')
   const [usageVisibility, setUsageVisibility] = useState(readUsageVisibility)
   const showInviteLanding = Boolean(inviteToken)
-  const canLoadDashboardData = Boolean(session?.user.id) && !showInviteLanding
+  const canLoadDashboardData = Boolean(signedInSession?.user.id) && !showInviteLanding
 
   const accountsQuery = useQuery({
     ...dashboardAccountsQueryOptions(session?.user.id ?? 'guest'),

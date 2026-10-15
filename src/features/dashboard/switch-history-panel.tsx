@@ -46,6 +46,7 @@ function summary(group: SwitchEventGroup) {
 /** Every automatic switch, continuation and relaunch, on your machines and your recipients'. */
 export function SwitchHistoryPanel({ session }: { session: Session }) {
   const query = useQuery({
+    enabled: Boolean(session.access_token),
     queryFn: () => fetchSwitchEvents(session.access_token),
     queryKey: ['switch-history', session.user.id],
     refetchInterval: 60_000,
