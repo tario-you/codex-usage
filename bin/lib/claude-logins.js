@@ -29,6 +29,35 @@ export function resolveClaudeStorePath(option) {
   return path.resolve(expanded)
 }
 
+// her-team#12378: claude-auto-switch reads every saved login's usage itself, backing off on 429s, and keeps each
+// reading in this file keyed by account, never by token. Two codexusage agents also asked the same endpoint about every
+// login each minute, a profile and a usage read apiece, and on 10-15 nearly every read of all three came back 429: the
+// switcher could not see a plan with room for 20 minutes at a run-out. A switcher login's row comes from this file.
+export const CLAUDE_SWITCHER_READINGS_PATH = path.join(os.homedir(), '.local', 'state', 'claude-auto-switch', 'login-verdicts.json')
+// The switcher reads each login at least every 5 minutes; a reading older than this says its tick is not running.
+export const SWITCHER_READING_MAX_AGE_MS = 30 * 60_000
+
+/** Each saved switcher login's newest reading with usage numbers in it, by login id: { at, verdict }. */
+export async function readSwitcherReadings(readingsPath = CLAUDE_SWITCHER_READINGS_PATH) {
+  const readings = new Map()
+  if (!readingsPath || !existsSync(readingsPath)) return readings
+  const cache = await readJsonFile(readingsPath).catch(() => null)
+  const hasNumbers = (verdict) => typeof verdict?.session?.utilization === 'number' || typeof verdict?.weekly?.utilization === 'number'
+  for (const [key, entry] of Object.entries(cache && typeof cache === 'object' ? cache : {})) {
+    if (!key.startsWith('login:')) continue
+    const newest = hasNumbers(entry?.verdict) && typeof entry.at === 'number' ? { at: entry.at, verdict: entry.verdict }
+      : hasNumbers(entry?.lastKnown?.verdict) && typeof entry.lastKnown.at === 'number' ? { at: entry.lastKnown.at, verdict: entry.lastKnown.verdict } : null
+    if (newest) readings.set(key.slice('login:'.length), newest)
+  }
+  return readings
+}
+
+/** The usage endpoint's shape, rebuilt from a switcher reading, for buildClaudeSyncPayload. */
+export function usageFromReading(verdict) {
+  const window = (entry) => (typeof entry?.utilization === 'number' ? { utilization: entry.utilization, resets_at: entry.resetsAt ?? null } : null)
+  return { five_hour: window(verdict.session), seven_day: window(verdict.weekly) }
+}
+
 export function resolveClaudeCredentialsPath(env = process.env) {
   const configDir = env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
   return path.join(configDir, '.credentials.json')
@@ -265,22 +294,38 @@ async function writeBackSwitcherOauth(storePath, login) {
  * account; the one carrying a refresh token wins so an expired token can be
  * renewed next pass.
  */
-export async function syncClaudeOnce({ config, device, fetcher = fetch, logins = null, storePath = resolveClaudeStorePath(), refresh = true }) {
+export async function syncClaudeOnce({ config, device, fetcher = fetch, logins = null, storePath = resolveClaudeStorePath(), refresh = true, readingsPath = CLAUDE_SWITCHER_READINGS_PATH, now = Date.now() }) {
   const found = logins ?? (await discoverClaudeLogins({ storePath }))
   const pool = await readClaudeAutoSwitchPool(storePath)
+  const readings = await readSwitcherReadings(readingsPath)
   const results = []
   const byEmail = new Map()
+  const fromSwitcher = new Map()
   for (const login of found) {
+    const reading = login.source === 'switcher' && login.email ? readings.get(login.id) : null
+    if (reading && !fromSwitcher.has(login.email)) fromSwitcher.set(login.email, { login, reading })
+  }
+  for (const login of found) {
+    if (login.source === 'switcher' && login.email && fromSwitcher.has(login.email)) continue
     const profile = await fetchClaudeProfile(login.oauth, fetcher).catch((error) => ({ failure: `profile request failed (${error?.cause?.code ?? error?.name ?? 'network'})` }))
     if (!profile?.email) {
       results.push({ email: login.email, source: login.source, ok: false, reason: profile?.failure ?? 'profile unavailable; the sign-in may have expired' })
       continue
     }
+    if (fromSwitcher.has(profile.email)) continue
     const known = byEmail.get(profile.email)
     if (!known || (!known.login.oauth.refreshToken && login.oauth.refreshToken)) byEmail.set(profile.email, { login, profile })
   }
-  for (const [email, { login, profile }] of byEmail) {
-    const usage = await fetchClaudeUsage(login.oauth, fetcher, { refresh })
+  for (const [email, { login, reading }] of fromSwitcher) {
+    const ageMs = now - reading.at
+    if (ageMs > SWITCHER_READING_MAX_AGE_MS) {
+      results.push({ email, source: login.source, ok: false, reason: `claude-auto-switch's newest reading is ${Math.round(ageMs / 60_000)} min old` })
+      continue
+    }
+    byEmail.set(email, { login, profile: { email, planType: login.oauth.subscriptionType ?? null }, usage: { data: usageFromReading(reading.verdict) } })
+  }
+  for (const [email, { login, profile, usage: kept }] of byEmail) {
+    const usage = kept ?? (await fetchClaudeUsage(login.oauth, fetcher, { refresh }))
     if (usage.error) {
       results.push({ email, source: login.source, ok: false, reason: usage.error })
       continue
