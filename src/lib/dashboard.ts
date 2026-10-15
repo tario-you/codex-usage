@@ -6,6 +6,7 @@ import {
   getDashboardWeeklyUsageRangeDays,
   type DashboardWeeklyUsageRange,
 } from '../features/dashboard/usage-history-ranges'
+import { cachedQuery } from './dashboard-cache'
 import { clientEnvError } from './env'
 import { supabase } from './supabase'
 import {
@@ -67,7 +68,7 @@ export interface DashboardSummary {
 export function dashboardAccountsQueryOptions(userId: string) {
   return queryOptions({
     queryKey: ['dashboard-accounts', userId],
-    queryFn: fetchDashboardAccounts,
+    ...cachedQuery(userId === 'guest' ? null : `accounts.${userId}`, fetchDashboardAccounts),
     refetchInterval: 30_000,
   })
 }
@@ -86,7 +87,7 @@ export function dashboardWeeklyUsageHistoryQueryOptions(
 ) {
   return queryOptions({
     queryKey: ['dashboard-weighted-weekly-usage-history', userId, range],
-    queryFn: () => fetchDashboardWeeklyUsageHistory(range),
+    ...cachedQuery(userId === 'guest' ? null : `history.${userId}.${range}`, () => fetchDashboardWeeklyUsageHistory(range)),
     refetchInterval: 30_000,
   })
 }
