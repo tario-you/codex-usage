@@ -1,20 +1,34 @@
-import { z } from 'zod'
+// Two strings need checking, so this stays a plain check instead of pulling zod (about 55 KB) into the first script.
+function readClientEnv() {
+  const VITE_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const VITE_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+  const issues: string[] = []
 
-const clientEnvSchema = z.object({
-  VITE_SUPABASE_ANON_KEY: z.string().min(1, 'Missing VITE_SUPABASE_ANON_KEY'),
-  VITE_SUPABASE_URL: z
-    .string()
-    .url('Missing or invalid VITE_SUPABASE_URL'),
-})
+  if (typeof VITE_SUPABASE_ANON_KEY !== 'string' || VITE_SUPABASE_ANON_KEY.length === 0) {
+    issues.push('VITE_SUPABASE_ANON_KEY: Missing VITE_SUPABASE_ANON_KEY')
+  }
+  if (typeof VITE_SUPABASE_URL !== 'string' || !isUrl(VITE_SUPABASE_URL)) {
+    issues.push('VITE_SUPABASE_URL: Missing or invalid VITE_SUPABASE_URL')
+  }
 
-const parsedClientEnv = clientEnvSchema.safeParse({
-  VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
-  VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
-})
+  return issues.length > 0
+    ? { data: null, error: issues.join('; ') }
+    : {
+        data: { VITE_SUPABASE_ANON_KEY: VITE_SUPABASE_ANON_KEY as string, VITE_SUPABASE_URL: VITE_SUPABASE_URL as string },
+        error: null,
+      }
+}
 
-export const clientEnv = parsedClientEnv.success ? parsedClientEnv.data : null
-export const clientEnvError = parsedClientEnv.success
-  ? null
-  : parsedClientEnv.error.issues
-      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-      .join('; ')
+function isUrl(value: string) {
+  try {
+    new URL(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const parsedClientEnv = readClientEnv()
+
+export const clientEnv = parsedClientEnv.data
+export const clientEnvError = parsedClientEnv.error

@@ -1,10 +1,10 @@
 import { Buffer } from 'node:buffer'
-import { randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import tailwindcss from '@tailwindcss/vite'
-import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { config as loadEnvFile } from 'dotenv'
 import { defineConfig } from 'vite'
@@ -195,10 +195,28 @@ async function writeNodeResponse(res: ServerResponse, response: Response) {
   res.end(Buffer.from(body))
 }
 
-const appVersion = randomUUID()
+// The version changes only when what the browser runs changes, so a deploy that touches only the API or the
+// collector leaves every script's hash, and a returning visitor's cache, as it was.
+function clientVersion() {
+  const hash = createHash('sha256')
+  const files = ['index.html', 'package-lock.json', 'vite.config.ts']
+  for (const dir of ['src', 'public']) {
+    for (const entry of readdirSync(path.join(rootDir, dir), { recursive: true })) {
+      const file = path.join(dir, String(entry))
+      if (statSync(path.join(rootDir, file)).isFile()) files.push(file)
+    }
+  }
+  for (const file of files.sort()) hash.update(file).update(readFileSync(path.join(rootDir, file)))
+  for (const key of Object.keys(process.env).filter((name) => name.startsWith('VITE_')).sort()) {
+    hash.update(`${key}=${process.env[key]}`)
+  }
+  return hash.digest('hex').slice(0, 16)
+}
+
+const appVersion = clientVersion()
 export default defineConfig({
   define: { 'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion) },
-  plugins: [localApiRoutesPlugin(), tanstackRouter(), react(), tailwindcss(), {
+  plugins: [localApiRoutesPlugin(), react(), tailwindcss(), {
     name: 'dashboard-version',
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: appVersion }) })
@@ -207,6 +225,21 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+    },
+  },
+  build: {
+    rolldownOptions: {
+      output: {
+        // Libraries sit in their own chunks, so a deploy that changes only our code leaves them cached (assets are
+        // immutable) and a returning visitor downloads just the small app chunk again.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 3 },
+            { name: 'supabase', test: /node_modules[\\/]@supabase[\\/]/, priority: 2 },
+            { name: 'vendor', test: /node_modules[\\/]/, priority: 1 },
+          ],
+        },
+      },
     },
   },
 })
