@@ -20,6 +20,8 @@ const syncBodySchema = z.object({
   device: deviceMetadataSchema.optional(),
   deviceToken: z.string().min(1),
   rateLimits: rateLimitsSchema,
+  /** When the reading was taken (ms since epoch), for a reading another process made earlier; absent means now. */
+  readAt: z.number().int().positive().optional(),
 })
 
 export async function POST(request: Request) {
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
       })
       .eq('id', device.id)
 
-    const { unlinked } = await persistSnapshotForOwner({
+    const { unlinked, older } = await persistSnapshotForOwner({
       accountState,
       device: {
         codexHome: body.device?.codexHome ?? device.codex_home,
@@ -81,12 +83,14 @@ export async function POST(request: Request) {
       },
       ownerUserId: device.owner_user_id,
       rateLimits,
+      readAt: body.readAt,
     })
 
     return jsonResponse({
       ok: true,
       syncedAt: nowIso,
       ...(unlinked ? { unlinked: true } : {}),
+      ...(older ? { older: true } : {}),
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

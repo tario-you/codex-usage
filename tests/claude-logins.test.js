@@ -115,7 +115,7 @@ test('sync reports one row per email, prefers the login with a refresh token, an
     }
     throw new Error(`unexpected ${url}`)
   }
-  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync', deviceToken: 'dev-token' }, device: { label: 'mac' }, fetcher, logins, storePath })
+  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync', deviceToken: 'dev-token' }, device: { label: 'mac' }, fetcher, logins, storePath, readingsPath: '/nonexistent/login-verdicts.json' })
   assert.equal(summary.total, 3)
   assert.equal(summary.synced, 2, 'three logins named two emails')
   assert.deepEqual(summary.results.map((r) => [r.email, r.ok, r.source, r.planType, r.usedPercent]), [['a@example.com', true, 'switcher', 'max', 70], ['b@example.com', true, 'cli', 'pro', 5]])
@@ -140,7 +140,7 @@ test('a refused profile read says its status, never an expired sign-in (her-team
     if (token.endsWith('acc-net')) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } })
     return json({ error: { type: 'forbidden' } }, token.endsWith('acc-403') ? 403 : 401)
   }
-  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json' })
+  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath: '/nonexistent/login-verdicts.json' })
   assert.deepEqual(summary.results.map((r) => r.reason), [
     'profile request failed (HTTP 403)',
     'profile unavailable; the sign-in may have expired',
@@ -189,3 +189,34 @@ test('a saved switcher login with a reading in the switcher\'s file is published
   assert.doesNotThrow(() => rateLimitsSchema.parse(posts[0].rateLimits))
 })
 
+
+// tario@opentrade.live has no saved switcher login (kept out of switching, her-team#6467): only the switcher's read of
+// the Claude app's live login ever saw it, and the dashboard showed a 2.5-day-old row as if it were current.
+test('an account read only through the Claude app goes up with the time of its newest reading', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-claude-app-only-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const now = Date.parse('2026-10-15T06:00:00Z')
+  const readingsPath = path.join(dir, 'login-verdicts.json')
+  await writeFile(readingsPath, JSON.stringify({
+    'login:one': { at: now - 60_000, verdict: { session: { utilization: 3, resetsAt: null }, weekly: { utilization: 67, resetsAt: null } } },
+    // The app held a@example.com too: its saved login's row already covers it.
+    'desktop:aaa': { at: now - 30_000, email: 'a@example.com', verdict: { session: { utilization: 9, resetsAt: null }, weekly: { utilization: 70, resetsAt: null } } },
+    'desktop:old': { at: now - 9 * 60 * 60_000, email: 'Team@Example.com', verdict: { session: { utilization: 10, resetsAt: null }, weekly: { utilization: 80, resetsAt: null } } },
+    'desktop:new': { at: now - 8 * 60 * 60_000, email: 'team@example.com', verdict: { kind: 'unknown', session: null, weekly: null }, lastKnown: { at: now - 8.5 * 60 * 60_000, verdict: { session: { utilization: 44, resetsAt: '2026-10-15T01:00:00Z' }, weekly: { utilization: 90, resetsAt: '2026-10-16T19:00:00Z' } } } },
+    'desktop:nobody': { at: now - 60_000, verdict: { kind: 'unknown', reason: 'network' } },
+  }))
+  const logins = [{ id: 'one', source: 'switcher', email: 'a@example.com', oauth: { accessToken: 'acc-a', refreshToken: 'ref-a', subscriptionType: 'max' } }]
+  const posts = []
+  const fetcher = async (url, options = {}) => {
+    if (url === 'https://dash.example/api/sync') { posts.push(JSON.parse(options.body)); return { ok: true, status: 200 } }
+    throw new Error(`unexpected ${url}`)
+  }
+  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
+  assert.deepEqual(posts.map((post) => [post.accountState.account.email, post.readAt ?? null, post.rateLimits.rateLimits.secondary?.usedPercent]), [
+    ['a@example.com', null, 67],
+    ['team@example.com', now - 8.5 * 60 * 60_000, 90],
+  ], 'one row per account, the app-only one dated when it was read')
+  assert.equal(posts[1].accountState.account.planType, undefined, 'a plan it never read is left to the row')
+  assert.doesNotThrow(() => rateLimitsSchema.parse(posts[1].rateLimits))
+  assert.deepEqual([summary.synced, summary.total], [2, 2])
+})
