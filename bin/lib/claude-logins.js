@@ -64,7 +64,7 @@ export async function readSwitcherReadings(readingsPath = CLAUDE_SWITCHER_READIN
 
 /**
  * The switcher also reads whatever login the Claude app and the CLI hold each tick, keyed by token with the account's
- * email beside it. Some of those accounts have no saved switcher login: tario@opentrade.live is kept out of switching
+ * email beside it. Some of those accounts have no saved switcher login: one account is kept out of switching
  * (her-team#6467), so it is read only while the app is signed in to it, and no one can read it after. The newest such
  * reading of each account, by email: { at, verdict }.
  */
