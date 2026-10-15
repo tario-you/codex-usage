@@ -147,3 +147,45 @@ test('a refused profile read says its status, never an expired sign-in (her-team
     'profile request failed (UND_ERR_CONNECT_TIMEOUT)',
   ])
 })
+
+// her-team#12378, 10-15 GMT+8: this agent and `sync --watch` each read every Claude login's profile and usage once a
+// minute beside claude-auto-switch's own reads, and nearly every read of all three came back 429 at a run-out.
+test('a saved switcher login with a reading in the switcher\'s file is published from it, with no call to Anthropic (her-team#12378)', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-claude-readings-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const now = Date.parse('2026-10-15T02:30:00Z')
+  const readingsPath = path.join(dir, 'login-verdicts.json')
+  await writeFile(readingsPath, JSON.stringify({
+    'login:one': { at: now - 60_000, verdict: { kind: 'available', session: { utilization: 3, resetsAt: '2026-10-15T05:00:00Z' }, weekly: { utilization: 67, resetsAt: '2026-10-20T00:00:00Z' } } },
+    // A 429 now, with the reading before it kept beside it.
+    'login:two': { at: now - 30_000, rateLimited: 2, verdict: { kind: 'unknown', session: null, weekly: null }, lastKnown: { at: now - 4 * 60_000, verdict: { kind: 'exhausted', session: { utilization: 100, resetsAt: '2026-10-15T03:20:00Z' }, weekly: { utilization: 40, resetsAt: null } } } },
+    'login:old': { at: now - 2 * 60 * 60_000, verdict: { kind: 'available', session: { utilization: 1, resetsAt: null }, weekly: { utilization: 1, resetsAt: null } } },
+  }))
+  const logins = [
+    { id: 'one', source: 'switcher', email: 'a@example.com', oauth: { accessToken: 'acc-a', refreshToken: 'ref-a', subscriptionType: 'max' } },
+    { id: 'two', source: 'switcher', email: 'b@example.com', oauth: { accessToken: 'acc-b', refreshToken: 'ref-b', subscriptionType: 'max' } },
+    { id: 'old', source: 'switcher', email: 'c@example.com', oauth: { accessToken: 'acc-c', refreshToken: 'ref-c', subscriptionType: 'pro' } },
+    // The desktop app's live token is account a's: read once for its email, then folded into the switcher's row.
+    { id: 'desktop', source: 'desktop', email: null, oauth: { accessToken: 'acc-desk', refreshToken: null, subscriptionType: null } },
+  ]
+  const calls = []
+  const posts = []
+  const fetcher = async (url, options = {}) => {
+    if (url === 'https://dash.example/api/sync') { posts.push(JSON.parse(options.body)); return { ok: true, status: 200 } }
+    calls.push([url, (options.headers?.Authorization ?? '').split(' ')[1]])
+    if (url === CLAUDE_PROFILE_URL) return json({ account: { email: 'a@example.com' }, organization: { organization_type: 'claude_max' } })
+    throw new Error(`unexpected ${url}`)
+  }
+  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
+  assert.deepEqual(calls, [[CLAUDE_PROFILE_URL, 'acc-desk']], 'no usage read and no profile read for a login the switcher read')
+  assert.deepEqual(summary.results.map((r) => [r.email, r.ok, r.usedPercent ?? null, r.weeklyUsedPercent ?? null]), [
+    ['c@example.com', false, null, null],
+    ['a@example.com', true, 3, 67],
+    ['b@example.com', true, 100, 40],
+  ])
+  assert.equal(summary.results[0].reason, "claude-auto-switch's newest reading is 120 min old")
+  assert.equal(posts.length, 2)
+  assert.deepEqual(posts[0].rateLimits.rateLimits.primary, { resetsAt: Date.parse('2026-10-15T05:00:00Z') / 1000, usedPercent: 3, windowDurationMins: 300 })
+  assert.doesNotThrow(() => rateLimitsSchema.parse(posts[0].rateLimits))
+})
+
