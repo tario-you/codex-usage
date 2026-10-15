@@ -229,15 +229,12 @@ export default defineConfig({
   },
   build: {
     rolldownOptions: {
+      preserveEntrySignatures: false,
       output: {
         // Libraries sit in their own chunks, so a deploy that changes only our code leaves them cached (assets are
         // immutable) and a returning visitor downloads just the small app chunk again.
         codeSplitting: {
-          groups: [
-            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 3 },
-            { name: 'supabase', test: /node_modules[\\/]@supabase[\\/]/, priority: 2 },
-            { name: 'vendor', test: /node_modules[\\/]/, priority: 1 },
-          ],
+          groups: [{ name: 'vendor', test: /node_modules[\\/]|rolldown[\\/]runtime/ }],
         },
       },
     },
