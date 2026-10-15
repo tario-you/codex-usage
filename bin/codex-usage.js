@@ -53,14 +53,17 @@ import {
 import { createInterface } from 'node:readline'
 
 const DEFAULT_POLL_MS = 60_000
+// An app-server request unanswered this long is dead; see StdioCodexClient.request.
+const APP_SERVER_REQUEST_TIMEOUT_MS = 60_000
 const CONFIG_FILE_NAME = 'codex-usage-sync.json'
 const NPX_COMMAND = 'npx codex-usage-dashboard@latest'
 
 let codexAppServerSupportPromise = null
 
-class StdioCodexClient {
-  constructor({ codexHome }) {
+export class StdioCodexClient {
+  constructor({ codexHome, requestTimeoutMs = APP_SERVER_REQUEST_TIMEOUT_MS }) {
     this.codexHome = codexHome
+    this.requestTimeoutMs = requestTimeoutMs
     this.child = null
     this.buffer = ''
     this.isClosing = false
@@ -127,6 +130,14 @@ class StdioCodexClient {
     this.notificationHandler = handler
   }
 
+  /**
+   * Every request answers within `requestTimeoutMs`. The watch loop holds its
+   * one-pass latch across this wait, so an unanswered request stopped every
+   * later pass: on 2026-10-14 a rate-limit read the app-server never answered
+   * held the sync for five hours (her-team#12378). Past the deadline the
+   * request fails and the app-server is closed, so the next pass starts a
+   * fresh one.
+   */
   request(method, params) {
     if (!this.child?.stdin || this.child.stdin.destroyed) {
       throw new Error('Codex app-server is not connected.')
@@ -134,7 +145,25 @@ class StdioCodexClient {
 
     const id = ++this.requestId
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { reject, resolve })
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(id)) {
+          return
+        }
+
+        const seconds = Math.round(this.requestTimeoutMs / 1000)
+        reject(
+          Object.assign(
+            new Error(`Codex app-server did not answer ${method} within ${seconds} s; restarting it.`),
+            { code: 'APP_SERVER_TIMEOUT' },
+          ),
+        )
+        void this.close()
+      }, this.requestTimeoutMs)
+      const settle = (done) => (value) => {
+        clearTimeout(timer)
+        done(value)
+      }
+      this.pending.set(id, { reject: settle(reject), resolve: settle(resolve) })
 
       this.child.stdin.write(
         `${JSON.stringify({
@@ -148,6 +177,7 @@ class StdioCodexClient {
             return
           }
 
+          clearTimeout(timer)
           this.pending.delete(id)
           reject(error)
         },
@@ -1138,7 +1168,7 @@ async function runWatchLoop(client, config, args) {
       // The app-server child goes down first; the re-run starts its own.
       await followSystemProxy({ before: async () => client.close() })
       if (await client.reconnectIfLoginChanged()) {
-        console.log('The Codex login changed; restarted the Codex app-server.')
+        console.log('Restarted the Codex app-server (a new login, or the last one stopped answering).')
       }
       await syncOnce(client, config, args)
       console.log(`[${new Date().toLocaleTimeString()}] Sync complete.`)
