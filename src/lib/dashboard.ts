@@ -24,7 +24,7 @@ export type DashboardInviterRow =
   Database['public']['Functions']['list_dashboard_inviters']['Returns'][number]
 
 type DashboardWeeklyUsageHistoryRpcRow =
-  Database['public']['Functions']['list_dashboard_weighted_weekly_usage_history']['Returns'][number]
+  Database['public']['Functions']['list_dashboard_usage_history']['Returns'][number]
 
 export {
   POSTGREST_MAX_ROWS,
@@ -42,6 +42,8 @@ export interface DashboardWeeklyUsageHistoryPoint {
   fetchedAt: string
   totalCapacityPercent: number
   totalRemainingPercent: number
+  /** Room the 5-hour limits leave usable: each plan with weekly room counts its 5-hour room. */
+  sessionRemainingPercent?: number | null
 }
 
 export interface ModelBucket {
@@ -149,7 +151,7 @@ export async function fetchDashboardWeeklyUsageHistory(
   const client = supabase
   const histories = await Promise.all((['codex', 'claude'] as const).map(async (provider) => {
     const { data, error } = await client
-      .rpc('list_dashboard_weighted_weekly_usage_history', {
+      .rpc('list_dashboard_usage_history', {
         bucket_seconds: getDashboardWeeklyUsageBucketSeconds(range),
         range_start: rangeStart,
         usage_provider: provider,
@@ -242,5 +244,6 @@ function mapWeeklyUsageHistoryRow(
     fetchedAt: row.fetched_at,
     totalCapacityPercent: row.total_capacity_percent,
     totalRemainingPercent: row.total_remaining_percent,
+    sessionRemainingPercent: row.session_remaining_percent,
   }
 }

@@ -7,6 +7,10 @@ import type { UsageVisibility } from './usage-provider-visibility'
 import { buildWeeklyUsageChart, formatHistoryTooltipTimestamp as timestamp } from './weekly-usage-chart'
 import { readingAtX } from './usage-history-hover'
 
+// Thin lines on a tall chart, so the 5-hour sawtooth and the weekly line read apart.
+const LINE_WIDTH = 1.2
+const SESSION_OPACITY = 0.45
+
 export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onRangeChange, onVisibilityChange, points, range, visible }: {
   accounts: DashboardAccountRow[]
   errorMessage: string | null
@@ -23,7 +27,7 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
     <section className="border-b border-border px-4 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3 text-sm">
-          <p className="font-medium text-foreground">Weekly remaining</p>
+          <p className="font-medium text-foreground">Remaining</p>
           <div role="group" aria-label="Usage providers" className="flex gap-3">
             {USAGE_PROVIDERS.map((provider) => (
               <label key={provider.key} className="flex cursor-pointer items-center gap-1.5">
@@ -35,6 +39,10 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
               </label>
             ))}
           </div>
+          <div aria-label="Line key" className="flex gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span aria-hidden="true" className="inline-block h-px w-4 bg-foreground" />weekly</span>
+            <span className="flex items-center gap-1.5"><span aria-hidden="true" className="inline-block h-px w-4 bg-foreground" style={{ opacity: SESSION_OPACITY }} />5-hour</span>
+          </div>
         </div>
         <button aria-expanded={showHistory} aria-controls="usage-history" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowHistory((value) => !value)} type="button">
           {showHistory ? 'Hide history' : 'Usage history'}
@@ -42,10 +50,11 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
       </div>
       {series.map((item) => {
         const latest = item.points.at(-1)
+        const share = (value: number) => `${Math.round(value / item.capacityPercent * 100)}%`
         return (
           <p key={item.key} className="mt-1 text-sm text-muted-foreground">
             {item.label} · {latest && item.capacityPercent > 0
-              ? `${Math.round(latest.totalRemainingPercent / item.capacityPercent * 100)}% remaining`
+              ? `${share(latest.totalRemainingPercent)} weekly${latest.sessionRemainingPercent == null ? '' : ` · ${share(latest.sessionRemainingPercent)} 5-hour`}`
               : isLoading ? 'Loading…' : 'No usage yet'}
           </p>
         )
@@ -78,6 +87,10 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
             Plan order: room that expires first is used first. A plan&apos;s room expires at its next reset or on its end date,
             whichever is sooner; ties go to the plan that ends sooner, then to the one with more room. Ended plans never rank.
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Faint: 5-hour room usable now. A plan with weekly room left counts its 5-hour room; a plan out of weekly room counts none.
+            Rises on either line are refills and draw as vertical jumps.
+          </p>
           {series.some((item) => item.projection) ? (
             <p className="mt-1 text-xs text-muted-foreground">
               Dashed: 7-day estimate from latest sync, spending the room that expires first. Rises: weekly refills; drops: plans ending.
@@ -109,7 +122,10 @@ function ProviderUsageChart({ series, range }: { series: UsageProviderSeries[]; 
       coordinates: item.chart.coordinates, domain: item.chart.domain,
       projection: item.projection, projectionEndMs: item.chart.projectionEndMs,
     })
-    return reading ? [{ ...item, reading }] : []
+    const session = reading?.kind === 'history' && item.chart.sessionCoordinates.length
+      ? readingAtX(hoverX!, { coordinates: item.chart.sessionCoordinates, domain: item.chart.domain })
+      : null
+    return reading ? [{ ...item, reading, session }] : []
   })
   const pointer = (event: PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -117,7 +133,7 @@ function ProviderUsageChart({ series, range }: { series: UsageProviderSeries[]; 
   }
   return (
     <div className="relative mt-2 overflow-hidden rounded-md border border-border bg-background">
-      <svg aria-label="Weekly remaining by provider" role="img" viewBox="0 0 1000 112" className="h-auto w-full"
+      <svg aria-label="Weekly remaining by provider" role="img" viewBox="0 0 1000 224" className="h-auto w-full"
         onPointerMove={pointer} onPointerDown={pointer} onPointerLeave={() => setHoverX(null)}>
         <title>Weekly remaining by provider</title>
         {axes.yTicks.map((tick) => (
@@ -136,8 +152,9 @@ function ProviderUsageChart({ series, range }: { series: UsageProviderSeries[]; 
               </rect>
             )) : null}
             {charts.length === 1 && chart.areaPath ? <path d={chart.areaPath} fill={color} opacity="0.08" /> : null}
-            <path data-provider={key} d={chart.linePath} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-            {chart.projectionPath ? <path data-forecast={key} d={chart.projectionPath} fill="none" stroke={color} strokeWidth="2" strokeDasharray="5 5" opacity="0.75" /> : null}
+            {chart.sessionPath ? <path data-session={key} d={chart.sessionPath} fill="none" stroke={color} strokeWidth={LINE_WIDTH} strokeLinejoin="round" strokeLinecap="round" opacity={SESSION_OPACITY} /> : null}
+            <path data-provider={key} d={chart.linePath} fill="none" stroke={color} strokeWidth={LINE_WIDTH} strokeLinejoin="round" strokeLinecap="round" />
+            {chart.projectionPath ? <path data-forecast={key} d={chart.projectionPath} fill="none" stroke={color} strokeWidth={LINE_WIDTH} strokeDasharray="5 5" opacity="0.75" /> : null}
             {chart.resetDots.map((reset, index) => (
               <circle key={`${reset.at}-${index}`} cx={reset.x} cy={reset.y} r="3" fill="var(--background)" stroke={color} strokeWidth="1.5">
                 <title>{`${label}: ${reset.label} resets ${timestamp(reset.at)}: +${Math.round(reset.addedPercent * 100) / 100}% projected`}</title>
@@ -148,9 +165,10 @@ function ProviderUsageChart({ series, range }: { series: UsageProviderSeries[]; 
           </g>
         ))}
         {charts.length === 1 && axes.inactivity.length > 0 ? <text fill="var(--muted-foreground)" fontSize="9" textAnchor="end" x={axes.bounds.right} y={axes.bounds.top - 2}>shaded: no spend</text> : null}
-        {readings.map(({ key, color, reading }) => (
+        {readings.map(({ key, color, reading, session }) => (
           <g key={key}>
             <line stroke={color} opacity="0.4" strokeDasharray="3 3" x1={reading.x} x2={reading.x} y1={axes.bounds.top} y2={axes.bounds.bottom} />
+            {session ? <circle cx={session.x} cy={session.y} r="3" fill={color} opacity={SESSION_OPACITY} stroke="var(--background)" strokeWidth="1.5" /> : null}
             <circle cx={reading.x} cy={reading.y} r="4" fill={color} stroke="var(--background)" strokeWidth="2" />
           </g>
         ))}
@@ -159,8 +177,8 @@ function ProviderUsageChart({ series, range }: { series: UsageProviderSeries[]; 
       {readings.length > 0 ? (
         <div className="pointer-events-none absolute top-2 z-10 max-w-[90%] rounded-md border border-border bg-background px-2 py-1 text-xs shadow-md"
           style={hoverX! > 500 ? { right: '1%' } : { left: '6%' }}>
-          {readings.map(({ key, color, label, capacityPercent, reading }) => (
-            <p key={key}><span style={{ color }}>{label}</span>: {reading.kind === 'projection' ? '~' : ''}{reading.remainingPercent}% of {capacityPercent}%{reading.kind === 'projection' ? ' (projected)' : ''} · {timestamp(reading.at)}</p>
+          {readings.map(({ key, color, label, capacityPercent, reading, session }) => (
+            <p key={key}><span style={{ color }}>{label}</span>: {reading.kind === 'projection' ? '~' : ''}{reading.remainingPercent}% of {capacityPercent}%{reading.kind === 'projection' ? ' (projected)' : ' weekly'}{session ? ` · ${session.remainingPercent}% 5-hour` : ''} · {timestamp(reading.at)}</p>
           ))}
         </div>
       ) : null}

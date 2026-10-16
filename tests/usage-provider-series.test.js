@@ -68,3 +68,28 @@ test('the rendered default chart exposes both toggles and draws only Codex', asy
   assert.equal((html.match(/type="checkbox"/g) ?? []).length, 2)
   assert.equal((html.match(/checked=""/g) ?? []).length, 1)
 })
+
+test('the 5-hour line draws beside the weekly one, and refills jump straight up', async () => {
+  const history = [
+    { provider: 'claude', fetchedAt: at(-3), totalRemainingPercent: 40, sessionRemainingPercent: 30, accountCount: 1, totalCapacityPercent: 100 },
+    { provider: 'claude', fetchedAt: at(-2), totalRemainingPercent: 35, sessionRemainingPercent: 5, accountCount: 1, totalCapacityPercent: 100 },
+    { provider: 'claude', fetchedAt: at(-1), totalRemainingPercent: 34, sessionRemainingPercent: 100, accountCount: 1, totalCapacityPercent: 100 },
+  ]
+  const chart = buildWeeklyUsageChart(history, '1d', 100, null, { nowMs: T0, domainEndMs: T0 })
+  assert.deepEqual(chart.sessionCoordinates.map(p => p.totalRemainingPercent), [30, 5, 100])
+  const [, low, high] = chart.sessionCoordinates
+  assert.ok(chart.sessionPath?.endsWith(`L ${high.x} ${low.y} L ${high.x} ${high.y}`), 'a 5-hour reset is a vertical jump, not a ramp')
+  assert.equal(chart.linePath.includes(`L ${high.x} ${chart.coordinates[1].y} `), false, 'weekly spend keeps its slope')
+  assert.equal(buildWeeklyUsageChart(points.slice(0, 2), '7d', 100).sessionPath, null, 'no 5-hour line without 5-hour readings')
+
+  const { createElement } = await import('react')
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { WeeklyUsageHistoryPanel } = await import('../src/features/dashboard/weekly-usage-history-panel')
+  const html = renderToStaticMarkup(createElement(WeeklyUsageHistoryPanel, {
+    accounts, points: history, range: '1d', isLoading: false, errorMessage: null, onRangeChange: () => {},
+    visible: { codex: false, claude: true }, onVisibilityChange: () => {},
+  }))
+  assert.match(html, /data-session="claude"/)
+  assert.match(html, /viewBox="0 0 1000 224"/)
+  assert.match(html, /34% weekly · 100% 5-hour/)
+})
