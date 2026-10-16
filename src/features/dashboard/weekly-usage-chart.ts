@@ -69,15 +69,15 @@ export function buildWeeklyUsageChart(
     }
   })
   const linePath = refillPath(coordinates)
-  // The 5-hour line: room the session limits leave usable at each reading.
-  const sessionCoordinates: WeeklyUsageChartPoint[] = parsedPoints.flatMap((point, index) =>
-    point.sessionRemainingPercent == null ? [] : [{
+  // The effective line: weekly room on plans whose 5-hour window isn't spent, in the same units as the actual line.
+  const effectiveCoordinates: WeeklyUsageChartPoint[] = parsedPoints.flatMap((point, index) =>
+    point.effectiveRemainingPercent == null ? [] : [{
       fetchedAt: point.fetchedAt,
-      totalRemainingPercent: point.sessionRemainingPercent,
+      totalRemainingPercent: point.effectiveRemainingPercent,
       x: coordinates[index].x,
-      y: roundChartCoordinate(bounds.bottom - (Math.min(Math.max(point.sessionRemainingPercent, 0), yMax) / yMax) * plotHeight),
+      y: roundChartCoordinate(bounds.bottom - (Math.min(Math.max(point.effectiveRemainingPercent, 0), yMax) / yMax) * plotHeight),
     }])
-  const sessionPath = sessionCoordinates.length > 0 ? refillPath(sessionCoordinates) : null
+  const effectivePath = effectiveCoordinates.length > 0 ? refillPath(effectiveCoordinates) : null
   const areaPath =
     coordinates.length > 0
       ? `${linePath} L ${coordinates[coordinates.length - 1].x} ${bounds.bottom} L ${coordinates[0].x} ${bounds.bottom} Z`
@@ -150,8 +150,8 @@ export function buildWeeklyUsageChart(
     inactivity,
     nowX: horizonMs > 0 ? timeToX(endMs) : null,
     pointsForDots: coordinates.length <= 80 ? coordinates : [],
-    sessionCoordinates,
-    sessionPath,
+    effectiveCoordinates,
+    effectivePath,
     projectionEndMs,
     projectionPath,
     runOutDot,

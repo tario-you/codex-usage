@@ -884,7 +884,7 @@ export interface Database {
           total_remaining_percent: number
           account_count: number
           total_capacity_percent: number
-          session_remaining_percent: number
+          effective_remaining_percent: number
         }[]
       }
       list_dashboard_weighted_weekly_usage_history: {
