@@ -25,7 +25,7 @@ export function buildWeeklyUsageChart(
   clock = { nowMs: Date.now(), domainEndMs: 0 },
 ) {
   const bounds: WeeklyUsageChartBounds = {
-    bottom: 88,
+    bottom: 200,
     left: 48,
     right: 988,
     top: 10,
@@ -68,9 +68,16 @@ export function buildWeeklyUsageChart(
       y: roundChartCoordinate(y),
     }
   })
-  const linePath = coordinates
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
-    .join(' ')
+  const linePath = refillPath(coordinates)
+  // The 5-hour line: room the session limits leave usable at each reading.
+  const sessionCoordinates: WeeklyUsageChartPoint[] = parsedPoints.flatMap((point, index) =>
+    point.sessionRemainingPercent == null ? [] : [{
+      fetchedAt: point.fetchedAt,
+      totalRemainingPercent: point.sessionRemainingPercent,
+      x: coordinates[index].x,
+      y: roundChartCoordinate(bounds.bottom - (Math.min(Math.max(point.sessionRemainingPercent, 0), yMax) / yMax) * plotHeight),
+    }])
+  const sessionPath = sessionCoordinates.length > 0 ? refillPath(sessionCoordinates) : null
   const areaPath =
     coordinates.length > 0
       ? `${linePath} L ${coordinates[coordinates.length - 1].x} ${bounds.bottom} L ${coordinates[0].x} ${bounds.bottom} Z`
@@ -143,6 +150,8 @@ export function buildWeeklyUsageChart(
     inactivity,
     nowX: horizonMs > 0 ? timeToX(endMs) : null,
     pointsForDots: coordinates.length <= 80 ? coordinates : [],
+    sessionCoordinates,
+    sessionPath,
     projectionEndMs,
     projectionPath,
     runOutDot,
@@ -162,6 +171,15 @@ export function buildWeeklyUsageChart(
       y: roundChartCoordinate(bounds.bottom - (value / yMax) * plotHeight),
     })),
   }
+}
+
+/** Spend draws as a slope between readings; a refill (a rise) draws as a vertical jump at the reading that saw it. */
+function refillPath(points: readonly { x: number; y: number }[]) {
+  return points.map((point, index) => {
+    if (index === 0) return `M ${point.x} ${point.y}`
+    const previous = points[index - 1]
+    return point.y < previous.y ? `L ${point.x} ${previous.y} L ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
+  }).join(' ')
 }
 
 function roundChartCoordinate(value: number) {
