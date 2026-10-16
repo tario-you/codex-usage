@@ -42,8 +42,8 @@ export interface DashboardWeeklyUsageHistoryPoint {
   fetchedAt: string
   totalCapacityPercent: number
   totalRemainingPercent: number
-  /** Room the 5-hour limits leave usable: each plan with weekly room counts its 5-hour room. */
-  sessionRemainingPercent?: number | null
+  /** Weekly room usable now: plans whose 5-hour window is spent count none until it resets. */
+  effectiveRemainingPercent?: number | null
 }
 
 export interface ModelBucket {
@@ -244,6 +244,6 @@ function mapWeeklyUsageHistoryRow(
     fetchedAt: row.fetched_at,
     totalCapacityPercent: row.total_capacity_percent,
     totalRemainingPercent: row.total_remaining_percent,
-    sessionRemainingPercent: row.session_remaining_percent,
+    effectiveRemainingPercent: row.effective_remaining_percent,
   }
 }

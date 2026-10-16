@@ -69,18 +69,18 @@ test('the rendered default chart exposes both toggles and draws only Codex', asy
   assert.equal((html.match(/checked=""/g) ?? []).length, 1)
 })
 
-test('the 5-hour line draws beside the weekly one, and refills jump straight up', async () => {
+test('the effective line draws under the actual one on the same scale, and refills jump straight up', async () => {
   const history = [
-    { provider: 'claude', fetchedAt: at(-3), totalRemainingPercent: 40, sessionRemainingPercent: 30, accountCount: 1, totalCapacityPercent: 100 },
-    { provider: 'claude', fetchedAt: at(-2), totalRemainingPercent: 35, sessionRemainingPercent: 5, accountCount: 1, totalCapacityPercent: 100 },
-    { provider: 'claude', fetchedAt: at(-1), totalRemainingPercent: 34, sessionRemainingPercent: 100, accountCount: 1, totalCapacityPercent: 100 },
+    { provider: 'claude', fetchedAt: at(-3), totalRemainingPercent: 40, effectiveRemainingPercent: 40, accountCount: 2, totalCapacityPercent: 200 },
+    { provider: 'claude', fetchedAt: at(-2), totalRemainingPercent: 35, effectiveRemainingPercent: 5, accountCount: 2, totalCapacityPercent: 200 },
+    { provider: 'claude', fetchedAt: at(-1), totalRemainingPercent: 34, effectiveRemainingPercent: 34, accountCount: 2, totalCapacityPercent: 200 },
   ]
-  const chart = buildWeeklyUsageChart(history, '1d', 100, null, { nowMs: T0, domainEndMs: T0 })
-  assert.deepEqual(chart.sessionCoordinates.map(p => p.totalRemainingPercent), [30, 5, 100])
-  const [, low, high] = chart.sessionCoordinates
-  assert.ok(chart.sessionPath?.endsWith(`L ${high.x} ${low.y} L ${high.x} ${high.y}`), 'a 5-hour reset is a vertical jump, not a ramp')
-  assert.equal(chart.linePath.includes(`L ${high.x} ${chart.coordinates[1].y} `), false, 'weekly spend keeps its slope')
-  assert.equal(buildWeeklyUsageChart(points.slice(0, 2), '7d', 100).sessionPath, null, 'no 5-hour line without 5-hour readings')
+  const chart = buildWeeklyUsageChart(history, '1d', 200, null, { nowMs: T0, domainEndMs: T0 })
+  assert.deepEqual(chart.effectiveCoordinates.map(p => p.totalRemainingPercent), [40, 5, 34])
+  chart.effectiveCoordinates.forEach((p, i) => assert.ok(p.y >= chart.coordinates[i].y, 'effective never plots above actual'))
+  const [, low, high] = chart.effectiveCoordinates
+  assert.ok(chart.effectivePath?.endsWith(`L ${high.x} ${low.y} L ${high.x} ${high.y}`), 'a 5-hour reset is a vertical jump, not a ramp')
+  assert.equal(buildWeeklyUsageChart(points.slice(0, 2), '7d', 100).effectivePath, null, 'no effective line without its readings')
 
   const { createElement } = await import('react')
   const { renderToStaticMarkup } = await import('react-dom/server')
@@ -89,7 +89,7 @@ test('the 5-hour line draws beside the weekly one, and refills jump straight up'
     accounts, points: history, range: '1d', isLoading: false, errorMessage: null, onRangeChange: () => {},
     visible: { codex: false, claude: true }, onVisibilityChange: () => {},
   }))
-  assert.match(html, /data-session="claude"/)
+  assert.match(html, /data-effective="claude"/)
   assert.match(html, /viewBox="0 0 1000 224"/)
-  assert.match(html, /34% weekly · 100% 5-hour/)
+  assert.match(html, /17% actual · 17% effective/)
 })

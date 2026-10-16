@@ -58,13 +58,15 @@ test('provider history SQL separates real balances and preserves owner access an
     assert.equal(sql("select prosecdef from pg_proc where proname = 'list_dashboard_weighted_weekly_usage_history';"), 'f')
     assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_weighted_weekly_usage_history(timestamptz,text,integer)', 'execute');"), 't')
     sql(readFileSync(new URL('../supabase/migrations/20261016090000_usage_history_session_room.sql', import.meta.url), 'utf8'))
-    const both = (provider) => JSON.parse(sql(`select row_to_json(r) from (select total_remaining_percent, total_capacity_percent, session_remaining_percent from list_dashboard_usage_history(now() - interval '2 hours', '${provider}', 300) order by fetched_at desc limit 1) r;`))
-    assert.deepEqual(both('codex'), { total_remaining_percent: 78.75, total_capacity_percent: 125, session_remaining_percent: 118.75 },
-      'the weekly line matches the weighted RPC; a Pro with weekly room counts its full 5-hour room, a weekly-only ProLite its weekly room')
-    assert.deepEqual(both('claude'), { total_remaining_percent: 20, total_capacity_percent: 200, session_remaining_percent: 20 },
-      'a login with 5-hour room but no weekly room adds nothing usable')
-    sql('update codex_usage_snapshots set secondary_used_percent = 100 where id = 5;')
-    assert.equal(both('codex').session_remaining_percent, 18.75, 'a plan out of weekly room cannot use its 5-hour window')
+    sql(readFileSync(new URL('../supabase/migrations/20261016110000_usage_history_effective_room.sql', import.meta.url), 'utf8'))
+    const both = (provider) => JSON.parse(sql(`select row_to_json(r) from (select total_remaining_percent, total_capacity_percent, effective_remaining_percent from list_dashboard_usage_history(now() - interval '2 hours', '${provider}', 300) order by fetched_at desc limit 1) r;`))
+    assert.deepEqual(both('codex'), { total_remaining_percent: 78.75, total_capacity_percent: 125, effective_remaining_percent: 78.75 },
+      'actual matches the weighted RPC; with no 5-hour window spent, effective is all of it')
+    assert.deepEqual(both('claude'), { total_remaining_percent: 20, total_capacity_percent: 200, effective_remaining_percent: 20 },
+      'a login with 5-hour room but no weekly room adds nothing to either line')
+    sql('update codex_usage_snapshots set primary_used_percent = 100 where id = 5;')
+    assert.deepEqual(both('codex'), { total_remaining_percent: 78.75, total_capacity_percent: 125, effective_remaining_percent: 18.75 },
+      'a Pro whose 5-hour window is spent keeps its 60 weekly in actual, none in effective; the weekly-only ProLite stays usable')
     assert.equal(sql("select prosecdef from pg_proc where proname = 'list_dashboard_usage_history';"), 'f')
     assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_usage_history(timestamptz,text,integer)', 'execute');"), 't')
   } finally {
