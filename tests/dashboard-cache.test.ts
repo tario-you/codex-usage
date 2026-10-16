@@ -28,20 +28,25 @@ test('the dashboard paints its last answer at once, dated when it was read, and 
   assert.equal(store.getItem('other-app'), 'kept')
 })
 
-test('a cached answer paints at once and the page still asks for a fresh one on load', async () => {
+test('a cached answer paints at once and the read starts once sign-in enables the query, however new the copy', async () => {
   const { QueryClient, QueryObserver } = await import('@tanstack/react-query')
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: false } } })
-  let reads = 0
-  const options = cachedQuery<number[]>('history.me.7d', async () => { reads += 1; return [2] })
-  const observer = new QueryObserver(client, {
-    queryKey: ['history'],
-    ...options,
-    initialData: [1],
-    initialDataUpdatedAt: Date.now(),
-  })
-  assert.deepEqual(observer.getCurrentResult().data, [1], 'the saved answer shows first')
-  const unsubscribe = observer.subscribe(() => {})
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  unsubscribe()
-  assert.equal(reads, 1, 'a just-saved answer still triggers a read on load')
+  const store = memoryStorage()
+  const previous = (globalThis as { localStorage?: unknown }).localStorage
+  ;(globalThis as { localStorage?: unknown }).localStorage = store
+  try {
+    // Another open tab saved this a moment ago.
+    writeDashboardCache('history.me.7d', [1], store, Date.now())
+    let reads = 0
+    const options = { queryKey: ['history'], ...cachedQuery<number[]>('history.me.7d', async () => { reads += 1; return [2] }) }
+    const observer = new QueryObserver(client, { ...options, enabled: false })
+    const unsubscribe = observer.subscribe(() => {})
+    assert.deepEqual(observer.getCurrentResult().data, [1], 'the saved answer shows first')
+    observer.setOptions({ ...options, enabled: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    unsubscribe()
+    assert.equal(reads, 1, 'enabling the query after mount still reads at once')
+  } finally {
+    ;(globalThis as { localStorage?: unknown }).localStorage = previous
+  }
 })

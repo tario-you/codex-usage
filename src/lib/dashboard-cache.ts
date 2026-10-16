@@ -51,9 +51,9 @@ export function cachedQuery<T>(key: string | null, queryFn: () => Promise<T>) {
       return data
     },
     initialData: () => (key ? readDashboardCache<T>(key)?.data : undefined),
-    initialDataUpdatedAt: () => (key ? readDashboardCache<T>(key)?.at : undefined),
-    // A cached answer paints at once but never counts as fresh: under the 30 s staleTime a reload
-    // showed the saved chart and asked for nothing until it was 30 s old.
-    refetchOnMount: 'always' as const,
+    // A cached answer paints at once but always counts as stale, so the read starts as soon as the
+    // query is enabled. Dated by its write, a copy another open tab saved under 30 s ago counted as
+    // fresh, and the query turns on after sign-in, past mount, so refetchOnMount never fired.
+    initialDataUpdatedAt: 0,
   }
 }
