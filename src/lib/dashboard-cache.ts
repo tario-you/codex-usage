@@ -8,7 +8,8 @@ type CacheStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' |
 
 function storage(): CacheStorage | null {
   try {
-    return typeof window === 'undefined' ? null : window.localStorage
+    // globalThis, not window: the Node type check reads this file through its test, without DOM types.
+    return (globalThis as { localStorage?: CacheStorage }).localStorage ?? null
   } catch {
     return null
   }
