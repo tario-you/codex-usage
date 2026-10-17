@@ -69,6 +69,13 @@ test('provider history SQL separates real balances and preserves owner access an
       'a Pro whose 5-hour window is spent keeps its 60 weekly in actual, none in effective; the weekly-only ProLite stays usable')
     assert.equal(sql("select prosecdef from pg_proc where proname = 'list_dashboard_usage_history';"), 'f')
     assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_usage_history(timestamptz,text,integer)', 'execute');"), 't')
+    // her-team#15046: the chart totals only the plans the rows count; null (an older client) keeps every plan.
+    sql(readFileSync(new URL('../supabase/migrations/20261017160000_usage_history_counted_plans.sql', import.meta.url), 'utf8'))
+    const counted = (provider, ids) => JSON.parse(sql(`select row_to_json(r) from (select total_remaining_percent, account_count, total_capacity_percent from list_dashboard_usage_history(now() - interval '2 hours', '${provider}', 300, ${ids}) order by fetched_at desc limit 1) r;`))
+    assert.deepEqual(counted('codex', 'null'), { total_remaining_percent: 78.75, account_count: 2, total_capacity_percent: 125 })
+    assert.deepEqual(counted('codex', "array['1']"), { total_remaining_percent: 60, account_count: 1, total_capacity_percent: 100 }, 'the uncounted ProLite leaves the total and its capacity')
+    assert.deepEqual(counted('claude', "array['2']"), { total_remaining_percent: 20, account_count: 1, total_capacity_percent: 100 })
+    assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_usage_history(timestamptz,text,integer,text[])', 'execute');"), 't')
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(root, { recursive: true, force: true })
