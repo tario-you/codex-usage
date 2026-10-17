@@ -376,11 +376,23 @@ test('a plan used up and ending before its weekly reset says it has no room left
   assert.match(unusableReason(row, NOW) ?? '', /^used up; ends .+ before its reset on .+: no room left$/)
 })
 
-test('a row read only through the app 19 h ago, out of switching, says its room is unknown', () => {
-  const row = account({ id: 'app-only', account_key: 'claude:b@example.com', plan_type: 'max',
-    last_snapshot_at: isoAfterHours(-19), metadata: { auto_switch: { in_pool: false } } })
+test('a row read 19 h ago says its room is unknown', () => {
+  const row = account({ id: 'stale', account_key: 'claude:b@example.com', plan_type: 'max', last_snapshot_at: isoAfterHours(-19) })
   assert.equal(isAccountUsableForUse(row, NOW), false)
-  assert.equal(unusableReason(row, NOW), 'last read 19h ago, kept out of switching: room unknown, not counted')
+  assert.equal(unusableReason(row, NOW), 'last read 19h ago: room unknown, not counted')
+})
+
+// her-team#15046: the switcher never moves to a plan out of its pool, so a fresh reading of one with full room is no
+// room either: the table, the order and the reset plan leave it out and say why, as the switcher does.
+test('a fresh plan its switcher set aside is never counted and says so', () => {
+  const setAside = account({ id: 'set-aside', account_key: 'codex:c@example.com', plan_type: 'pro',
+    primary_remaining_percent: 100, secondary_remaining_percent: 100, last_snapshot_at: isoAfterHours(0), metadata: { auto_switch: { in_pool: false } } })
+  const inPool = account({ id: 'in-pool', account_key: 'codex:d@example.com', plan_type: 'pro',
+    primary_remaining_percent: 40, secondary_remaining_percent: 40, last_snapshot_at: isoAfterHours(0), metadata: { auto_switch: { in_pool: true } } })
+  assert.equal(isAccountUsableForUse(setAside, NOW), false)
+  assert.equal(unusableReason(setAside, NOW), 'set aside from switching: not counted')
+  assert.deepEqual(orderAccountsForUse([setAside, inPool], NOW).map(row => row.id), ['in-pool'])
+  assert.deepEqual([buildResetPlan([setAside, inPool], NOW).current?.accountId], ['in-pool'])
 })
 
 test('a usable row has no reason', () => {

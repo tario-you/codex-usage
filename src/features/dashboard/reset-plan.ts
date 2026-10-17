@@ -84,7 +84,7 @@ export function buildResetPlan(
   // product and never a switch target, so it stays out of the ordering. A plan
   // that has ended is no target either.
   const normalizedAccounts = accounts
-    .filter((account) => !isClaudeAccountKey(account.account_key) && planEligible(account.plan_type) !== false)
+    .filter((account) => !isClaudeAccountKey(account.account_key) && planEligible(account.plan_type) !== false && inSwitchPool(account))
     .map((account) => normalizeAccount(account, now))
     .filter((account) => isUsablePlan(orderPlan(account), now))
     .sort((a, b) => comparePlansForUse(orderPlan(a), orderPlan(b), now))
@@ -113,7 +113,7 @@ export function buildResetPlan(
 /** Table and automatic recovery read the same portable quota/reset order. */
 export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], now = Date.now()): T[] {
   return accounts.map((account, index) => ({ account, index, plan: orderPlan(normalizeAccount(account, now)) }))
-    .filter(({ plan }) => isUsablePlan(plan, now))
+    .filter(({ account, plan }) => inSwitchPool(account) && isUsablePlan(plan, now))
     .sort((a, b) => comparePlansForUse(a.plan, b.plan, now) || a.index - b.index)
     .map(({ account }) => account)
 }
@@ -124,6 +124,7 @@ export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], n
  * Null when the row is usable. A grey row never reads like spare room.
  */
 export function unusableReason(account: ResetPlanAccount, now: number): string | null {
+  if (!inSwitchPool(account)) return 'set aside from switching: not counted'
   const normalized = normalizeAccount(account, now)
   const plan = orderPlan(normalized)
   if (isUsablePlan(plan, now)) return null
@@ -138,17 +139,23 @@ export function unusableReason(account: ResetPlanAccount, now: number): string |
       ? `used up; ends ${day(endsAt)} before its reset on ${day(plan.returnsAt)}: no room left`
       : `used up; ends ${day(endsAt)}: no room left`
   }
-  if (plan.checkedAt != null) {
-    const hours = Math.round((now - plan.checkedAt) / 3_600_000)
-    const mark = (account.metadata as { auto_switch?: { in_pool?: unknown } } | null | undefined)?.auto_switch
-    const outOfPool = mark?.in_pool === false ? ', kept out of switching' : ''
-    return `last read ${hours}h ago${outOfPool}: room unknown, not counted`
-  }
+  if (plan.checkedAt != null) return `last read ${Math.round((now - plan.checkedAt) / 3_600_000)}h ago: room unknown, not counted`
   return 'not counted'
 }
 
 export function isAccountUsableForUse(account: ResetPlanAccount, now: number): boolean {
-  return isUsablePlan(orderPlan(normalizeAccount(account, now)), now)
+  return inSwitchPool(account) && isUsablePlan(orderPlan(normalizeAccount(account, now)), now)
+}
+
+/**
+ * her-team#15046: a plan its machine's switcher says it never moves to (the row's
+ * `auto_switch.in_pool` false: turned off, or set aside, as the Opentrade plan is
+ * under his 10-06 ruling) is no room, so the table, the plan order and the reset
+ * plan leave it out, as the switcher does. A row with no check keeps what it knew.
+ */
+export function inSwitchPool(account: ResetPlanAccount): boolean {
+  const mark = (account.metadata as { auto_switch?: { in_pool?: unknown } } | null | undefined)?.auto_switch
+  return mark?.in_pool !== false
 }
 
 function orderPlan(account: NormalizedResetAccount): UsePlan {

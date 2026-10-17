@@ -269,13 +269,18 @@ function windowValue(entry, windowDurationMins) {
  * (store.mjs `enabled`: not turned off, and a token it can refresh). Null when
  * this machine has no switcher store, so the dashboard keeps what it knew.
  */
-export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePath()) {
+export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePath(), excludedPath = path.join(path.dirname(storePath), 'excluded.json')) {
   if (!existsSync(storePath)) return null
   const store = await readJsonFile(storePath).catch(() => null)
   if (!Array.isArray(store?.accounts)) return null
+  // her-team#15046: a login the switcher set aside (excluded.json, keyed `email:` and `uuid:`, its excluded.mjs) is
+  // never a switch target, so it is out of the pool too, and its row never counts as room the switcher never uses.
+  const excluded = existsSync(excludedPath) ? (await readJsonFile(excludedPath).catch(() => null))?.excluded ?? {} : {}
+  const setAside = (account) => [account.email ? `email:${String(account.email).trim().toLowerCase()}` : null, account.account_uuid ? `uuid:${String(account.account_uuid).toLowerCase()}` : null]
+    .some((key) => key && excluded[key] && typeof excluded[key] === 'object')
   const pool = new Set()
   for (const account of store.accounts) {
-    if (account?.auto_switch_enabled === false || !account?.oauth?.accessToken || !account?.oauth?.refreshToken) continue
+    if (account?.auto_switch_enabled === false || !account?.oauth?.accessToken || !account?.oauth?.refreshToken || setAside(account)) continue
     if (typeof account.email === 'string') pool.add(account.email.toLowerCase())
   }
   return pool
