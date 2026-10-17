@@ -79,7 +79,7 @@ import {
 } from '@/shared/site'
 
 import { ResetPlanPanel } from './reset-plan-panel'
-import { orderAccountsForUse } from './reset-plan'
+import { orderAccountsForUse, unusableReason } from './reset-plan'
 import { subscriptionEnd } from './reset-credit-choice'
 import { NoteEditor, NoteSecret } from './account-notes'
 import { AccountBrowserLink } from './account-browser-link'
@@ -1796,7 +1796,7 @@ function AccountTable({
           return (
             <TableRow key={account.id}>
               <TableCell hidden={!showDetails} className="px-3 py-1.5 text-right text-xs text-muted-foreground tabular-nums">
-                {unusableIds.has(account.id) ? '·' : index + 1}
+                {unusableIds.has(account.id) ? <span title={unusableReason(account, now) ?? undefined}>·</span> : index + 1}
               </TableCell>
               <TableCell className="px-4 py-1.5">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
@@ -1837,6 +1837,7 @@ function AccountTable({
               </TableCell>
               <TableCell className="py-1.5">
                 <UsageWindowList account={account} inactive={unusableIds.has(account.id)} showDetails={showDetails} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
+                {unusableIds.has(account.id) ? <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">{unusableReason(account, now)}</p> : null}
               </TableCell>
               <TableCell hidden={!showDetails} className="py-1.5 text-xs tabular-nums">
                 <ResetCreditsValue account={account} />
@@ -2010,6 +2011,7 @@ function AccountSummaryList({
 
             <div hidden={showDetails}>
               <UsageWindowList account={account} inactive={unusableIds.has(account.id)} showDetails={false} savingUsageOverride={savingUsageOverride} onSaveUsageOverride={onSaveUsageOverride} now={now} />
+                {unusableIds.has(account.id) ? <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">{unusableReason(account, now)}</p> : null}
             </div>
             <dl hidden={!showDetails} className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <MetaField
