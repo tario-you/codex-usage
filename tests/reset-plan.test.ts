@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isAccountUsableForUse,
+  unusableReason,
   buildResetPlan,
   orderAccountsForUse,
   type ResetPlanAccount,
@@ -364,3 +366,23 @@ function account(overrides: Partial<ResetPlanAccount>): ResetPlanAccount {
 function isoAfterHours(hours: number) {
   return new Date(NOW + hours * 60 * 60 * 1000).toISOString()
 }
+
+// her-team#15046: the two grey Claude rows say why they are out, never look like spare room.
+test('a plan used up and ending before its weekly reset says it has no room left', () => {
+  const row = account({ id: 'ending', account_key: 'claude:a@example.com', plan_type: 'max',
+    primary_remaining_percent: 100, secondary_remaining_percent: 0, secondary_resets_at: isoAfterHours(24 * 6),
+    plan_ends_at: isoAfterHours(24), last_snapshot_at: isoAfterHours(0) })
+  assert.equal(isAccountUsableForUse(row, NOW), false)
+  assert.match(unusableReason(row, NOW) ?? '', /^used up; ends .+ before its reset on .+: no room left$/)
+})
+
+test('a row read only through the app 19 h ago, out of switching, says its room is unknown', () => {
+  const row = account({ id: 'app-only', account_key: 'claude:b@example.com', plan_type: 'max',
+    last_snapshot_at: isoAfterHours(-19), metadata: { auto_switch: { in_pool: false } } })
+  assert.equal(isAccountUsableForUse(row, NOW), false)
+  assert.equal(unusableReason(row, NOW), 'last read 19h ago, kept out of switching: room unknown, not counted')
+})
+
+test('a usable row has no reason', () => {
+  assert.equal(unusableReason(account({ last_snapshot_at: isoAfterHours(0) }), NOW), null)
+})

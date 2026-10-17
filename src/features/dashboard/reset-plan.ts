@@ -73,6 +73,7 @@ export interface ResetPlanAccount extends RateLimitWindowSource {
   last_snapshot_at?: string | null
   connection_status?: string | null
   access_lost?: boolean
+  metadata?: unknown
 }
 
 export function buildResetPlan(
@@ -115,6 +116,35 @@ export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], n
     .filter(({ plan }) => isUsablePlan(plan, now))
     .sort((a, b) => comparePlansForUse(a.plan, b.plan, now) || a.index - b.index)
     .map(({ account }) => account)
+}
+
+/**
+ * Why a row the shared order leaves out is out, in words, from the same fields
+ * `isUsablePlan` reads (plan-order.js stays byte-identical for the switcher).
+ * Null when the row is usable. A grey row never reads like spare room.
+ */
+export function unusableReason(account: ResetPlanAccount, now: number): string | null {
+  const normalized = normalizeAccount(account, now)
+  const plan = orderPlan(normalized)
+  if (isUsablePlan(plan, now)) return null
+  const day = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (plan.accessLost) return 'access lost: not counted'
+  if (plan.connectionStatus != null && plan.connectionStatus !== 'connected') return 'signed out: not counted'
+  const endsAt = normalized.endsAt
+  if (endsAt != null && endsAt <= now) return 'plan ended: not counted'
+  if (plan.cancelled) return 'cancelled: not counted'
+  if (endsAt != null && plan.exhausted) {
+    return plan.returnsAt != null
+      ? `used up; ends ${day(endsAt)} before its reset on ${day(plan.returnsAt)}: no room left`
+      : `used up; ends ${day(endsAt)}: no room left`
+  }
+  if (plan.checkedAt != null) {
+    const hours = Math.round((now - plan.checkedAt) / 3_600_000)
+    const mark = (account.metadata as { auto_switch?: { in_pool?: unknown } } | null | undefined)?.auto_switch
+    const outOfPool = mark?.in_pool === false ? ', kept out of switching' : ''
+    return `last read ${hours}h ago${outOfPool}: room unknown, not counted`
+  }
+  return 'not counted'
 }
 
 export function isAccountUsableForUse(account: ResetPlanAccount, now: number): boolean {
