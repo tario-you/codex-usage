@@ -83,13 +83,16 @@ export function dashboardInvitersQueryOptions(userId: string) {
   })
 }
 
+// her-team#15046: `countedIds`, the plans the rows count (orderAccountsForUse), is the chart's one list too.
 export function dashboardWeeklyUsageHistoryQueryOptions(
   userId: string,
   range: DashboardWeeklyUsageRange,
+  countedIds: string[],
 ) {
+  const counted = [...countedIds].sort()
   return queryOptions({
-    queryKey: ['dashboard-weighted-weekly-usage-history', userId, range],
-    ...cachedQuery(userId === 'guest' ? null : `history.${userId}.${range}`, () => fetchDashboardWeeklyUsageHistory(range)),
+    queryKey: ['dashboard-weighted-weekly-usage-history', userId, range, counted],
+    ...cachedQuery(userId === 'guest' ? null : `history.${userId}.${range}`, () => fetchDashboardWeeklyUsageHistory(range, counted)),
     refetchInterval: 30_000,
   })
 }
@@ -136,6 +139,7 @@ export async function fetchDashboardInviters() {
 
 export async function fetchDashboardWeeklyUsageHistory(
   range: DashboardWeeklyUsageRange,
+  countedIds: string[],
 ) {
   if (!supabase) {
     throw new Error(
@@ -153,6 +157,7 @@ export async function fetchDashboardWeeklyUsageHistory(
     const { data, error } = await client
       .rpc('list_dashboard_usage_history', {
         bucket_seconds: getDashboardWeeklyUsageBucketSeconds(range),
+        counted_ids: countedIds,
         range_start: rangeStart,
         usage_provider: provider,
       })
