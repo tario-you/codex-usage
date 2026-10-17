@@ -28,6 +28,23 @@ test("claude-auto-switch's pool is its saved logins it can refresh and hasn't tu
   assert.deepEqual([...await readClaudeAutoSwitchPool(storePath)], ['in@example.com'])
 })
 
+// her-team#15046: a login the switcher set aside (its excluded.json, by email or account uuid) is never a switch target.
+test("a login claude-auto-switch set aside is out of its pool", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-pool-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const storePath = path.join(dir, 'accounts.json')
+  await writeFile(storePath, JSON.stringify({ version: 1, accounts: [
+    { email: 'in@example.com', oauth: { accessToken: 'a', refreshToken: 'r' } },
+    { email: 'Aside@example.com', oauth: { accessToken: 'a', refreshToken: 'r' } },
+    { email: 'byuuid@example.com', account_uuid: 'AB12CD34-0000-4000-8000-000000000001', oauth: { accessToken: 'a', refreshToken: 'r' } },
+  ] }))
+  await writeFile(path.join(dir, 'excluded.json'), JSON.stringify({ version: 1, excluded: {
+    'email:aside@example.com': { at: '2026-10-16T06:50:34Z', why: 'set aside' },
+    'uuid:ab12cd34-0000-4000-8000-000000000001': { at: '2026-10-06T19:00:00Z', why: 'set aside' },
+  } }))
+  assert.deepEqual([...await readClaudeAutoSwitchPool(storePath)], ['in@example.com'])
+})
+
 test('a saved Codex login reports its pool membership, and the sync schema keeps it', () => {
   const usage = { plan_type: 'pro', rate_limit: null, credits: null }
   const inPool = buildSyncPayloadFromUsage(usage, 'a@example.com', { id: 'a' })
