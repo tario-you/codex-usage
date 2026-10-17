@@ -124,7 +124,7 @@ export function orderAccountsForUse<T extends ResetPlanAccount>(accounts: T[], n
  * Null when the row is usable. A grey row never reads like spare room.
  */
 export function unusableReason(account: ResetPlanAccount, now: number): string | null {
-  if (!inSwitchPool(account)) return 'set aside from switching: not counted'
+  if (!inSwitchPool(account)) return 'kept out of switching: not counted'
   const normalized = normalizeAccount(account, now)
   const plan = orderPlan(normalized)
   if (isUsablePlan(plan, now)) return null

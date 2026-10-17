@@ -390,7 +390,7 @@ test('a fresh plan its switcher set aside is never counted and says so', () => {
   const inPool = account({ id: 'in-pool', account_key: 'codex:d@example.com', plan_type: 'pro',
     primary_remaining_percent: 40, secondary_remaining_percent: 40, last_snapshot_at: isoAfterHours(0), metadata: { auto_switch: { in_pool: true } } })
   assert.equal(isAccountUsableForUse(setAside, NOW), false)
-  assert.equal(unusableReason(setAside, NOW), 'set aside from switching: not counted')
+  assert.equal(unusableReason(setAside, NOW), 'kept out of switching: not counted')
   assert.deepEqual(orderAccountsForUse([setAside, inPool], NOW).map(row => row.id), ['in-pool'])
   assert.deepEqual([buildResetPlan([setAside, inPool], NOW).current?.accountId], ['in-pool'])
 })
