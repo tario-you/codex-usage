@@ -1,6 +1,6 @@
 import { DASHBOARD_UPLOAD_TIMEOUT_MS, dashboardRequest } from './dashboard-request.js'
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -268,8 +268,10 @@ function windowValue(entry, windowDurationMins) {
  * her-team#4148: the emails claude-auto-switch can switch to, by its own rule
  * (store.mjs `enabled`: not turned off, and a token it can refresh). Null when
  * this machine has no switcher store, so the dashboard keeps what it knew.
+ * her-team#16548: the switcher also moves the Claude app onto any plan it keeps an app sign-in copy of
+ * (desktop-logins/<account uuid>/meta.json), the Opentrade plan among them, with no terminal login saved; those count too.
  */
-export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePath(), excludedPath = path.join(path.dirname(storePath), 'excluded.json')) {
+export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePath(), excludedPath = path.join(path.dirname(storePath), 'excluded.json'), appCopiesDir = path.join(path.dirname(storePath), 'desktop-logins')) {
   if (!existsSync(storePath)) return null
   const store = await readJsonFile(storePath).catch(() => null)
   if (!Array.isArray(store?.accounts)) return null
@@ -282,6 +284,11 @@ export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePat
   for (const account of store.accounts) {
     if (account?.auto_switch_enabled === false || !account?.oauth?.accessToken || !account?.oauth?.refreshToken || setAside(account)) continue
     if (typeof account.email === 'string') pool.add(account.email.toLowerCase())
+  }
+  for (const copy of existsSync(appCopiesDir) ? readdirSync(appCopiesDir) : []) {
+    const meta = await readJsonFile(path.join(appCopiesDir, copy, 'meta.json')).catch(() => null)
+    const account = { email: meta?.email, account_uuid: meta?.accountUuid }
+    if (typeof account.email === 'string' && account.email && !setAside(account)) pool.add(account.email.toLowerCase())
   }
   return pool
 }
