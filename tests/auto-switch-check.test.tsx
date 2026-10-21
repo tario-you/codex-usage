@@ -1,7 +1,7 @@
 // her-team#4148: a plan row carries a verified check when the reporting
 // machine's auto-switcher can switch to it, and the check explains itself.
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -43,6 +43,23 @@ test("a login claude-auto-switch set aside is out of its pool", async (t) => {
     'uuid:ab12cd34-0000-4000-8000-000000000001': { at: '2026-10-06T19:00:00Z', why: 'set aside' },
   } }))
   assert.deepEqual([...await readClaudeAutoSwitchPool(storePath)], ['in@example.com'])
+})
+
+// her-team#16548: the switcher moves the Claude app onto a plan it keeps an app sign-in copy of, terminal login or none.
+test("a plan claude-auto-switch keeps an app sign-in copy of is in its pool unless set aside", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-pool-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const storePath = path.join(dir, 'accounts.json')
+  await writeFile(storePath, JSON.stringify({ version: 1, accounts: [{ email: 'in@example.com', oauth: { accessToken: 'a', refreshToken: 'r' } }] }))
+  const copy = async (uuid: string, meta: unknown) => {
+    await mkdir(path.join(dir, 'desktop-logins', uuid), { recursive: true })
+    await writeFile(path.join(dir, 'desktop-logins', uuid, 'meta.json'), JSON.stringify(meta))
+  }
+  await copy('00000000-0000-4000-8000-00000000000a', { accountUuid: '00000000-0000-4000-8000-00000000000a', email: 'App@Example.com' })
+  await copy('00000000-0000-4000-8000-00000000000b', { accountUuid: '00000000-0000-4000-8000-00000000000b', email: 'aside@example.com' })
+  await mkdir(path.join(dir, 'desktop-logins', 'backups'), { recursive: true })
+  await writeFile(path.join(dir, 'excluded.json'), JSON.stringify({ version: 1, excluded: { 'uuid:00000000-0000-4000-8000-00000000000b': { at: '2026-10-16T06:50:34Z', why: 'set aside' } } }))
+  assert.deepEqual([...await readClaudeAutoSwitchPool(storePath)].sort(), ['app@example.com', 'in@example.com'])
 })
 
 test('a saved Codex login reports its pool membership, and the sync schema keeps it', () => {
