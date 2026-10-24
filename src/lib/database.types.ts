@@ -876,6 +876,7 @@ export interface Database {
       list_dashboard_usage_history: {
         Args: {
           bucket_seconds?: number
+          counted_ids?: string[]
           range_start: string
           usage_provider: string
         }

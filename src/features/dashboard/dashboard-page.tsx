@@ -203,13 +203,6 @@ export function DashboardPage() {
     ...dashboardInvitersQueryOptions(session?.user.id ?? 'guest'),
     enabled: canLoadDashboardData,
   })
-  const weeklyUsageHistoryQuery = useQuery({
-    ...dashboardWeeklyUsageHistoryQueryOptions(
-      session?.user.id ?? 'guest',
-      weeklyUsageRange,
-    ),
-    enabled: canLoadDashboardData,
-  })
 
   const accounts = accountsQuery.data ?? []
   const visibleAccounts = filterUsageAccounts(accounts, usageVisibility)
@@ -217,6 +210,15 @@ export function DashboardPage() {
   const orderSources = visibleAccounts.map(account => ({ ...account, connection_status: ownConnectionStatus(account, expired) }))
   const orderedAccounts = orderAccountsForUse(orderSources, usageOrderNow)
   const orderedIds = new Set(orderedAccounts.map(account => account.id))
+  // her-team#15046: the chart totals the plans the rows count, never a grey one.
+  const weeklyUsageHistoryQuery = useQuery({
+    ...dashboardWeeklyUsageHistoryQueryOptions(
+      session?.user.id ?? 'guest',
+      weeklyUsageRange,
+      [...orderedIds],
+    ),
+    enabled: canLoadDashboardData && accountsQuery.data !== undefined,
+  })
   const unusableAccounts = visibleAccounts.filter(account => !orderedIds.has(account.id))
   const unusableIds = new Set(unusableAccounts.map(account => account.id))
   const displayedAccounts = [...orderedAccounts, ...unusableAccounts]
