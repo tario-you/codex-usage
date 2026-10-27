@@ -88,7 +88,7 @@ export function WeeklyUsageHistoryPanel({ accounts, errorMessage, isLoading, onR
             whichever is sooner; ties go to the plan that ends sooner, then to the one with more room. Ended plans never rank.
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Actual: weekly room on every plan. Effective (faint): weekly room usable now; a plan whose 5-hour window is spent counts none until that window resets.
+            Actual: weekly room on every counted plan. Effective (faint): weekly room usable now; a plan whose 5-hour window is spent counts none until that window resets.
             Both are weekly room on one scale, so effective never tops actual. Rises are refills and draw as vertical jumps.
           </p>
           {series.some((item) => item.projection) ? (

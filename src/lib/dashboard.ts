@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 
 import type { Database } from './database.types'
 import {
+  POSTGREST_MAX_ROWS,
   getDashboardWeeklyUsageBucketSeconds,
   getDashboardWeeklyUsageRangeDays,
   type DashboardWeeklyUsageRange,
@@ -9,6 +10,7 @@ import {
 import { cachedQuery } from './dashboard-cache'
 import { clientEnvError } from './env'
 import { supabase } from './supabase'
+import { dropUncountedPlans, type PlanReading, type UncountedPlan } from './uncounted-history'
 import {
   getRemainingPercent,
   isClaudeAccountKey,
@@ -83,13 +85,16 @@ export function dashboardInvitersQueryOptions(userId: string) {
   })
 }
 
+// her-team#15046: `uncounted`, the plans the rows' shared order leaves out (orderAccountsForUse), leave the chart too.
 export function dashboardWeeklyUsageHistoryQueryOptions(
   userId: string,
   range: DashboardWeeklyUsageRange,
+  uncounted: UncountedPlan[],
 ) {
+  const plans = [...uncounted].sort((a, b) => a.id.localeCompare(b.id))
   return queryOptions({
-    queryKey: ['dashboard-weighted-weekly-usage-history', userId, range],
-    ...cachedQuery(userId === 'guest' ? null : `history.${userId}.${range}`, () => fetchDashboardWeeklyUsageHistory(range)),
+    queryKey: ['dashboard-weighted-weekly-usage-history', userId, range, plans.map((plan) => plan.id)],
+    ...cachedQuery(userId === 'guest' ? null : `history.${userId}.${range}`, () => fetchDashboardWeeklyUsageHistory(range, plans)),
     refetchInterval: 30_000,
   })
 }
@@ -136,6 +141,7 @@ export async function fetchDashboardInviters() {
 
 export async function fetchDashboardWeeklyUsageHistory(
   range: DashboardWeeklyUsageRange,
+  uncounted: UncountedPlan[] = [],
 ) {
   if (!supabase) {
     throw new Error(
@@ -158,9 +164,55 @@ export async function fetchDashboardWeeklyUsageHistory(
       })
       .returns<DashboardWeeklyUsageHistoryRpcRow[]>()
     if (error) throw new Error(error.message)
-    return (data ?? []).map((row) => mapWeeklyUsageHistoryRow(row, provider))
+    const points = (data ?? []).map((row) => mapWeeklyUsageHistoryRow(row, provider))
+    const plans = uncounted.filter((plan) => (isClaudeAccountKey(plan.account_key) ? 'claude' : 'codex') === provider)
+    if (plans.length === 0) return points
+    const readings = (await Promise.all(plans.map((plan) => readPlanReadings(client, plan.id, rangeStart)))).flat()
+    return dropUncountedPlans(points, provider, plans, readings)
   }))
   return histories.flat()
+}
+
+const READING_COLUMNS =
+  'id, account_id, fetched_at, primary_used_percent, primary_window_mins, secondary_used_percent, secondary_window_mins, plan_type:raw_rate_limits->>planType'
+
+/** An uncounted plan's readings, kept per plan: once read from a range start, each refresh asks only for newer rows. */
+const keptReadings = new Map<string, { from: string; rows: PlanReading[] }>()
+
+async function readPlanReadings(client: NonNullable<typeof supabase>, accountId: string, rangeStart: string) {
+  const kept = keptReadings.get(accountId)
+  const rows: PlanReading[] = []
+  let since = rangeStart
+  if (kept && kept.from <= rangeStart) {
+    rows.push(...kept.rows)
+    since = kept.rows.at(-1)?.fetched_at ?? kept.from
+  } else {
+    // The last reading before the range carries the plan's room into its first points.
+    const { data, error } = await client.from('codex_usage_snapshots').select(READING_COLUMNS)
+      .eq('account_id', accountId).lt('fetched_at', rangeStart)
+      .order('fetched_at', { ascending: false }).order('id', { ascending: false }).limit(1)
+      .returns<PlanReading[]>()
+    if (error) throw new Error(error.message)
+    rows.push(...(data ?? []))
+  }
+  const seen = new Set(rows.map((row) => row.id))
+  for (let offset = 0; ; offset += POSTGREST_MAX_ROWS) {
+    const { data, error } = await client.from('codex_usage_snapshots').select(READING_COLUMNS)
+      .eq('account_id', accountId).gte('fetched_at', since)
+      .order('fetched_at', { ascending: true }).order('id', { ascending: true })
+      .range(offset, offset + POSTGREST_MAX_ROWS - 1)
+      .returns<PlanReading[]>()
+    if (error) throw new Error(error.message)
+    for (const row of data ?? []) if (!seen.has(row.id)) rows.push(row)
+    if ((data ?? []).length < POSTGREST_MAX_ROWS) break
+  }
+  // Rows before the range go, all but the last, which still carries the plan's room into the range.
+  const start = Date.parse(rangeStart)
+  let first = 0
+  rows.forEach((row, index) => { if (Date.parse(row.fetched_at) < start) first = index })
+  const current = rows.slice(first)
+  keptReadings.set(accountId, { from: rangeStart, rows: current })
+  return current
 }
 
 /** A Claude login reported beside the Codex ones; its key is `claude:<email>`. */
