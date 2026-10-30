@@ -28,6 +28,8 @@ export interface PlanReading {
   primary_window_mins: number | null
   secondary_used_percent: number | null
   secondary_window_mins: number | null
+  primary_resets_at?: string | null
+  secondary_resets_at?: string | null
   /** The reading's own `raw_rate_limits->>planType`. */
   plan_type: string | null
 }
@@ -35,13 +37,19 @@ export interface PlanReading {
 const WEEK_MINS = 10080
 const SESSION_MINS = 300
 
-function room(reading: PlanReading | undefined, windowMins: number): number | null {
+/** A window's room at `at`: full once its reset has passed, as the history SQL counts it. */
+function windowRoom(used: number, resetsAt: string | null | undefined, at: number) {
+  const reset = Date.parse(resetsAt ?? '')
+  return Number.isFinite(reset) && reset <= at ? 100 : Math.max(0, Math.min(100, 100 - used))
+}
+
+function room(reading: PlanReading | undefined, windowMins: number, at: number): number | null {
   if (!reading) return null
   if (reading.primary_window_mins === windowMins && reading.primary_used_percent != null) {
-    return Math.max(0, Math.min(100, 100 - reading.primary_used_percent))
+    return windowRoom(reading.primary_used_percent, reading.primary_resets_at, at)
   }
   if (reading.secondary_window_mins === windowMins && reading.secondary_used_percent != null) {
-    return Math.max(0, Math.min(100, 100 - reading.secondary_used_percent))
+    return windowRoom(reading.secondary_used_percent, reading.secondary_resets_at, at)
   }
   return null
 }
@@ -87,10 +95,10 @@ export function dropUncountedPlans<T extends HistoryPoint>(
         last = reading
       }
       const share = weight(provider, plan, last)
-      const weekly = room(last, WEEK_MINS) ?? 0
+      const weekly = room(last, WEEK_MINS, at) ?? 0
       remaining -= share * weekly
       capacity -= share * 100
-      if (effective != null) effective -= share * (room(last, SESSION_MINS) === 0 ? 0 : weekly)
+      if (effective != null) effective -= share * (room(last, SESSION_MINS, at) === 0 ? 0 : weekly)
       count -= 1
     }
     if (count <= 0) return []

@@ -69,6 +69,15 @@ test('provider history SQL separates real balances and preserves owner access an
       'a Pro whose 5-hour window is spent keeps its 60 weekly in actual, none in effective; the weekly-only ProLite stays usable')
     assert.equal(sql("select prosecdef from pg_proc where proname = 'list_dashboard_usage_history';"), 'f')
     assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_usage_history(timestamptz,text,integer)', 'execute');"), 't')
+    sql(`alter table codex_usage_snapshots add column primary_resets_at timestamptz, add column secondary_resets_at timestamptz;`)
+    sql(readFileSync(new URL('../supabase/migrations/20261031040000_usage_history_passed_resets.sql', import.meta.url), 'utf8'))
+    assert.deepEqual(both('codex'), { total_remaining_percent: 78.75, total_capacity_percent: 125, effective_remaining_percent: 18.75 }, 'no reset passed: unchanged')
+    sql("update codex_usage_snapshots set primary_resets_at = fetched_at, secondary_resets_at = fetched_at where id = 5;")
+    assert.deepEqual(both('codex'), { total_remaining_percent: 118.75, total_capacity_percent: 125, effective_remaining_percent: 118.75 },
+      'a Pro read before both its resets counts full in each once they pass: 100 weekly, and its 5-hour window open again')
+    sql("update codex_usage_snapshots set secondary_resets_at = now() + interval '1 day' where id = 5;")
+    assert.deepEqual(both('codex'), { total_remaining_percent: 78.75, total_capacity_percent: 125, effective_remaining_percent: 78.75 }, 'a reset still ahead keeps the reading')
+    assert.equal(sql("select has_function_privilege('authenticated', 'list_dashboard_usage_history(timestamptz,text,integer)', 'execute');"), 't')
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(root, { recursive: true, force: true })

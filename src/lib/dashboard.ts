@@ -174,7 +174,7 @@ export async function fetchDashboardWeeklyUsageHistory(
 }
 
 const READING_COLUMNS =
-  'id, account_id, fetched_at, primary_used_percent, primary_window_mins, secondary_used_percent, secondary_window_mins, plan_type:raw_rate_limits->>planType'
+  'id, account_id, fetched_at, primary_used_percent, primary_window_mins, primary_resets_at, secondary_used_percent, secondary_window_mins, secondary_resets_at, plan_type:raw_rate_limits->>planType'
 
 /** An uncounted plan's readings, kept per plan: once read from a range start, each refresh asks only for newer rows. */
 const keptReadings = new Map<string, { from: string; rows: PlanReading[] }>()
