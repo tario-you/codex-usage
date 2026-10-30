@@ -6,8 +6,6 @@ import {
   type RateLimitWindowSource,
 } from '../../shared/rate-limit-windows.js'
 
-import type { Json } from '../../lib/database.types.js'
-import { readAutoSwitchMark } from './auto-switch-mark.js'
 import { planEndsAt } from './plan-end.js'
 import { comparePlansForUse, isUsablePlan, planEligible, resetPriority, useGroup, type UsePlan } from '../../../bin/lib/plan-order.js'
 
@@ -224,9 +222,9 @@ function normalizeAccount(
  */
 function idleCheckedAt(account: ResetPlanAccount): number | null {
   if (!isClaudeAccountKey(account.account_key)) return null
-  const mark = readAutoSwitchMark(account.metadata as Json | null | undefined)
-  if (!mark?.inPool || !mark.idle) return null
-  const checkedAt = Date.parse(mark.checkedAt ?? '')
+  const mark = (account.metadata as { auto_switch?: { in_pool?: unknown; idle?: unknown; checked_at?: unknown } } | null | undefined)?.auto_switch
+  if (mark?.in_pool !== true || mark.idle !== true || typeof mark.checked_at !== 'string') return null
+  const checkedAt = Date.parse(mark.checked_at)
   return Number.isFinite(checkedAt) ? checkedAt : null
 }
 
