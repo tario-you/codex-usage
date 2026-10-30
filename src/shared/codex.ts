@@ -28,6 +28,8 @@ export interface CodexRateLimitsResponse {
 /** her-team#4148: whether the reporting machine's auto-switcher can switch to this plan. */
 export interface AutoSwitchMembership {
   inPool: boolean
+  /** A Claude plan nothing on that machine can spend now, held only as an app sign-in copy. */
+  idle?: boolean
 }
 
 export interface CodexChatGptAccount {

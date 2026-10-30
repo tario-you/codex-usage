@@ -35,7 +35,8 @@ const rateLimitSnapshotSchema = z.object({
 })
 
 // her-team#4148: whether this machine's auto-switcher can switch to the plan; absent when the agent doesn't know.
-const autoSwitchSchema = z.object({ inPool: z.boolean() })
+// `idle`: a Claude plan nothing on that machine can spend now, held only as an app sign-in copy (claude-logins.js).
+const autoSwitchSchema = z.object({ inPool: z.boolean(), idle: z.boolean().optional() })
 
 const chatgptAccountSchema = z.object({
   autoSwitch: autoSwitchSchema.optional(),

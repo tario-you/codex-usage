@@ -6,6 +6,8 @@ import {
   type RateLimitWindowSource,
 } from '../../shared/rate-limit-windows.js'
 
+import type { Json } from '../../lib/database.types.js'
+import { readAutoSwitchMark } from './auto-switch-mark.js'
 import { planEndsAt } from './plan-end.js'
 import { comparePlansForUse, isUsablePlan, planEligible, resetPriority, useGroup, type UsePlan } from '../../../bin/lib/plan-order.js'
 
@@ -195,7 +197,7 @@ function normalizeAccount(
     cancelled: raw?.subscription?.cancelled === true,
     accessLost: account.access_lost === true || raw?.connection?.accessLost === true,
     connectionStatus: raw?.connection?.status ?? account.connection_status ?? null,
-    checkedAt: raw?.connection?.checkedAt ?? (Number.isFinite(Date.parse(account.last_snapshot_at ?? '')) ? Date.parse(account.last_snapshot_at!) : null),
+    checkedAt: raw?.connection?.checkedAt ?? idleCheckedAt(account) ?? (Number.isFinite(Date.parse(account.last_snapshot_at ?? '')) ? Date.parse(account.last_snapshot_at!) : null),
     endsAt,
     planType: account.plan_type ?? null,
     credits: isClaudeAccountKey(account.account_key) ? 0 : raw?.resetCredits?.applicable ?? raw?.resetCredits?.available ?? 0,
@@ -213,6 +215,19 @@ function normalizeAccount(
       }
     }),
   }
+}
+
+/**
+ * A Claude plan held only as an app sign-in copy while the app is on another plan has not been spent since its last
+ * reading, so that reading, less any reset since, is still its room: claude-auto-switch counts it so
+ * (copyStanding), and its agent vouches for it at each check. The check, not the reading, says how fresh it is.
+ */
+function idleCheckedAt(account: ResetPlanAccount): number | null {
+  if (!isClaudeAccountKey(account.account_key)) return null
+  const mark = readAutoSwitchMark(account.metadata as Json | null | undefined)
+  if (!mark?.inPool || !mark.idle) return null
+  const checkedAt = Date.parse(mark.checkedAt ?? '')
+  return Number.isFinite(checkedAt) ? checkedAt : null
 }
 
 function buildRecommendation(

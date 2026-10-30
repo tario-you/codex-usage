@@ -140,6 +140,16 @@ test('a reading made earlier goes up dated when it was made, and never replaces 
     assert.equal((await again.json()).older, true)
     assert.equal(tables.codex_usage_snapshots.length, 1, 'the same reading twice is one snapshot')
 
+    // The same reading with the agent's pool mark keeps the mark current, and still adds no snapshot.
+    const idle = { account: { ...team.account, autoSwitch: { inPool: true, idle: true } }, requiresOpenaiAuth: false }
+    const vouched = await post(sync.POST, { accountState: idle, deviceToken, rateLimits: app, readAt })
+    assert.equal((await vouched.json()).older, true)
+    assert.equal(tables.codex_usage_snapshots.length, 1)
+    const mark = tables.codex_accounts[0].metadata.auto_switch
+    assert.deepEqual([mark.in_pool, mark.idle, mark.machine], [true, true, 'mac'])
+    assert.ok(Date.now() - Date.parse(mark.checked_at) < 60_000, 'checked now, not when the reading was made')
+    assert.equal(tables.codex_accounts[0].last_snapshot_at, '2026-10-14T21:24:26.000Z', 'the reading keeps its own time')
+
     const future = await post(sync.POST, { accountState: team, deviceToken, rateLimits: app, readAt: Date.now() + 3_600_000 })
     assert.equal(future.status, 200)
     assert.ok(Date.parse(tables.codex_accounts[0].last_snapshot_at) <= Date.now(), 'a clock ahead never dates a row in the future')

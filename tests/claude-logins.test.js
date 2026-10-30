@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -219,4 +219,42 @@ test('an account read only through the Claude app goes up with the time of its n
   assert.equal(posts[1].accountState.account.planType, undefined, 'a plan it never read is left to the row')
   assert.doesNotThrow(() => rateLimitsSchema.parse(posts[1].rateLimits))
   assert.deepEqual([summary.synced, summary.total], [2, 2])
+})
+
+test('a plan held only as an app sign-in copy, with the app on another plan, goes up idle', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-claude-idle-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const now = Date.parse('2026-10-31T03:00:00Z')
+  const storePath = path.join(dir, 'accounts.json')
+  const appConfigPath = path.join(dir, 'config.json')
+  const readingsPath = path.join(dir, 'login-verdicts.json')
+  await writeFile(storePath, JSON.stringify({ version: 1, accounts: [{ id: 'one', email: 'saved@example.com', oauth: { accessToken: 'acc', refreshToken: 'ref' } }] }))
+  const copy = async (uuid, email) => {
+    await mkdir(path.join(dir, 'desktop-logins', uuid), { recursive: true })
+    await writeFile(path.join(dir, 'desktop-logins', uuid, 'meta.json'), JSON.stringify({ accountUuid: uuid, email }))
+  }
+  await copy('aaaaaaaa-0000-4000-8000-000000000001', 'Team@Example.com')
+  await copy('aaaaaaaa-0000-4000-8000-000000000002', 'current@example.com')
+  await writeFile(appConfigPath, JSON.stringify({ lastKnownAccountUuid: 'aaaaaaaa-0000-4000-8000-000000000002' }))
+  const reading = (at, weekly) => ({ at, verdict: { kind: 'available', session: { utilization: 0, resetsAt: null }, weekly: { utilization: weekly, resetsAt: null } } })
+  await writeFile(readingsPath, JSON.stringify({
+    'desktop:team': { ...reading(now - 23 * 60 * 60_000, 0), email: 'team@example.com' },
+    'desktop:current': { ...reading(now - 60_000, 40), email: 'current@example.com' },
+  }))
+  const posts = []
+  const fetcher = async (url, options = {}) => {
+    if (url === 'https://dash.example/api/sync') { posts.push(JSON.parse(options.body)); return { ok: true, status: 200 } }
+    throw new Error(`unexpected ${url}`)
+  }
+  await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins: [], storePath, readingsPath, appConfigPath, now })
+  assert.deepEqual(posts.map((post) => [post.accountState.account.email, post.accountState.account.autoSwitch]), [
+    ['team@example.com', { inPool: true, idle: true }],
+    ['current@example.com', { inPool: true }],
+  ], 'the plan the app is on can be spent; the other cannot')
+  assert.deepEqual(accountStateSchema.parse(posts[0].accountState).account.autoSwitch, { inPool: true, idle: true })
+
+  await writeFile(appConfigPath, '{}')
+  posts.length = 0
+  await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins: [], storePath, readingsPath, appConfigPath, now })
+  assert.deepEqual(posts.map((post) => post.accountState.account.autoSwitch), [{ inPool: true }, { inPool: true }], 'with the app\'s account unknown, nothing is vouched idle')
 })
