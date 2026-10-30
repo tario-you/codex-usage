@@ -10,6 +10,8 @@ import { formatRelativeTimestamp } from '@/shared/codex'
  */
 export interface AutoSwitchMark {
   checkedAt: string | null
+  /** A Claude plan nothing on that machine can spend now: held only as an app sign-in copy (claude-logins.js). */
+  idle: boolean
   inPool: boolean
   machine: string | null
 }
@@ -20,6 +22,7 @@ export function readAutoSwitchMark(metadata: Json | null | undefined): AutoSwitc
   if (!mark || typeof mark !== 'object' || Array.isArray(mark) || typeof mark.in_pool !== 'boolean') return null
   return {
     checkedAt: typeof mark.checked_at === 'string' ? mark.checked_at : null,
+    idle: mark.idle === true,
     inPool: mark.in_pool,
     machine: typeof mark.machine === 'string' && mark.machine ? mark.machine : null,
   }
@@ -28,7 +31,9 @@ export function readAutoSwitchMark(metadata: Json | null | undefined): AutoSwitc
 export function autoSwitchExplanation(provider: 'claude' | 'codex', mark: AutoSwitchMark) {
   const where = mark.machine ? `on ${mark.machine}` : 'on your Mac'
   const what =
-    provider === 'claude'
+    provider === 'claude' && mark.idle
+      ? `claude-auto-switch ${where} keeps the Claude app's sign-in for this plan, and the app is on another plan, so nothing there has spent this one since its last reading.`
+      : provider === 'claude'
       ? `claude-auto-switch ${where} has a saved sign-in for this plan. When the Claude plan you're on runs out, it can move the Claude app and Claude Code onto this one.`
       : `The Codex auto-switch ${where} has a saved sign-in for this plan. When the Codex plan you're on runs out, it can move Codex onto this one.`
   const checked = mark.checkedAt ? ` Checked ${formatRelativeTimestamp(mark.checkedAt).toLowerCase()}.` : ''

@@ -382,6 +382,21 @@ test('a row read 19 h ago says its room is unknown', () => {
   assert.equal(unusableReason(row, NOW), 'last read 19h ago: room unknown, not counted')
 })
 
+// A Claude plan held only as an app sign-in copy, with the app on another plan, is spent by nothing: claude-auto-switch
+// counts it by its last reading, and so do the rows, while its agent's latest check says so.
+test('an idle Claude plan read 23 h ago counts while its agent vouches for it, and only then', () => {
+  const idle = (checkedHoursAgo: number, extra: Record<string, unknown> = {}) => account({ id: 'idle', account_key: 'claude:team@example.com', plan_type: 'max',
+    last_snapshot_at: isoAfterHours(-23), metadata: { auto_switch: { in_pool: true, idle: true, checked_at: isoAfterHours(-checkedHoursAgo), ...extra } } })
+  assert.equal(isAccountUsableForUse(idle(0), NOW), true)
+  assert.equal(unusableReason(idle(0), NOW), null)
+  assert.equal(unusableReason(idle(13), NOW), 'last read 13h ago: room unknown, not counted', 'an agent silent for 13 h vouches for nothing')
+  assert.equal(isAccountUsableForUse(idle(0, { idle: false }), NOW), false, 'a plan something here can spend needs a fresh reading')
+  assert.equal(isAccountUsableForUse(idle(0, { in_pool: false }), NOW), false)
+  const codex = account({ id: 'codex', account_key: 'chatgpt:team@example.com', plan_type: 'pro', last_snapshot_at: isoAfterHours(-23),
+    metadata: { auto_switch: { in_pool: true, idle: true, checked_at: isoAfterHours(0) } } })
+  assert.equal(isAccountUsableForUse(codex, NOW), false, 'a Codex plan is spent from anywhere, so the mark is Claude only')
+})
+
 // her-team#15046: the switcher never moves to a plan out of its pool, so a fresh reading of one with full room is no
 // room either: the table, the order and the reset plan leave it out and say why, as the switcher does.
 test('a fresh plan its switcher set aside is never counted and says so', () => {

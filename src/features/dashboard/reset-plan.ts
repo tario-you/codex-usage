@@ -195,7 +195,7 @@ function normalizeAccount(
     cancelled: raw?.subscription?.cancelled === true,
     accessLost: account.access_lost === true || raw?.connection?.accessLost === true,
     connectionStatus: raw?.connection?.status ?? account.connection_status ?? null,
-    checkedAt: raw?.connection?.checkedAt ?? (Number.isFinite(Date.parse(account.last_snapshot_at ?? '')) ? Date.parse(account.last_snapshot_at!) : null),
+    checkedAt: raw?.connection?.checkedAt ?? idleCheckedAt(account) ?? (Number.isFinite(Date.parse(account.last_snapshot_at ?? '')) ? Date.parse(account.last_snapshot_at!) : null),
     endsAt,
     planType: account.plan_type ?? null,
     credits: isClaudeAccountKey(account.account_key) ? 0 : raw?.resetCredits?.applicable ?? raw?.resetCredits?.available ?? 0,
@@ -213,6 +213,19 @@ function normalizeAccount(
       }
     }),
   }
+}
+
+/**
+ * A Claude plan held only as an app sign-in copy while the app is on another plan has not been spent since its last
+ * reading, so that reading, less any reset since, is still its room: claude-auto-switch counts it so
+ * (copyStanding), and its agent vouches for it at each check. The check, not the reading, says how fresh it is.
+ */
+function idleCheckedAt(account: ResetPlanAccount): number | null {
+  if (!isClaudeAccountKey(account.account_key)) return null
+  const mark = (account.metadata as { auto_switch?: { in_pool?: unknown; idle?: unknown; checked_at?: unknown } } | null | undefined)?.auto_switch
+  if (mark?.in_pool !== true || mark.idle !== true || typeof mark.checked_at !== 'string') return null
+  const checkedAt = Date.parse(mark.checked_at)
+  return Number.isFinite(checkedAt) ? checkedAt : null
 }
 
 function buildRecommendation(

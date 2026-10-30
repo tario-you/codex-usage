@@ -43,8 +43,8 @@ async function autoSwitchMark(
   checkedAt: string,
   machine: string | null,
 ) {
-  const known = account.type === 'chatgpt' || account.type === 'claude' ? account.autoSwitch : undefined
-  if (known) return { in_pool: known.inPool, checked_at: checkedAt, machine }
+  const known = knownAutoSwitchMark(account, checkedAt, machine)
+  if (known) return known
   const { data, error } = await serviceRoleSupabase
     .from('codex_accounts')
     .select('metadata')
@@ -55,6 +55,33 @@ async function autoSwitchMark(
   const metadata = data?.metadata
   const previous = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata.auto_switch : undefined
   return previous ?? null
+}
+
+function knownAutoSwitchMark(account: NonNullable<CodexAccountReadResponse['account']>, checkedAt: string, machine: string | null) {
+  const known = account.type === 'chatgpt' || account.type === 'claude' ? account.autoSwitch : undefined
+  return known ? { in_pool: known.inPool, ...(known.idle ? { idle: true } : {}), checked_at: checkedAt, machine } : null
+}
+
+/**
+ * A reading no newer than the row's still carries the agent's pool mark as of now. The mark is what says a plan held
+ * only as an app sign-in copy is idle, so its last reading is still its room; without this the mark would age with
+ * the reading and the plan would read stale while the agent vouches for it every minute.
+ */
+async function refreshAutoSwitchMark(ownerUserId: string, accountKey: string, mark: NonNullable<ReturnType<typeof knownAutoSwitchMark>>) {
+  const { data, error } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .select('id, metadata')
+    .eq('owner_user_id', ownerUserId)
+    .eq('account_key', accountKey)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return
+  const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata) ? data.metadata : {}
+  const { error: updateError } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .update({ metadata: { ...metadata, auto_switch: mark } })
+    .eq('id', data.id)
+  if (updateError) throw updateError
 }
 
 /** The account keys the owner unlinked; background syncs skip them. */
@@ -108,6 +135,8 @@ export async function persistSnapshotForOwner({
   const nowIso = new Date().toISOString()
   const readIso = readAt ? new Date(Math.min(readAt, Date.now())).toISOString() : nowIso
   if (readAt && (await isOlderThanRow(ownerUserId, accountKey, readIso))) {
+    const mark = knownAutoSwitchMark(account, nowIso, device.machineName ?? device.label)
+    if (mark) await refreshAutoSwitchMark(ownerUserId, accountKey, mark)
     return { unlinked: false, older: true }
   }
   const autoSwitch = await autoSwitchMark(ownerUserId, accountKey, account, nowIso, device.machineName ?? device.label)

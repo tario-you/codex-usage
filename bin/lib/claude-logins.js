@@ -293,8 +293,34 @@ export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePat
   return pool
 }
 
-/** The dashboard's sync payload, built from Claude's usage endpoint response. `autoSwitch` is left out when unknown. */
-export function buildClaudeSyncPayload(data, { email = null, planType = null, autoSwitch = null } = {}) {
+/** Where the Claude app keeps the account it is signed in to, as a plain uuid (`lastKnownAccountUuid`). */
+export const CLAUDE_APP_CONFIG_PATH = path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'config.json')
+
+/**
+ * The plans nothing on this machine can spend right now, by email: held only as an app sign-in copy while the app is
+ * signed in to another plan, with no saved switcher login. claude-auto-switch counts such a plan by its newest
+ * reading, less any reset since (desktop-switch-decision.mjs copyStanding), so the dashboard counts it the same way.
+ * Empty when the app's account or the switcher's store cannot be read.
+ */
+export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), appConfigPath = CLAUDE_APP_CONFIG_PATH, appCopiesDir = path.join(path.dirname(storePath), 'desktop-logins')) {
+  const idle = new Set()
+  const current = existsSync(appConfigPath) ? (await readJsonFile(appConfigPath).catch(() => null))?.lastKnownAccountUuid : null
+  const store = existsSync(storePath) ? await readJsonFile(storePath).catch(() => null) : null
+  if (typeof current !== 'string' || !current || !Array.isArray(store?.accounts) || !existsSync(appCopiesDir)) return idle
+  const saved = new Set(store.accounts.map((account) => String(account?.email ?? '').trim().toLowerCase()).filter(Boolean))
+  for (const copy of readdirSync(appCopiesDir)) {
+    const meta = await readJsonFile(path.join(appCopiesDir, copy, 'meta.json')).catch(() => null)
+    const email = typeof meta?.email === 'string' ? meta.email.trim().toLowerCase() : ''
+    if (email && !saved.has(email) && String(meta.accountUuid ?? '').toLowerCase() !== current.toLowerCase()) idle.add(email)
+  }
+  return idle
+}
+
+/**
+ * The dashboard's sync payload, built from Claude's usage endpoint response. `autoSwitch` is left out when unknown;
+ * `idle` marks a pool plan nothing here can spend (readIdleAppPlans).
+ */
+export function buildClaudeSyncPayload(data, { email = null, planType = null, autoSwitch = null, idle = false } = {}) {
   const credits = { balance: '0', hasCredits: false, unlimited: false }
   const main = {
     credits,
@@ -311,7 +337,7 @@ export function buildClaudeSyncPayload(data, { email = null, planType = null, au
   }
   return {
     accountState: {
-      account: { type: 'claude', ...(email ? { email } : {}), ...(planType ? { planType } : {}), ...(typeof autoSwitch === 'boolean' ? { autoSwitch: { inPool: autoSwitch } } : {}) },
+      account: { type: 'claude', ...(email ? { email } : {}), ...(planType ? { planType } : {}), ...(typeof autoSwitch === 'boolean' ? { autoSwitch: { inPool: autoSwitch, ...(autoSwitch && idle ? { idle: true } : {}) } } : {}) },
       requiresOpenaiAuth: false,
     },
     rateLimits: { rateLimits: main, rateLimitsByLimitId: byLimitId },
@@ -333,9 +359,10 @@ async function writeBackSwitcherOauth(storePath, login) {
  * account; the one carrying a refresh token wins so an expired token can be
  * renewed next pass.
  */
-export async function syncClaudeOnce({ config, device, fetcher = fetch, logins = null, storePath = resolveClaudeStorePath(), refresh = true, readingsPath = CLAUDE_SWITCHER_READINGS_PATH, now = Date.now() }) {
+export async function syncClaudeOnce({ config, device, fetcher = fetch, logins = null, storePath = resolveClaudeStorePath(), refresh = true, readingsPath = CLAUDE_SWITCHER_READINGS_PATH, appConfigPath = CLAUDE_APP_CONFIG_PATH, now = Date.now() }) {
   const found = logins ?? (await discoverClaudeLogins({ storePath }))
   const pool = await readClaudeAutoSwitchPool(storePath)
+  const idle = await readIdleAppPlans(storePath, appConfigPath)
   const readings = await readSwitcherReadings(readingsPath)
   const results = []
   const byEmail = new Map()
@@ -363,8 +390,8 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
     }
     byEmail.set(email, { login, profile: { email, planType: login.oauth.subscriptionType ?? null }, usage: { data: usageFromReading(reading.verdict) } })
   }
-  const publish = async (email, source, data, { planType = null, readAt } = {}) => {
-    const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null })
+  const publish = async (email, source, data, { planType = null, readAt, idle: unspent = false } = {}) => {
+    const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null, idle: unspent })
     const response = await fetcher(
       config.syncUrl,
       dashboardRequest({ ...payload, device, deviceToken: config.deviceToken, ...(readAt ? { readAt } : {}) }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
@@ -396,13 +423,14 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
     await publish(email, login.source, usage.data, { planType: profile.planType })
   }
   // An account the switcher read through the app or the CLI, with no saved login and no live read this pass, goes up
-  // with the time its reading was taken; the dashboard keeps whichever of its readings is newer.
+  // with the time its reading was taken; the dashboard keeps whichever of its readings is newer, and the pool mark,
+  // idle or not, as of this pass.
   const savedEmails = new Set(found.filter((login) => login.source === 'switcher' && login.email).map((login) => login.email))
   let elsewhere = 0
   for (const [email, reading] of await readSwitcherReadingsByEmail(readingsPath)) {
     if (savedEmails.has(email) || byEmail.has(email)) continue
     elsewhere += 1
-    await publish(email, 'app', usageFromReading(reading.verdict), { readAt: Math.min(reading.at, now) })
+    await publish(email, 'app', usageFromReading(reading.verdict), { readAt: Math.min(reading.at, now), idle: idle.has(email) })
   }
   return { results, synced: results.filter((result) => result.ok).length, total: found.length + elsewhere }
 }
