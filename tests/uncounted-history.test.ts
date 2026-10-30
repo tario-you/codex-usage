@@ -28,7 +28,7 @@ test('taking the uncounted plans out of the history equals the history of the co
       create table codex_accounts (id integer primary key, owner_user_id text, account_key text, plan_type text);
       create table codex_usage_snapshots (id integer primary key, account_id integer, fetched_at timestamptz,
         primary_used_percent integer, primary_window_mins integer, secondary_used_percent integer, secondary_window_mins integer,
-        raw_rate_limits jsonb not null default '{}'::jsonb);
+        raw_rate_limits jsonb not null default '{}'::jsonb, primary_resets_at timestamptz, secondary_resets_at timestamptz);
       create function user_can_access_codex_owner(candidate_owner_user_id text) returns boolean
         language sql stable as $$ select candidate_owner_user_id = 'allowed' $$;
       insert into codex_accounts values (1, 'allowed', 'claude:one', 'max'), (2, 'allowed', 'claude:dead', 'max'),
@@ -45,8 +45,12 @@ test('taking the uncounted plans out of the history equals the history of the co
         (8, 5, now() - interval '50 minutes', null, null, 20, 10080, '{"planType":" ProLite "}'),
         (9, 5, now() - interval '10 minutes', null, null, 60, 10080, '{}'),
         (10, 4, now() - interval '30 minutes', 100, 300, 70, 10080, '{}');
+      -- Resets that pass inside the range: the set-aside plan's week and its 5-hour window.
+      update codex_usage_snapshots set secondary_resets_at = now() - interval '55 minutes' where id = 4;
+      update codex_usage_snapshots set primary_resets_at = now() - interval '25 minutes' where id = 5;
+      update codex_usage_snapshots set primary_resets_at = now() + interval '2 hours' where id = 2;
     `)
-    sql(readFileSync(new URL('../supabase/migrations/20261016110000_usage_history_effective_room.sql', import.meta.url), 'utf8'))
+    sql(readFileSync(new URL('../supabase/migrations/20261031040000_usage_history_passed_resets.sql', import.meta.url), 'utf8'))
     const history = (provider: string): DashboardWeeklyUsageHistoryPoint[] =>
       JSON.parse(sql(`select coalesce(json_agg(r order by r."fetchedAt"), '[]') from (select fetched_at as "fetchedAt", account_count as "accountCount",
         total_remaining_percent::float8 as "totalRemainingPercent", total_capacity_percent::float8 as "totalCapacityPercent",
@@ -54,7 +58,7 @@ test('taking the uncounted plans out of the history equals the history of the co
         from list_dashboard_usage_history(now() - interval '2 hours', '${provider}', 300)) r;`))
     const readings = (ids: number[]): PlanReading[] =>
       JSON.parse(sql(`select coalesce(json_agg(r), '[]') from (select id, account_id::text, fetched_at, primary_used_percent, primary_window_mins,
-        secondary_used_percent, secondary_window_mins, raw_rate_limits->>'planType' as plan_type
+        primary_resets_at, secondary_used_percent, secondary_window_mins, secondary_resets_at, raw_rate_limits->>'planType' as plan_type
         from codex_usage_snapshots where account_id in (${ids.join(',')})) r;`))
 
     const claude = history('claude')
