@@ -44,7 +44,7 @@ test('missing usage data never causes a switch', () => {
   assert.equal(decision.accountId, 'a')
 })
 
-test('an exhausted account moves the recipient to the reset plan pick', () => {
+test('an exhausted account moves the recipient to the plan the dashboard ranks first', () => {
   const decision = chooseNextAccount({
     accounts: [
       account({ id: 'a', primary_remaining_percent: 0, primary_used_percent: 100 }),
@@ -64,7 +64,7 @@ test('an exhausted account moves the recipient to the reset plan pick', () => {
   })
 
   assert.equal(decision.reason, 'switch')
-  assert.equal(decision.accountId, 'soon', 'nearest reset wins, like the dashboard plan')
+  assert.equal(decision.accountId, 'later', 'most room wins among paid Codex plans, like the dashboard order (agents.md, 10-10)')
 })
 
 test('a fresh claim starts on the recommended account', () => {
