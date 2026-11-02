@@ -250,8 +250,23 @@ export async function fetchClaudeProfile(oauth, fetcher = fetch) {
   return {
     email: typeof body?.account?.email === 'string' ? body.account.email.toLowerCase() : null,
     organizationType,
-    planType: oauth.subscriptionType ?? (organizationType ? organizationType.replace(/^claude_/, '') : null),
+    // Anthropic's organization says the plan now; the sign-in's subscriptionType is what it was when the login was
+    // saved, so a lapsed Max kept reading "max" after it went free.
+    planType: organizationType ? organizationType.replace(/^claude_/, '') : oauth.subscriptionType ?? null,
   }
+}
+
+const PROFILE_PLAN_TTL_MS = 60 * 60_000
+const profilePlans = new Map()
+
+/** A switcher-read login's plan from Anthropic's profile, read at most hourly per sign-in; null when it cannot be read. */
+async function profilePlan(login, fetcher, now) {
+  const kept = profilePlans.get(login.oauth.accessToken)
+  if (kept && now - kept.at < PROFILE_PLAN_TTL_MS) return kept.planType
+  const profile = await fetchClaudeProfile(login.oauth, fetcher).catch(() => null)
+  if (!profile?.planType || !profile.email) return null
+  profilePlans.set(login.oauth.accessToken, { at: now, planType: profile.planType })
+  return profile.planType
 }
 
 function windowValue(entry, windowDurationMins) {
@@ -388,7 +403,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       results.push({ email, source: login.source, ok: false, reason: `claude-auto-switch's newest reading is ${Math.round(ageMs / 60_000)} min old` })
       continue
     }
-    byEmail.set(email, { login, profile: { email, planType: login.oauth.subscriptionType ?? null }, usage: { data: usageFromReading(reading.verdict) } })
+    byEmail.set(email, { login, profile: { email, planType: await profilePlan(login, fetcher, now) }, usage: { data: usageFromReading(reading.verdict) } })
   }
   const publish = async (email, source, data, { planType = null, readAt, idle: unspent = false } = {}) => {
     const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null, idle: unspent })

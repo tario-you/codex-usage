@@ -150,7 +150,9 @@ test('a refused profile read says its status, never an expired sign-in (her-team
 
 // her-team#12378, 10-15 GMT+8: this agent and `sync --watch` each read every Claude login's profile and usage once a
 // minute beside claude-auto-switch's own reads, and nearly every read of all three came back 429 at a run-out.
-test('a saved switcher login with a reading in the switcher\'s file is published from it, with no call to Anthropic (her-team#12378)', async (t) => {
+// Its plan still comes from Anthropic's profile, read at most hourly per sign-in: the sign-in's own plan is the one it
+// was saved with, and a lapsed Max kept going up as "max" after its end date.
+test('a saved switcher login with a reading in the switcher\'s file is published from it, with only an hourly profile read (her-team#12378)', async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-claude-readings-'))
   t.after(() => rm(dir, { force: true, recursive: true }))
   const now = Date.parse('2026-10-15T02:30:00Z')
@@ -177,7 +179,12 @@ test('a saved switcher login with a reading in the switcher\'s file is published
     throw new Error(`unexpected ${url}`)
   }
   const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
-  assert.deepEqual(calls, [[CLAUDE_PROFILE_URL, 'acc-desk']], 'no usage read and no profile read for a login the switcher read')
+  assert.deepEqual(calls, [[CLAUDE_PROFILE_URL, 'acc-desk'], [CLAUDE_PROFILE_URL, 'acc-a'], [CLAUDE_PROFILE_URL, 'acc-b']], 'no usage read for a login the switcher read; one profile read each for its plan')
+  assert.deepEqual(posts.map((post) => post.accountState.account.planType), ['max', 'max'])
+  calls.length = 0
+  await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now: now + 30 * 60_000 })
+  assert.deepEqual(calls, [[CLAUDE_PROFILE_URL, 'acc-desk']], 'within the hour the plan is not read again')
+  posts.splice(2)
   assert.deepEqual(summary.results.map((r) => [r.email, r.ok, r.usedPercent ?? null, r.weeklyUsedPercent ?? null]), [
     ['c@example.com', false, null, null],
     ['a@example.com', true, 3, 67],
@@ -257,4 +264,21 @@ test('a plan held only as an app sign-in copy, with the app on another plan, goe
   posts.length = 0
   await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins: [], storePath, readingsPath, appConfigPath, now })
   assert.deepEqual(posts.map((post) => post.accountState.account.autoSwitch), [{ inPool: true }, { inPool: true }], 'with the app\'s account unknown, nothing is vouched idle')
+})
+
+test('a lapsed plan goes up as Anthropic says, never as the plan its sign-in was saved with', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'codex-usage-claude-lapsed-'))
+  t.after(() => rm(dir, { force: true, recursive: true }))
+  const now = Date.parse('2026-11-02T01:53:00Z')
+  const readingsPath = path.join(dir, 'login-verdicts.json')
+  await writeFile(readingsPath, JSON.stringify({ 'login:lapsed': { at: now - 60_000, verdict: { session: { utilization: 0, resetsAt: null }, weekly: { utilization: 0, resetsAt: null } } } }))
+  const logins = [{ id: 'lapsed', source: 'switcher', email: 'lapsed@example.com', oauth: { accessToken: 'acc-lapsed', refreshToken: 'ref-lapsed', subscriptionType: 'max' } }]
+  const posts = []
+  const fetcher = async (url, options = {}) => {
+    if (url === 'https://dash.example/api/sync') { posts.push(JSON.parse(options.body)); return { ok: true, status: 200 } }
+    if (url === CLAUDE_PROFILE_URL) return json({ account: { email: 'lapsed@example.com' }, organization: { organization_type: 'claude_free', subscription_status: 'canceled' } })
+    throw new Error(`unexpected ${url}`)
+  }
+  await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
+  assert.equal(posts[0].accountState.account.planType, 'free')
 })
