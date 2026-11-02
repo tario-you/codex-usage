@@ -30,6 +30,7 @@ function fakeSupabase(tables) {
     if (['select', 'on_conflict', 'columns'].includes(field)) return true
     if (value === 'is.null') return row[field] == null
     if (value.startsWith('eq.')) return String(row[field]) === value.slice(3)
+    if (value.startsWith('lt.')) return row[field] != null && Date.parse(row[field]) < Date.parse(value.slice(3))
     throw new Error(`unsupported filter ${field}=${value}`)
   })
   return async (input, options = {}) => {
@@ -153,6 +154,34 @@ test('a reading made earlier goes up dated when it was made, and never replaces 
     const future = await post(sync.POST, { accountState: team, deviceToken, rateLimits: app, readAt: Date.now() + 3_600_000 })
     assert.equal(future.status, 200)
     assert.ok(Date.parse(tables.codex_accounts[0].last_snapshot_at) <= Date.now(), 'a clock ahead never dates a row in the future')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+// A plan's end date is typed by hand; a renewed Max plan kept reading "ended" with live readings coming in.
+test('a paid reading after the typed end date clears it; a future date or an unnamed plan keeps it', async () => {
+  const originalFetch = globalThis.fetch
+  const device = { codexHome: null, deviceId: 'device-1', deviceKey, label: 'mac', machineName: 'mac' }
+  const tables = {
+    codex_accounts: [
+      { id: 'renewed', owner_user_id: owner, account_key: 'claude:renewed@example.com', plan_ends_at: '2026-10-18T07:00:00+00:00' },
+      { id: 'ending', owner_user_id: owner, account_key: 'claude:ending@example.com', plan_ends_at: '2099-01-01T00:00:00+00:00' },
+      { id: 'unknown', owner_user_id: owner, account_key: 'claude:unknown@example.com', plan_ends_at: '2026-10-18T07:00:00+00:00' },
+    ],
+  }
+  const max = { rateLimits: { ...rateLimits.rateLimits, planType: 'max' }, rateLimitsByLimitId: null }
+  const unnamed = { rateLimits: { ...rateLimits.rateLimits, planType: null }, rateLimitsByLimitId: null }
+  const claude = email => ({ account: { email, type: 'claude' }, requiresOpenaiAuth: false })
+  globalThis.fetch = fakeSupabase(tables)
+  try {
+    await persistSnapshotForOwner({ accountState: claude('renewed@example.com'), device, ownerUserId: owner, rateLimits: max })
+    await persistSnapshotForOwner({ accountState: claude('ending@example.com'), device, ownerUserId: owner, rateLimits: max })
+    await persistSnapshotForOwner({ accountState: claude('unknown@example.com'), device, ownerUserId: owner, rateLimits: unnamed })
+    const ends = Object.fromEntries(tables.codex_accounts.map(row => [row.id, row.plan_ends_at]))
+    assert.equal(ends.renewed, null, 'the provider still serving Max after the date is the renewal')
+    assert.equal(ends.ending, '2099-01-01T00:00:00+00:00', 'a date still ahead stays')
+    assert.equal(ends.unknown, '2026-10-18T07:00:00+00:00', 'a reading that names no plan proves nothing')
   } finally {
     globalThis.fetch = originalFetch
   }
