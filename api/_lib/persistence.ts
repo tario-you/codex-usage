@@ -5,6 +5,7 @@ import {
   type CodexAccountReadResponse,
   type CodexRateLimitsResponse,
 } from '../../src/shared/codex.js'
+import { planEligible } from '../../bin/lib/plan-order.js'
 import { serviceRoleSupabase } from './supabase.js'
 
 interface DeviceContext {
@@ -187,7 +188,23 @@ export async function persistSnapshotForOwner({
     rateLimits,
     sourceKey: device.deviceKey,
   })
+  await clearRenewedPlanEnd(accountRecord.id, rateLimits.rateLimits.planType, readIso)
   return { unlinked: false }
+}
+
+/**
+ * A plan's end date is typed by hand (plan-end.ts) and nothing else moved it, so a renewed plan stayed "ended"
+ * and out of the pool. The provider still naming a paid plan in a reading made after that date is the renewal:
+ * the date goes. A reading that names no plan, or a free one, leaves it.
+ */
+async function clearRenewedPlanEnd(accountId: string, planType: string | null | undefined, readIso: string) {
+  if (planEligible(planType) !== true) return
+  const { error } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .update({ plan_ends_at: null })
+    .eq('id', accountId)
+    .lt('plan_ends_at', readIso)
+  if (error) throw error
 }
 
 /** True when the row already holds a reading at least as new as `readIso`. */
@@ -231,6 +248,7 @@ export async function persistSnapshotForAccount({
   }
 
   await insertSnapshot({ accountId, fetchedAt: nowIso, rateLimits, sourceKey })
+  await clearRenewedPlanEnd(accountId, rateLimits.rateLimits.planType, nowIso)
 }
 
 async function insertSnapshot({
