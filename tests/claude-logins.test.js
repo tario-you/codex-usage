@@ -5,6 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { accountStateSchema, rateLimitsSchema } from '../api/_lib/schemas.ts'
+import { expiredEmailsFromResults } from '../bin/lib/sync-all.js'
 import {
   CLAUDE_PROFILE_URL,
   CLAUDE_TOKEN_URL,
@@ -281,4 +282,27 @@ test('a lapsed plan goes up as Anthropic says, never as the plan its sign-in was
   }
   await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
   assert.equal(posts[0].accountState.account.planType, 'free')
+})
+
+// A saved login whose renewal Anthropic refuses is dead, not just slow: on 11-05 five of seven saved Claude logins had
+// failed renewal 17 to 72 times while the dashboard kept their last numbers as if current, with no Fix sign-ins.
+test('a login whose renewal is refused is reported as an expired sign-in', async () => {
+  const now = Date.parse('2026-11-05T00:00:00Z')
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-dead-'))
+  const readingsPath = path.join(dir, 'login-verdicts.json')
+  await writeFile(readingsPath, JSON.stringify({
+    'login:dead': {
+      at: now - 60_000,
+      verdict: { kind: 'unknown', reason: 'sign-in renewal failed 23 time(s) (http400: invalid_grant: Refresh token not found or invalid)' },
+      lastKnown: { at: now - 18 * 3_600_000, verdict: { kind: 'available', session: { utilization: 0, resetsAt: null }, weekly: { utilization: 29, resetsAt: null } } },
+    },
+  }))
+  const logins = [{ id: 'dead', source: 'switcher', email: 'd@example.com', oauth: { accessToken: 'acc-d', refreshToken: 'ref-d', subscriptionType: 'max' } }]
+  const posts = []
+  const fetcher = async (url, options = {}) => { posts.push(url, options); return { ok: true, status: 200 } }
+  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
+  assert.equal(posts.length, 0, 'its old numbers are not published as current')
+  assert.match(summary.results[0].reason, /^sign-in expired/)
+  assert.deepEqual(expiredEmailsFromResults(summary.results), ['d@example.com'])
+  await rm(dir, { recursive: true, force: true })
 })

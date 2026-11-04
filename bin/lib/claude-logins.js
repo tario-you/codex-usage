@@ -379,6 +379,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
   const pool = await readClaudeAutoSwitchPool(storePath)
   const idle = await readIdleAppPlans(storePath, appConfigPath)
   const readings = await readSwitcherReadings(readingsPath)
+  const raw = await readSwitcherCache(readingsPath)
   const results = []
   const byEmail = new Map()
   const fromSwitcher = new Map()
@@ -400,7 +401,10 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
   for (const [email, { login, reading }] of fromSwitcher) {
     const ageMs = now - reading.at
     if (ageMs > SWITCHER_READING_MAX_AGE_MS) {
-      results.push({ email, source: login.source, ok: false, reason: `claude-auto-switch's newest reading is ${Math.round(ageMs / 60_000)} min old` })
+      // A renewal Anthropic refuses is a dead sign-in: name it so, and the dashboard marks the row and offers Fix sign-ins.
+      const dead = /invalid_grant/i.test(String(raw[`login:${login.id}`]?.verdict?.reason ?? ''))
+      const age = `${Math.round(ageMs / 60_000)} min old`
+      results.push({ email, source: login.source, ok: false, reason: dead ? `sign-in expired (renewal refused); newest reading is ${age}` : `claude-auto-switch's newest reading is ${age}` })
       continue
     }
     byEmail.set(email, { login, profile: { email, planType: await profilePlan(login, fetcher, now) }, usage: { data: usageFromReading(reading.verdict) } })
