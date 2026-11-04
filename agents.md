@@ -1,6 +1,7 @@
 # Agent Instructions
 
 - Rank live paid Codex plans by usable room across Pro and Pro Lite. Cancellation at a future paid end preserves access until that end; ended, lost-access and unusably stale sign-ins have no rank or switch action and show gray. Hide Free plans. Saved Proton sessions are switcher-only: the switcher may pick them; agents never inspect, copy, refresh, replace, revoke, repair or reauthenticate them, or regain lost-email access with saved tokens.
+- (11-05 about 2:34 AM GMT+8, his words paraphrased: he is signed in to tgyou168 in the Claude app and electricfan244 is live too, yet the dashboard showed both signed out) An account shows signed out only when no route on his Mac (the Claude app, the CLI or a saved login) holds it live: a saved login refused renewal alone never marks it so, the newer reading wins, and a real reading replaces signed-out marks made after it. On 11-05 the sync marked both off a dead claude-auto-switch token while the app held them. [check: `tests/claude-logins.test.js` "a dead saved login the app has read since", `tests/unlink-keeps-machine.test.js` "a real reading replaces signed-out marks"]
 
 Ignore this if you are Claude Code.
 
