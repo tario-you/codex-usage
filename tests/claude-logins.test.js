@@ -308,3 +308,30 @@ test('a login whose renewal is refused is published as signed out', async () => 
   assert.match(summary.results[0].reason, /^sign-in expired/)
   await rm(dir, { recursive: true, force: true })
 })
+
+// A dead saved login whose account he signed in to in the Claude app since is live there: on 11-05 tgyou168 and
+// electricfan244 showed signed out while the app held both and read them.
+test('a dead saved login the app has read since shows the app\'s reading', async () => {
+  const now = Date.parse('2026-11-05T00:00:00Z')
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-dead-app-'))
+  const readingsPath = path.join(dir, 'login-verdicts.json')
+  await writeFile(readingsPath, JSON.stringify({
+    'login:dead': {
+      at: now - 60_000,
+      verdict: { kind: 'unknown', reason: 'sign-in renewal failed 23 time(s) (http400: invalid_grant: Refresh token expired)' },
+      lastKnown: { at: now - 18 * 3_600_000, verdict: { kind: 'available', session: { utilization: 0, resetsAt: null }, weekly: { utilization: 29, resetsAt: null } } },
+    },
+    'desktop:app': { at: now - 120_000, email: 'd@example.com', verdict: { kind: 'available', session: { utilization: 10, resetsAt: null }, weekly: { utilization: 40, resetsAt: null } } },
+  }))
+  const logins = [{ id: 'dead', source: 'switcher', email: 'd@example.com', oauth: { accessToken: 'acc-d', refreshToken: 'ref-d', subscriptionType: 'max' } }]
+  const posts = []
+  const fetcher = async (url, options = {}) => { posts.push(JSON.parse(options.body)); return { ok: true, status: 200 } }
+  const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
+  assert.equal(posts.length, 1)
+  const limits = posts[0].rateLimits.rateLimits
+  assert.equal(limits.connection, undefined, 'not signed out')
+  assert.equal(limits.secondary.usedPercent, 40)
+  assert.equal(posts[0].readAt, now - 120_000)
+  assert.equal(summary.results[0].ok, true)
+  await rm(dir, { recursive: true, force: true })
+})
