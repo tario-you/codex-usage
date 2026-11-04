@@ -335,7 +335,7 @@ export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), app
  * The dashboard's sync payload, built from Claude's usage endpoint response. `autoSwitch` is left out when unknown;
  * `idle` marks a pool plan nothing here can spend (readIdleAppPlans).
  */
-export function buildClaudeSyncPayload(data, { email = null, planType = null, autoSwitch = null, idle = false } = {}) {
+export function buildClaudeSyncPayload(data, { email = null, planType = null, autoSwitch = null, idle = false, connection = null } = {}) {
   const credits = { balance: '0', hasCredits: false, unlimited: false }
   const main = {
     credits,
@@ -350,6 +350,7 @@ export function buildClaudeSyncPayload(data, { email = null, planType = null, au
     const secondary = windowValue(data?.[key], 10080)
     if (secondary) byLimitId[`claude_${name.toLowerCase()}`] = { credits, limitId: `claude_${name.toLowerCase()}`, limitName: name, planType, primary: null, secondary }
   }
+  if (connection) main.connection = connection
   return {
     accountState: {
       account: { type: 'claude', ...(email ? { email } : {}), ...(planType ? { planType } : {}), ...(typeof autoSwitch === 'boolean' ? { autoSwitch: { inPool: autoSwitch, ...(autoSwitch && idle ? { idle: true } : {}) } } : {}) },
@@ -379,7 +380,9 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
   const pool = await readClaudeAutoSwitchPool(storePath)
   const idle = await readIdleAppPlans(storePath, appConfigPath)
   const readings = await readSwitcherReadings(readingsPath)
+  const raw = await readSwitcherCache(readingsPath)
   const results = []
+  const dead = []
   const byEmail = new Map()
   const fromSwitcher = new Map()
   for (const login of found) {
@@ -400,13 +403,16 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
   for (const [email, { login, reading }] of fromSwitcher) {
     const ageMs = now - reading.at
     if (ageMs > SWITCHER_READING_MAX_AGE_MS) {
+      // A renewal Anthropic refuses is a dead sign-in, not a slow reading: its row says signed out instead of its old numbers.
+      const current = raw[`login:${login.id}`]
+      if (/invalid_grant/i.test(String(current?.verdict?.reason ?? ''))) { dead.push({ email, login, at: current.at }); continue }
       results.push({ email, source: login.source, ok: false, reason: `claude-auto-switch's newest reading is ${Math.round(ageMs / 60_000)} min old` })
       continue
     }
     byEmail.set(email, { login, profile: { email, planType: await profilePlan(login, fetcher, now) }, usage: { data: usageFromReading(reading.verdict) } })
   }
-  const publish = async (email, source, data, { planType = null, readAt, idle: unspent = false } = {}) => {
-    const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null, idle: unspent })
+  const publish = async (email, source, data, { planType = null, readAt, idle: unspent = false, connection = null } = {}) => {
+    const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null, idle: unspent, connection })
     const response = await fetcher(
       config.syncUrl,
       dashboardRequest({ ...payload, device, deviceToken: config.deviceToken, ...(readAt ? { readAt } : {}) }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),
@@ -424,6 +430,11 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       usedPercent: payload.rateLimits.rateLimits.primary?.usedPercent ?? null,
       weeklyUsedPercent: payload.rateLimits.rateLimits.secondary?.usedPercent ?? null,
     })
+  }
+  for (const { email, login, at } of dead) {
+    await publish(email, login.source, {}, { planType: login.oauth?.subscriptionType ?? null, connection: { status: 'needs-login', checkedAt: at, accessLost: false } })
+    const row = results.at(-1)
+    if (row?.email === email && row.ok) Object.assign(row, { ok: false, reason: 'sign-in expired (renewal refused); row published as signed out' })
   }
   for (const [email, { login, profile, usage: kept }] of byEmail) {
     const usage = kept ?? (await fetchClaudeUsage(login.oauth, fetcher, { refresh }))
