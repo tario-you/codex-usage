@@ -5,7 +5,6 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { accountStateSchema, rateLimitsSchema } from '../api/_lib/schemas.ts'
-import { expiredEmailsFromResults } from '../bin/lib/sync-all.js'
 import {
   CLAUDE_PROFILE_URL,
   CLAUDE_TOKEN_URL,
@@ -286,7 +285,7 @@ test('a lapsed plan goes up as Anthropic says, never as the plan its sign-in was
 
 // A saved login whose renewal Anthropic refuses is dead, not just slow: on 11-05 five of seven saved Claude logins had
 // failed renewal 17 to 72 times while the dashboard kept their last numbers as if current, with no Fix sign-ins.
-test('a login whose renewal is refused is reported as an expired sign-in', async () => {
+test('a login whose renewal is refused is published as signed out', async () => {
   const now = Date.parse('2026-11-05T00:00:00Z')
   const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-dead-'))
   const readingsPath = path.join(dir, 'login-verdicts.json')
@@ -299,10 +298,13 @@ test('a login whose renewal is refused is reported as an expired sign-in', async
   }))
   const logins = [{ id: 'dead', source: 'switcher', email: 'd@example.com', oauth: { accessToken: 'acc-d', refreshToken: 'ref-d', subscriptionType: 'max' } }]
   const posts = []
-  const fetcher = async (url, options = {}) => { posts.push(url, options); return { ok: true, status: 200 } }
+  const fetcher = async (url, options = {}) => { posts.push(JSON.parse(options.body)); return { ok: true, status: 200 } }
   const summary = await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher, logins, storePath: '/nonexistent/accounts.json', readingsPath, now })
-  assert.equal(posts.length, 0, 'its old numbers are not published as current')
+  assert.equal(posts.length, 1)
+  const limits = posts[0].rateLimits.rateLimits
+  assert.deepEqual(limits.connection, { status: 'needs-login', checkedAt: now - 60_000, accessLost: false }, 'its row says signed out')
+  assert.equal(limits.secondary, null, 'its 18 h old weekly number is not published as current')
+  assert.doesNotThrow(() => rateLimitsSchema.parse(posts[0].rateLimits))
   assert.match(summary.results[0].reason, /^sign-in expired/)
-  assert.deepEqual(expiredEmailsFromResults(summary.results), ['d@example.com'])
   await rm(dir, { recursive: true, force: true })
 })

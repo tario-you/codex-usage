@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { expiredEmailsFromResults, reportExpiredSignIns, syncAllOnce, resolveStorePath } from './lib/sync-all.js'
+import { reportExpiredSignIns, syncAllOnce, resolveStorePath } from './lib/sync-all.js'
 import { repairProviders } from './lib/repair-claude.js'
 import { syncClaudeOnce } from './lib/claude-logins.js'
 import { followSystemProxy } from './lib/system-proxy.js'
@@ -17,12 +17,12 @@ const why = error => error?.cause?.code ?? error?.code ?? error?.name ?? 'unknow
 for (;;) {
   await followSystemProxy()
   let config = null
-  let expired = []
   try {
     config = JSON.parse(readFileSync(configPath, 'utf8'))
     const result = await syncAllOnce({ config, storePath: resolveStorePath(), switcherOwned: true })
     console.log('Published ' + result.synced + ' login health rows.')
-    expired = result.expired ?? []
+    await reportExpiredSignIns({ config, expired: result.expired ?? [], providers: repairProviders() })
+      .catch(error => console.error('Expired sign-in report did not send (' + why(error) + ').'))
   } catch (error) {
     console.error('Connection health sync did not finish (' + why(error) + '); retrying in one minute.')
   }
@@ -31,13 +31,9 @@ for (;;) {
       const claude = await syncClaudeOnce({ config, device: deviceFor(config), refresh: false })
       console.log('Published ' + claude.synced + ' of ' + claude.total + ' Claude usage rows.')
       for (const row of claude.results.filter(r => !r.ok)) console.error('Claude ' + (row.source ?? 'login') + ': ' + row.reason)
-      expired = [...new Set([...expired, ...expiredEmailsFromResults(claude.results)])]
     } catch (error) {
       console.error('Claude usage sync did not finish (' + why(error) + '); retrying in one minute.')
     }
-    // One report carries both switchers' dead sign-ins, so the Claude ones are never overwritten by a Codex-only list.
-    await reportExpiredSignIns({ config, expired, providers: repairProviders() })
-      .catch(error => console.error('Expired sign-in report did not send (' + why(error) + ').'))
   }
   await new Promise(resolve => setTimeout(resolve, interval))
 }
