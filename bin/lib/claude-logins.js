@@ -431,12 +431,20 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       weeklyUsedPercent: payload.rateLimits.rateLimits.secondary?.usedPercent ?? null,
     })
   }
+  // A dead saved login whose account the app still holds (he signed in there after) shows the app's reading, not signed out.
+  const appReadings = await readSwitcherReadingsByEmail(readingsPath)
   for (const { email, login, at } of dead) {
+    const app = appReadings.get(email)
+    const lastGood = readings.get(login.id)?.at ?? 0
+    if (app && app.at > lastGood) {
+      byEmail.set(email, { login, profile: { email, planType: login.oauth?.subscriptionType ?? null }, usage: { data: usageFromReading(app.verdict) }, readAt: Math.min(app.at, now) })
+      continue
+    }
     await publish(email, login.source, {}, { planType: login.oauth?.subscriptionType ?? null, connection: { status: 'needs-login', checkedAt: at, accessLost: false } })
     const row = results.at(-1)
     if (row?.email === email && row.ok) Object.assign(row, { ok: false, reason: 'sign-in expired (renewal refused); row published as signed out' })
   }
-  for (const [email, { login, profile, usage: kept }] of byEmail) {
+  for (const [email, { login, profile, usage: kept, readAt }] of byEmail) {
     const usage = kept ?? (await fetchClaudeUsage(login.oauth, fetcher, { refresh }))
     if (usage.error) {
       results.push({ email, source: login.source, ok: false, reason: usage.error })
@@ -446,7 +454,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       login.oauth = usage.oauth
       if (login.source === 'switcher') await writeBackSwitcherOauth(storePath, login).catch(() => {})
     }
-    await publish(email, login.source, usage.data, { planType: profile.planType })
+    await publish(email, readAt ? 'app' : login.source, usage.data, { planType: profile.planType, readAt })
   }
   // An account the switcher read through the app or the CLI, with no saved login and no live read this pass, goes up
   // with the time its reading was taken; the dashboard keeps whichever of its readings is newer, and the pool mark,

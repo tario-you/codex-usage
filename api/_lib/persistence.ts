@@ -135,7 +135,8 @@ export async function persistSnapshotForOwner({
   }
   const nowIso = new Date().toISOString()
   const readIso = readAt ? new Date(Math.min(readAt, Date.now())).toISOString() : nowIso
-  if (readAt && (await isOlderThanRow(ownerUserId, accountKey, readIso))) {
+  const signedOut = rateLimits.rateLimits.connection?.status === 'needs-login'
+  if (readAt && !(!signedOut && (await dropSignedOutSince(ownerUserId, accountKey, readIso))) && (await isOlderThanRow(ownerUserId, accountKey, readIso))) {
     const mark = knownAutoSwitchMark(account, nowIso, device.machineName ?? device.label)
     if (mark) await refreshAutoSwitchMark(ownerUserId, accountKey, mark)
     return { unlinked: false, older: true }
@@ -205,6 +206,31 @@ async function clearRenewedPlanEnd(accountId: string, planType: string | null | 
     .eq('id', accountId)
     .lt('plan_ends_at', readIso)
   if (error) throw error
+}
+
+/**
+ * A dead saved login marks its row signed out, yet the app may still hold that account and read it (11-05: tgyou168
+ * and electricfan244 showed signed out while the app read both). A real reading outranks those marks made since it.
+ */
+async function dropSignedOutSince(ownerUserId: string, accountKey: string, readIso: string) {
+  const { data: row, error } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .select('id')
+    .eq('owner_user_id', ownerUserId)
+    .eq('account_key', accountKey)
+    .maybeSingle()
+  if (error) throw error
+  if (!row) return false
+  const { data: newer, error: readError } = await serviceRoleSupabase
+    .from('codex_usage_snapshots')
+    .select('id, raw_rate_limits')
+    .eq('account_id', row.id)
+    .gte('fetched_at', readIso)
+  if (readError) throw readError
+  if (!newer?.length || newer.some((snap) => (snap.raw_rate_limits as { connection?: { status?: string } } | null)?.connection?.status !== 'needs-login')) return false
+  const { error: dropError } = await serviceRoleSupabase.from('codex_usage_snapshots').delete().in('id', newer.map((snap) => snap.id))
+  if (dropError) throw dropError
+  return true
 }
 
 /** True when the row already holds a reading at least as new as `readIso`. */

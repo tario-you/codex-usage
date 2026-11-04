@@ -31,6 +31,8 @@ function fakeSupabase(tables) {
     if (value === 'is.null') return row[field] == null
     if (value.startsWith('eq.')) return String(row[field]) === value.slice(3)
     if (value.startsWith('lt.')) return row[field] != null && Date.parse(row[field]) < Date.parse(value.slice(3))
+    if (value.startsWith('gte.')) return row[field] != null && Date.parse(row[field]) >= Date.parse(value.slice(4))
+    if (value.startsWith('in.(')) return value.slice(4, -1).split(',').map(v => v.replace(/"/g, '')).includes(String(row[field]))
     throw new Error(`unsupported filter ${field}=${value}`)
   })
   return async (input, options = {}) => {
@@ -182,6 +184,26 @@ test('a paid reading after the typed end date clears it; a future date or an unn
     assert.equal(ends.renewed, null, 'the provider still serving Max after the date is the renewal')
     assert.equal(ends.ending, '2099-01-01T00:00:00+00:00', 'a date still ahead stays')
     assert.equal(ends.unknown, '2026-10-18T07:00:00+00:00', 'a reading that names no plan proves nothing')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+// 11-05: tgyou168 and electricfan244 read signed out from a dead saved login while the app still read both.
+test('a real reading replaces signed-out marks made after it', async () => {
+  const originalFetch = globalThis.fetch
+  const tables = {
+    codex_devices: [{ id: 'device-1', owner_user_id: owner, device_key: deviceKey, device_token_hash: hashToken(deviceToken), label: 'mac', machine_name: 'mac', codex_home: null, metadata: {}, revoked_at: null }],
+    codex_accounts: [{ id: 'fan-row', owner_user_id: owner, account_key: 'claude:fan@example.com', plan_type: 'max', last_snapshot_at: '2026-11-04T18:30:00.000Z' }],
+    codex_usage_snapshots: [{ id: 's1', account_id: 'fan-row', fetched_at: '2026-11-04T18:30:00.000Z', raw_rate_limits: { connection: { status: 'needs-login' } } }],
+  }
+  const app = { rateLimits: { ...rateLimits.rateLimits, planType: null }, rateLimitsByLimitId: null }
+  const fan = { account: { email: 'fan@example.com', type: 'claude' }, requiresOpenaiAuth: false }
+  globalThis.fetch = fakeSupabase(tables)
+  try {
+    const res = await post(sync.POST, { accountState: fan, deviceToken, rateLimits: app, readAt: Date.parse('2026-11-04T16:56:00.000Z') })
+    assert.equal(res.status, 200, await res.clone().text())
+    assert.deepEqual(tables.codex_usage_snapshots.map(row => row.fetched_at), ['2026-11-04T16:56:00.000Z'])
   } finally {
     globalThis.fetch = originalFetch
   }
