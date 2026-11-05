@@ -311,6 +311,33 @@ test('a login whose renewal is refused is published as signed out', async () => 
 
 // A dead saved login whose account he signed in to in the Claude app since is live there: on 11-05 tgyou168 and
 // electricfan244 showed signed out while the app held both and read them.
+test('a plan whose saved login is dead, with the app on another plan, goes up idle', async () => {
+  const now = Date.parse('2026-11-05T00:00:00Z')
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-dead-idle-'))
+  const storePath = path.join(dir, 'accounts.json')
+  const readingsPath = path.join(dir, 'login-verdicts.json')
+  const appConfigPath = path.join(dir, 'config.json')
+  await writeFile(storePath, JSON.stringify({ accounts: [{ email: 'd@example.com', account_uuid: 'uuid-d', oauth: { accessToken: 'acc-d', refreshToken: 'ref-d' } }] }))
+  await mkdir(path.join(dir, 'desktop-logins', 'uuid-d'), { recursive: true })
+  await writeFile(path.join(dir, 'desktop-logins', 'uuid-d', 'meta.json'), JSON.stringify({ email: 'd@example.com', accountUuid: 'uuid-d' }))
+  await writeFile(readingsPath, JSON.stringify({
+    'login:dead': { at: now - 60_000, verdict: { kind: 'unknown', reason: 'sign-in renewal failed 49 time(s) (http400: invalid_grant: Refresh token not found or invalid)' }, lastKnown: { at: now - 18 * 3_600_000, verdict: { kind: 'available', session: { utilization: 0, resetsAt: null }, weekly: { utilization: 29, resetsAt: null } } } },
+    'desktop:app': { at: now - 24 * 3_600_000 + 3_600_000 * 7, email: 'd@example.com', verdict: { kind: 'available', session: { utilization: 10, resetsAt: null }, weekly: { utilization: 46, resetsAt: null } } },
+  }))
+  const logins = [{ id: 'dead', source: 'switcher', email: 'd@example.com', oauth: { accessToken: 'acc-d', refreshToken: 'ref-d', subscriptionType: 'max' } }]
+  const sync = async (appAccount) => {
+    await writeFile(appConfigPath, JSON.stringify({ lastKnownAccountUuid: appAccount }))
+    const posts = []
+    await syncClaudeOnce({ config: { syncUrl: 'https://dash.example/api/sync' }, device: {}, fetcher: async (url, options = {}) => { posts.push(JSON.parse(options.body)); return { ok: true, status: 200 } }, logins, storePath, readingsPath, appConfigPath, now })
+    return posts[0]
+  }
+  const parked = await sync('uuid-other')
+  assert.deepEqual(parked.accountState.account.autoSwitch, { inPool: true, idle: true })
+  assert.equal(parked.rateLimits.rateLimits.secondary.usedPercent, 46)
+  assert.deepEqual((await sync('uuid-d')).accountState.account.autoSwitch, { inPool: true }, 'the app is spending it')
+  await rm(dir, { recursive: true, force: true })
+})
+
 test('a dead saved login the app has read since shows the app\'s reading', async () => {
   const now = Date.parse('2026-11-05T00:00:00Z')
   const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-dead-app-'))
