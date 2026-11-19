@@ -237,6 +237,21 @@ npm run lint
 npm run build
 ```
 
+## Run it on localhost
+
+The same dashboard runs on your Mac against the same database:
+
+```bash
+npm install
+npm run dev
+```
+
+Then open <http://localhost:5173>. `npm run dev` serves every `/api` route too.
+It needs `.env.local` (the `VITE_SUPABASE_*` values) and `.env.collector.local`
+(`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CODEX_LOGIN_ENCRYPTION_KEY`).
+Copy them from a working checkout; `vercel env pull` returns placeholders for the
+sensitive ones.
+
 ## Release
 
 On the release branch, bump the version without creating a local tag and run
