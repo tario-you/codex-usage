@@ -239,17 +239,18 @@ npm run build
 
 ## Run it on localhost
 
-If the hosted site is down, the same dashboard runs on your Mac against the same
-database:
+The same dashboard runs on your Mac against the same database:
 
 ```bash
 npm install
-npm run local
+npm run dev
 ```
 
-Then open <http://localhost:5173>. It pulls the production settings from the
-linked Vercel project into `.env.local` (git-ignored), so the repo has to be
-linked first (`vercel link`). Google sign-in already allows this address.
+Then open <http://localhost:5173>. `npm run dev` serves every `/api` route too.
+It needs `.env.local` (the `VITE_SUPABASE_*` values) and `.env.collector.local`
+(`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CODEX_LOGIN_ENCRYPTION_KEY`).
+Copy them from a working checkout; `vercel env pull` returns placeholders for the
+sensitive ones.
 
 ## Release
 

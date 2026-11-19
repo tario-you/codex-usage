@@ -13,7 +13,6 @@
   },
   "scripts": {
     "dev": "vite",
-    "local": "vercel env pull .env.local --environment=production --yes && vite --port 5173 --strictPort",
     "build": "vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
