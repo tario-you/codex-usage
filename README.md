@@ -237,6 +237,20 @@ npm run lint
 npm run build
 ```
 
+## Run it on localhost
+
+If the hosted site is down, the same dashboard runs on your Mac against the same
+database:
+
+```bash
+npm install
+npm run local
+```
+
+Then open <http://localhost:5173>. It pulls the production settings from the
+linked Vercel project into `.env.local` (git-ignored), so the repo has to be
+linked first (`vercel link`). Google sign-in already allows this address.
+
 ## Release
 
 On the release branch, bump the version without creating a local tag and run
