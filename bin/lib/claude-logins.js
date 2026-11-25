@@ -68,10 +68,10 @@ export async function readSwitcherReadings(readingsPath = CLAUDE_SWITCHER_READIN
  * (her-team#6467), so it is read only while the app is signed in to it, and no one can read it after. The newest such
  * reading of each account, by email: { at, verdict }.
  */
-export async function readSwitcherReadingsByEmail(readingsPath = CLAUDE_SWITCHER_READINGS_PATH) {
+export async function readSwitcherReadingsByEmail(readingsPath = CLAUDE_SWITCHER_READINGS_PATH, { prefix = '' } = {}) {
   const readings = new Map()
   for (const [key, entry] of Object.entries(await readSwitcherCache(readingsPath))) {
-    if (key.startsWith('login:') || typeof entry?.email !== 'string') continue
+    if (key.startsWith('login:') || !key.startsWith(prefix) || typeof entry?.email !== 'string') continue
     const newest = newestReading(entry)
     const email = entry.email.toLowerCase()
     if (newest && !(readings.get(email)?.at >= newest.at)) readings.set(email, newest)
@@ -316,18 +316,24 @@ export const CLAUDE_APP_CONFIG_PATH = path.join(os.homedir(), 'Library', 'Applic
  * signed in to another plan, with no saved switcher login that still renews (`deadEmails`: Anthropic refused it, so it
  * spends nothing). claude-auto-switch counts such a plan by its newest
  * reading, less any reset since (desktop-switch-decision.mjs copyStanding), so the dashboard counts it the same way.
+ * The plan the app has just switched to stays idle while the app's own newest reading (`appReadings`, by email:
+ * { at }; never the CLI's) is still of another plan: until the app reads it, its newest reading is its room.
  * Empty when the app's account or the switcher's store cannot be read.
  */
-export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), appConfigPath = CLAUDE_APP_CONFIG_PATH, appCopiesDir = path.join(path.dirname(storePath), 'desktop-logins'), deadEmails = new Set()) {
+export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), appConfigPath = CLAUDE_APP_CONFIG_PATH, appCopiesDir = path.join(path.dirname(storePath), 'desktop-logins'), deadEmails = new Set(), { appReadings = new Map() } = {}) {
   const idle = new Set()
   const current = existsSync(appConfigPath) ? (await readJsonFile(appConfigPath).catch(() => null))?.lastKnownAccountUuid : null
+  const newestApp = [...appReadings].reduce((best, [email, reading]) => (reading.at > (best?.at ?? -Infinity) ? { email, at: reading.at } : best), null)
   const store = existsSync(storePath) ? await readJsonFile(storePath).catch(() => null) : null
   if (typeof current !== 'string' || !current || !Array.isArray(store?.accounts) || !existsSync(appCopiesDir)) return idle
   const saved = new Set(store.accounts.map((account) => String(account?.email ?? '').trim().toLowerCase()).filter((email) => email && !deadEmails.has(email)))
   for (const copy of readdirSync(appCopiesDir)) {
     const meta = await readJsonFile(path.join(appCopiesDir, copy, 'meta.json')).catch(() => null)
     const email = typeof meta?.email === 'string' ? meta.email.trim().toLowerCase() : ''
-    if (email && !saved.has(email) && String(meta.accountUuid ?? '').toLowerCase() !== current.toLowerCase()) idle.add(email)
+    if (!email || saved.has(email)) continue
+    const held = String(meta.accountUuid ?? '').toLowerCase() === current.toLowerCase()
+    const unreadSinceSwitch = newestApp != null && newestApp.email !== email
+    if (!held || unreadSinceSwitch) idle.add(email)
   }
   return idle
 }
@@ -444,7 +450,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
     const row = results.at(-1)
     if (row?.email === email && row.ok) Object.assign(row, { ok: false, reason: 'sign-in expired (renewal refused); row published as signed out' })
   }
-  const idle = await readIdleAppPlans(storePath, appConfigPath, undefined, new Set(dead.map(({ email }) => email.trim().toLowerCase())))
+  const idle = await readIdleAppPlans(storePath, appConfigPath, undefined, new Set(dead.map(({ email }) => email.trim().toLowerCase())), { appReadings: await readSwitcherReadingsByEmail(readingsPath, { prefix: 'desktop:' }) })
   for (const [email, { login, profile, usage: kept, readAt }] of byEmail) {
     const usage = kept ?? (await fetchClaudeUsage(login.oauth, fetcher, { refresh }))
     if (usage.error) {

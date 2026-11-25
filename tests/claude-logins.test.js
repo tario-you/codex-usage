@@ -12,6 +12,7 @@ import {
   buildClaudeSyncPayload,
   discoverClaudeLogins,
   fetchClaudeUsage,
+  readIdleAppPlans,
   syncClaudeOnce,
 } from '../bin/lib/claude-logins.js'
 
@@ -335,6 +336,22 @@ test('a plan whose saved login is dead, with the app on another plan, goes up id
   assert.deepEqual(parked.accountState.account.autoSwitch, { inPool: true, idle: true })
   assert.equal(parked.rateLimits.rateLimits.secondary.usedPercent, 46)
   assert.deepEqual((await sync('uuid-d')).accountState.account.autoSwitch, { inPool: true }, 'the app is spending it')
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('a plan the app has just switched to stays idle until the app reads it', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-switch-idle-'))
+  const storePath = path.join(dir, 'accounts.json')
+  const appConfigPath = path.join(dir, 'config.json')
+  await writeFile(storePath, JSON.stringify({ accounts: [] }))
+  await mkdir(path.join(dir, 'desktop-logins', 'uuid-e'), { recursive: true })
+  await writeFile(path.join(dir, 'desktop-logins', 'uuid-e', 'meta.json'), JSON.stringify({ email: 'e@example.com', accountUuid: 'uuid-e' }))
+  await writeFile(appConfigPath, JSON.stringify({ lastKnownAccountUuid: 'uuid-e' }))
+  const now = Date.parse('2026-11-25T18:12:00Z')
+  const lastRead = now - 6 * 86_400_000
+  const idle = (readings) => readIdleAppPlans(storePath, appConfigPath, undefined, new Set(), { appReadings: new Map(readings) })
+  assert.ok((await idle([['e@example.com', { at: lastRead }], ['u@example.com', { at: now - 40 * 60_000 }]])).has('e@example.com'), 'the app last read another plan 40 minutes ago: this one waits for its first reading')
+  assert.ok(!(await idle([['e@example.com', { at: now - 30_000 }], ['u@example.com', { at: now - 4 * 60_000 }]])).has('e@example.com'), 'the app has read it since')
   await rm(dir, { recursive: true, force: true })
 })
 
