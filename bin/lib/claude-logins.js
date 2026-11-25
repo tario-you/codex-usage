@@ -309,9 +309,6 @@ export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePat
 }
 
 /** Where the Claude app keeps the account it is signed in to, as a plain uuid (`lastKnownAccountUuid`). */
-/** How old the app's last reading of its previous plan may be while the plan it switched to still waits for its first. */
-export const APP_SWITCH_READ_GRACE_MS = 10 * 60 * 1000
-
 export const CLAUDE_APP_CONFIG_PATH = path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'config.json')
 
 /**
@@ -319,11 +316,11 @@ export const CLAUDE_APP_CONFIG_PATH = path.join(os.homedir(), 'Library', 'Applic
  * signed in to another plan, with no saved switcher login that still renews (`deadEmails`: Anthropic refused it, so it
  * spends nothing). claude-auto-switch counts such a plan by its newest
  * reading, less any reset since (desktop-switch-decision.mjs copyStanding), so the dashboard counts it the same way.
- * The plan the app has just switched to stays idle while the app's newest reading (`appReadings`, by email: { at }) is
- * (the app's own, not the CLI's) still of another plan and under APP_SWITCH_READ_GRACE_MS old; until the app reads it, its newest reading is its room.
+ * The plan the app has just switched to stays idle while the app's own newest reading (`appReadings`, by email:
+ * { at }; never the CLI's) is still of another plan: until the app reads it, its newest reading is its room.
  * Empty when the app's account or the switcher's store cannot be read.
  */
-export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), appConfigPath = CLAUDE_APP_CONFIG_PATH, appCopiesDir = path.join(path.dirname(storePath), 'desktop-logins'), deadEmails = new Set(), { appReadings = new Map(), now = Date.now() } = {}) {
+export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), appConfigPath = CLAUDE_APP_CONFIG_PATH, appCopiesDir = path.join(path.dirname(storePath), 'desktop-logins'), deadEmails = new Set(), { appReadings = new Map() } = {}) {
   const idle = new Set()
   const current = existsSync(appConfigPath) ? (await readJsonFile(appConfigPath).catch(() => null))?.lastKnownAccountUuid : null
   const newestApp = [...appReadings].reduce((best, [email, reading]) => (reading.at > (best?.at ?? -Infinity) ? { email, at: reading.at } : best), null)
@@ -335,7 +332,7 @@ export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), app
     const email = typeof meta?.email === 'string' ? meta.email.trim().toLowerCase() : ''
     if (!email || saved.has(email)) continue
     const held = String(meta.accountUuid ?? '').toLowerCase() === current.toLowerCase()
-    const unreadSinceSwitch = newestApp != null && newestApp.email !== email && now - newestApp.at <= APP_SWITCH_READ_GRACE_MS
+    const unreadSinceSwitch = newestApp != null && newestApp.email !== email
     if (!held || unreadSinceSwitch) idle.add(email)
   }
   return idle
@@ -453,7 +450,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
     const row = results.at(-1)
     if (row?.email === email && row.ok) Object.assign(row, { ok: false, reason: 'sign-in expired (renewal refused); row published as signed out' })
   }
-  const idle = await readIdleAppPlans(storePath, appConfigPath, undefined, new Set(dead.map(({ email }) => email.trim().toLowerCase())), { appReadings: await readSwitcherReadingsByEmail(readingsPath, { prefix: 'desktop:' }), now })
+  const idle = await readIdleAppPlans(storePath, appConfigPath, undefined, new Set(dead.map(({ email }) => email.trim().toLowerCase())), { appReadings: await readSwitcherReadingsByEmail(readingsPath, { prefix: 'desktop:' }) })
   for (const [email, { login, profile, usage: kept, readAt }] of byEmail) {
     const usage = kept ?? (await fetchClaudeUsage(login.oauth, fetcher, { refresh }))
     if (usage.error) {
