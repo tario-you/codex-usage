@@ -48,6 +48,8 @@ export interface ClaudeAccount {
   autoSwitch?: AutoSwitchMembership
   email?: string
   planType?: string
+  /** When the paid plan started; it renews on that day each month. */
+  subscriptionStartedAt?: string
   type: 'claude'
 }
 

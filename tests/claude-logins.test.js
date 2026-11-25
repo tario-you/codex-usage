@@ -362,3 +362,15 @@ test('a dead saved login the app has read since shows the app\'s reading', async
   assert.equal(summary.results[0].ok, true)
   await rm(dir, { recursive: true, force: true })
 })
+
+test("each plan's paid start comes from the switcher's cache and rides on its sync", async () => {
+  const { subscriptionStarts } = await import('../bin/lib/claude-logins.js')
+  const starts = subscriptionStarts({
+    'desktop:abc': { email: 'App@example.com', subscriptionCreatedAt: '2025-03-02T13:28:05Z' },
+    'login:saved': { subscriptionCreatedAt: '2025-06-10T00:00:00Z' },
+    'cli:x': { email: 'cli@example.com' },
+  }, [{ id: 'saved', source: 'switcher', email: 'saved@example.com' }])
+  assert.deepEqual([...starts], [['app@example.com', '2025-03-02T13:28:05Z'], ['saved@example.com', '2025-06-10T00:00:00Z']])
+  const payload = buildClaudeSyncPayload(usageBody(1, 2), { email: 'app@example.com', planType: 'max', subscriptionStartedAt: '2025-03-02T13:28:05Z' })
+  assert.equal(accountStateSchema.parse(payload.accountState).account.subscriptionStartedAt, '2025-03-02T13:28:05Z')
+})

@@ -53,6 +53,8 @@ const claudeAccountSchema = z.object({
   autoSwitch: autoSwitchSchema.optional(),
   email: z.string().optional(),
   planType: z.string().optional(),
+  // When the paid plan started (Anthropic's organization.subscription_created_at): it renews on that day each month.
+  subscriptionStartedAt: z.string().datetime({ offset: true }).optional(),
   type: z.literal('claude'),
 })
 

@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { queryClient } from '@/lib/query-client'
 
-import { formatPlanEnd, planEndFromDateInput, planEndsAt, planEndToDateInput } from './plan-end'
+import { formatPlanEnd, planEndFromDateInput, planEndsAt, planEndToDateInput, planRenewsAt } from './plan-end'
+
+const RENEWS = 'The paid plan renews this day: its billing date, rolled forward a month at a time. Set an end date if it will not renew.'
 
 const EXPLANATION =
   'The plan stops working on this day. Room it still has is lost then, so it is used before room on plans that last longer.'
@@ -22,12 +24,13 @@ export function PlanEndDate({
   now,
   session,
 }: {
-  account: { id: string; plan_ends_at?: string | null }
+  account: { id: string; plan_ends_at?: string | null; metadata?: unknown; raw_rate_limits?: unknown }
   canEdit: boolean
   now: number
   session: Session
 }) {
   const endsAt = planEndsAt(account)
+  const renewsAt = endsAt == null ? planRenewsAt(account, now) : null
   const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,10 +92,16 @@ export function PlanEndDate({
     )
   }
 
-  if (endsAt == null && !canEdit) return null
+  const renews = renewsAt != null ? (
+    <span className="text-[10px] leading-4 text-muted-foreground" title={RENEWS}>
+      renews {new Date(renewsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+    </span>
+  ) : null
+  if (endsAt == null && !canEdit) return renews
 
   return (
     <span className="inline-flex items-center gap-0.5">
+      {renews}
       {endsAt != null ? (
         <span className={`text-[10px] leading-4 ${endsAt <= now ? 'text-destructive' : 'text-muted-foreground'}`} title={EXPLANATION}>
           {formatPlanEnd(endsAt, now)}

@@ -68,7 +68,7 @@ function knownAutoSwitchMark(account: NonNullable<CodexAccountReadResponse['acco
  * only as an app sign-in copy is idle, so its last reading is still its room; without this the mark would age with
  * the reading and the plan would read stale while the agent vouches for it every minute.
  */
-async function refreshAutoSwitchMark(ownerUserId: string, accountKey: string, mark: NonNullable<ReturnType<typeof knownAutoSwitchMark>>) {
+async function refreshAutoSwitchMark(ownerUserId: string, accountKey: string, mark: ReturnType<typeof knownAutoSwitchMark>, startedAt: string | null = null) {
   const { data, error } = await serviceRoleSupabase
     .from('codex_accounts')
     .select('id, metadata')
@@ -80,9 +80,24 @@ async function refreshAutoSwitchMark(ownerUserId: string, accountKey: string, ma
   const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata) ? data.metadata : {}
   const { error: updateError } = await serviceRoleSupabase
     .from('codex_accounts')
-    .update({ metadata: { ...metadata, auto_switch: mark } })
+    .update({ metadata: { ...metadata, ...(mark ? { auto_switch: mark } : {}), ...(startedAt ? { subscription_started_at: startedAt } : {}) } })
     .eq('id', data.id)
   if (updateError) throw updateError
+}
+
+/** A Claude plan's paid start as this sync knows it, else as the row kept it: a sync that can't read it never clears it. */
+async function subscriptionStart(ownerUserId: string, accountKey: string, account: NonNullable<CodexAccountReadResponse['account']>) {
+  if (account.type === 'claude' && account.subscriptionStartedAt) return account.subscriptionStartedAt
+  if (account.type !== 'claude') return null
+  const { data, error } = await serviceRoleSupabase
+    .from('codex_accounts')
+    .select('metadata')
+    .eq('owner_user_id', ownerUserId)
+    .eq('account_key', accountKey)
+    .maybeSingle()
+  if (error) throw error
+  const kept = (data?.metadata as { subscription_started_at?: unknown } | null | undefined)?.subscription_started_at
+  return typeof kept === 'string' ? kept : null
 }
 
 /** The account keys the owner unlinked; background syncs skip them. */
@@ -138,10 +153,12 @@ export async function persistSnapshotForOwner({
   const signedOut = rateLimits.rateLimits.connection?.status === 'needs-login'
   if (readAt && !(!signedOut && (await dropSignedOutSince(ownerUserId, accountKey, readIso))) && (await isOlderThanRow(ownerUserId, accountKey, readIso))) {
     const mark = knownAutoSwitchMark(account, nowIso, device.machineName ?? device.label)
-    if (mark) await refreshAutoSwitchMark(ownerUserId, accountKey, mark)
+    const startedAt = account.type === 'claude' ? account.subscriptionStartedAt ?? null : null
+    if (mark || startedAt) await refreshAutoSwitchMark(ownerUserId, accountKey, mark, startedAt)
     return { unlinked: false, older: true }
   }
   const autoSwitch = await autoSwitchMark(ownerUserId, accountKey, account, nowIso, device.machineName ?? device.label)
+  const startedAt = await subscriptionStart(ownerUserId, accountKey, account)
   const planType =
     rateLimits.rateLimits.planType ??
     (account.type === 'chatgpt' || account.type === 'claude' ? account.planType ?? null : null)
@@ -157,6 +174,7 @@ export async function persistSnapshotForOwner({
       metadata: {
         auth_type: account.type,
         ...(autoSwitch ? { auto_switch: autoSwitch } : {}),
+        ...(startedAt ? { subscription_started_at: startedAt } : {}),
         device_id: device.deviceId,
         device_label: device.label,
         device_metadata: device.metadata ?? {},

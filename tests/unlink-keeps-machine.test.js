@@ -208,3 +208,23 @@ test('a real reading replaces signed-out marks made after it', async () => {
     globalThis.fetch = originalFetch
   }
 })
+
+test("a Claude plan's paid start stays on its row through syncs that can't read it, older readings included", async () => {
+  const originalFetch = globalThis.fetch
+  const device = { codexHome: null, deviceId: 'device-1', deviceKey, label: 'mac', machineName: 'mac' }
+  const tables = { codex_accounts: [] }
+  const claude = (extra = {}) => ({ account: { email: 'fan@example.com', type: 'claude', ...extra }, requiresOpenaiAuth: false })
+  globalThis.fetch = fakeSupabase(tables)
+  const started = () => tables.codex_accounts[0].metadata.subscription_started_at
+  try {
+    await persistSnapshotForOwner({ accountState: claude({ subscriptionStartedAt: '2025-03-02T13:28:05Z' }), device, ownerUserId: owner, rateLimits })
+    assert.equal(started(), '2025-03-02T13:28:05Z')
+    await persistSnapshotForOwner({ accountState: claude(), device, ownerUserId: owner, rateLimits })
+    assert.equal(started(), '2025-03-02T13:28:05Z', 'a sync that could not read it keeps it')
+    tables.codex_accounts[0].metadata = { auth_type: 'claude' }
+    await persistSnapshotForOwner({ accountState: claude({ subscriptionStartedAt: '2025-03-02T13:28:05Z' }), device, ownerUserId: owner, rateLimits, readAt: Date.parse('2020-01-01T00:00:00Z') })
+    assert.equal(started(), '2025-03-02T13:28:05Z', 'an older reading still brings it')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

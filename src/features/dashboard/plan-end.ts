@@ -40,3 +40,35 @@ export function formatPlanEnd(endsAt: number, now: number) {
   const day = new Date(endsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   return endsAt <= now ? `ended ${day}` : `ends ${day}`
 }
+
+/** The first monthly anniversary of `anchor` after `now`; a day the month lacks falls on its last day, as billing does. */
+export function renewalAfter(anchor: number, now: number): number {
+  const start = new Date(anchor)
+  for (let months = 0; months < 1200; months += 1) {
+    const year = start.getUTCFullYear() + Math.floor((start.getUTCMonth() + months) / 12)
+    const month = (start.getUTCMonth() + months) % 12
+    const day = Math.min(start.getUTCDate(), new Date(Date.UTC(year, month + 1, 0)).getUTCDate())
+    const at = Date.UTC(year, month, day, start.getUTCHours(), start.getUTCMinutes(), start.getUTCSeconds())
+    if (at > now) return at
+  }
+  return anchor
+}
+
+export interface PlanRenewalSource {
+  metadata?: unknown
+  raw_rate_limits?: unknown
+}
+
+/**
+ * When a paid plan with no typed end next renews: a Claude plan's start (Anthropic's subscription_created_at, kept as
+ * metadata.subscription_started_at) or a Codex plan's billing date (the switcher's subscription.endsAt, which stays at
+ * the period it was read in), each rolled forward a month at a time. Null for a cancelled plan, which ends instead.
+ */
+export function planRenewsAt(account: PlanRenewalSource, now: number): number | null {
+  const started = (account.metadata as { subscription_started_at?: unknown } | null | undefined)?.subscription_started_at
+  const startedAt = typeof started === 'string' ? Date.parse(started) : Number.NaN
+  if (Number.isFinite(startedAt)) return renewalAfter(startedAt, now)
+  const subscription = (account.raw_rate_limits as { subscription?: { cancelled?: unknown; endsAt?: unknown } } | null | undefined)?.subscription
+  if (subscription?.cancelled === true || typeof subscription?.endsAt !== 'number') return null
+  return renewalAfter(subscription.endsAt * 1000, now)
+}

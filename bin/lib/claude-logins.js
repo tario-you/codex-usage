@@ -79,6 +79,17 @@ export async function readSwitcherReadingsByEmail(readingsPath = CLAUDE_SWITCHER
   return readings
 }
 
+/** Each email's paid-plan start from the switcher's cache: app and CLI entries carry the email, saved logins their id. */
+export function subscriptionStarts(cache, logins = []) {
+  const emailOf = new Map(logins.filter((login) => login.source === 'switcher' && login.email).map((login) => [`login:${login.id}`, login.email]))
+  const starts = new Map()
+  for (const [key, entry] of Object.entries(cache ?? {})) {
+    const email = typeof entry?.email === 'string' ? entry.email.toLowerCase() : emailOf.get(key)
+    if (email && typeof entry?.subscriptionCreatedAt === 'string') starts.set(email, entry.subscriptionCreatedAt)
+  }
+  return starts
+}
+
 /** The usage endpoint's shape, rebuilt from a switcher reading, for buildClaudeSyncPayload. */
 export function usageFromReading(verdict) {
   const window = (entry) => (typeof entry?.utilization === 'number' ? { utilization: entry.utilization, resets_at: entry.resetsAt ?? null } : null)
@@ -253,6 +264,7 @@ export async function fetchClaudeProfile(oauth, fetcher = fetch) {
     // Anthropic's organization says the plan now; the sign-in's subscriptionType is what it was when the login was
     // saved, so a lapsed Max kept reading "max" after it went free.
     planType: organizationType ? organizationType.replace(/^claude_/, '') : oauth.subscriptionType ?? null,
+    subscriptionStartedAt: typeof body?.organization?.subscription_created_at === 'string' ? body.organization.subscription_created_at : null,
   }
 }
 
@@ -262,11 +274,12 @@ const profilePlans = new Map()
 /** A switcher-read login's plan from Anthropic's profile, read at most hourly per sign-in; null when it cannot be read. */
 async function profilePlan(login, fetcher, now) {
   const kept = profilePlans.get(login.oauth.accessToken)
-  if (kept && now - kept.at < PROFILE_PLAN_TTL_MS) return kept.planType
+  if (kept && now - kept.at < PROFILE_PLAN_TTL_MS) return kept
   const profile = await fetchClaudeProfile(login.oauth, fetcher).catch(() => null)
-  if (!profile?.planType || !profile.email) return null
-  profilePlans.set(login.oauth.accessToken, { at: now, planType: profile.planType })
-  return profile.planType
+  if (!profile?.planType || !profile.email) return { planType: null, subscriptionStartedAt: null }
+  const read = { at: now, planType: profile.planType, subscriptionStartedAt: profile.subscriptionStartedAt ?? null }
+  profilePlans.set(login.oauth.accessToken, read)
+  return read
 }
 
 function windowValue(entry, windowDurationMins) {
@@ -336,7 +349,7 @@ export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), app
  * The dashboard's sync payload, built from Claude's usage endpoint response. `autoSwitch` is left out when unknown;
  * `idle` marks a pool plan nothing here can spend (readIdleAppPlans).
  */
-export function buildClaudeSyncPayload(data, { email = null, planType = null, autoSwitch = null, idle = false, connection = null } = {}) {
+export function buildClaudeSyncPayload(data, { email = null, planType = null, autoSwitch = null, idle = false, connection = null, subscriptionStartedAt = null } = {}) {
   const credits = { balance: '0', hasCredits: false, unlimited: false }
   const main = {
     credits,
@@ -354,7 +367,7 @@ export function buildClaudeSyncPayload(data, { email = null, planType = null, au
   if (connection) main.connection = connection
   return {
     accountState: {
-      account: { type: 'claude', ...(email ? { email } : {}), ...(planType ? { planType } : {}), ...(typeof autoSwitch === 'boolean' ? { autoSwitch: { inPool: autoSwitch, ...(autoSwitch && idle ? { idle: true } : {}) } } : {}) },
+      account: { type: 'claude', ...(email ? { email } : {}), ...(planType ? { planType } : {}), ...(subscriptionStartedAt ? { subscriptionStartedAt } : {}), ...(typeof autoSwitch === 'boolean' ? { autoSwitch: { inPool: autoSwitch, ...(autoSwitch && idle ? { idle: true } : {}) } } : {}) },
       requiresOpenaiAuth: false,
     },
     rateLimits: { rateLimits: main, rateLimitsByLimitId: byLimitId },
@@ -385,6 +398,9 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
   const dead = []
   const byEmail = new Map()
   const fromSwitcher = new Map()
+  // Each plan's paid start: the switcher's cached profile reads (the app's token reaches plans whose saved login is dead),
+  // then this pass's own profile reads over them.
+  const starts = subscriptionStarts(raw, found)
   for (const login of found) {
     const reading = login.source === 'switcher' && login.email ? readings.get(login.id) : null
     if (reading && !fromSwitcher.has(login.email)) fromSwitcher.set(login.email, { login, reading })
@@ -396,6 +412,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       results.push({ email: login.email, source: login.source, ok: false, reason: profile?.failure ?? 'profile unavailable; the sign-in may have expired' })
       continue
     }
+    if (profile.subscriptionStartedAt) starts.set(profile.email, profile.subscriptionStartedAt)
     if (fromSwitcher.has(profile.email)) continue
     const known = byEmail.get(profile.email)
     if (!known || (!known.login.oauth.refreshToken && login.oauth.refreshToken)) byEmail.set(profile.email, { login, profile })
@@ -409,10 +426,12 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
       results.push({ email, source: login.source, ok: false, reason: `claude-auto-switch's newest reading is ${Math.round(ageMs / 60_000)} min old` })
       continue
     }
-    byEmail.set(email, { login, profile: { email, planType: await profilePlan(login, fetcher, now) }, usage: { data: usageFromReading(reading.verdict) } })
+    const read = await profilePlan(login, fetcher, now)
+    if (read.subscriptionStartedAt) starts.set(email, read.subscriptionStartedAt)
+    byEmail.set(email, { login, profile: { email, planType: read.planType }, usage: { data: usageFromReading(reading.verdict) } })
   }
   const publish = async (email, source, data, { planType = null, readAt, idle: unspent = false, connection = null } = {}) => {
-    const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null, idle: unspent, connection })
+    const payload = buildClaudeSyncPayload(data, { email, planType, autoSwitch: pool ? pool.has(email) : null, idle: unspent, connection, subscriptionStartedAt: starts.get(email) ?? null })
     const response = await fetcher(
       config.syncUrl,
       dashboardRequest({ ...payload, device, deviceToken: config.deviceToken, ...(readAt ? { readAt } : {}) }, { timeoutMs: DASHBOARD_UPLOAD_TIMEOUT_MS }),

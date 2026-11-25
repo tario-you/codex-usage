@@ -83,3 +83,13 @@ test('only the owner sets or clears a plan end, and only a real moment is stored
     globalThis.fetch = originalFetch
   }
 })
+
+test('a paid plan with no typed end shows its next monthly renewal', async () => {
+  const { planRenewsAt, renewalAfter } = await import('../src/features/dashboard/plan-end.ts')
+  const now = Date.parse('2026-11-25T18:30:00Z')
+  assert.equal(new Date(planRenewsAt({ metadata: { subscription_started_at: '2025-03-02T13:28:05Z' } }, now)).toISOString(), '2026-12-02T13:28:05.000Z', 'a Claude plan, from its start')
+  assert.equal(new Date(planRenewsAt({ raw_rate_limits: { subscription: { cancelled: false, endsAt: Date.parse('2026-10-08T05:38:20Z') / 1000 } } }, now)).toISOString(), '2026-12-08T05:38:20.000Z', 'a Codex billing date read two periods ago')
+  assert.equal(planRenewsAt({ raw_rate_limits: { subscription: { cancelled: true, endsAt: 1 } } }, now), null, 'a cancelled plan ends instead')
+  assert.equal(planRenewsAt({}, now), null, 'nothing known')
+  assert.equal(new Date(renewalAfter(Date.parse('2026-01-31T00:00:00Z'), Date.parse('2026-02-01T00:00:00Z'))).toISOString(), '2026-02-28T00:00:00.000Z', 'the 31st renews on a short month\'s last day')
+})
