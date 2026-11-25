@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -347,13 +347,12 @@ test('a plan the app has just switched to stays idle until the app reads it', as
   await mkdir(path.join(dir, 'desktop-logins', 'uuid-e'), { recursive: true })
   await writeFile(path.join(dir, 'desktop-logins', 'uuid-e', 'meta.json'), JSON.stringify({ email: 'e@example.com', accountUuid: 'uuid-e' }))
   await writeFile(appConfigPath, JSON.stringify({ lastKnownAccountUuid: 'uuid-e' }))
-  const switchedAt = Date.parse('2026-11-25T18:11:43Z')
-  await utimes(appConfigPath, switchedAt / 1000, switchedAt / 1000)
-  const idle = (at, now) => readIdleAppPlans(storePath, appConfigPath, undefined, new Set(), { appReadings: new Map([['e@example.com', { at }]]), now })
+  const now = Date.parse('2026-11-25T18:12:00Z')
   const lastRead = Date.parse('2026-11-19T13:07:15Z')
-  assert.ok((await idle(lastRead, switchedAt + 60_000)).has('e@example.com'), 'switched a minute ago, read six days ago: its reading is still its room')
-  assert.ok(!(await idle(switchedAt + 66_000, switchedAt + 70_000)).has('e@example.com'), 'the app has read it since the switch')
-  assert.ok(!(await idle(lastRead, switchedAt + 11 * 60_000)).has('e@example.com'), 'no reading ten minutes after the switch: the app is spending it')
+  const idle = (readings) => readIdleAppPlans(storePath, appConfigPath, undefined, new Set(), { appReadings: new Map(readings), now })
+  assert.ok((await idle([['e@example.com', { at: lastRead }], ['u@example.com', { at: now - 4 * 60_000 }]])).has('e@example.com'), 'the app last read another plan 4 minutes ago: this one waits for its first reading')
+  assert.ok(!(await idle([['e@example.com', { at: now - 30_000 }], ['u@example.com', { at: now - 4 * 60_000 }]])).has('e@example.com'), 'the app has read it since')
+  assert.ok(!(await idle([['e@example.com', { at: lastRead }], ['u@example.com', { at: now - 11 * 60_000 }]])).has('e@example.com'), 'no reading for 11 minutes: the app is spending it')
   await rm(dir, { recursive: true, force: true })
 })
 

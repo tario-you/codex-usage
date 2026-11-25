@@ -1,6 +1,6 @@
 import { DASHBOARD_UPLOAD_TIMEOUT_MS, dashboardRequest } from './dashboard-request.js'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -68,10 +68,10 @@ export async function readSwitcherReadings(readingsPath = CLAUDE_SWITCHER_READIN
  * (her-team#6467), so it is read only while the app is signed in to it, and no one can read it after. The newest such
  * reading of each account, by email: { at, verdict }.
  */
-export async function readSwitcherReadingsByEmail(readingsPath = CLAUDE_SWITCHER_READINGS_PATH) {
+export async function readSwitcherReadingsByEmail(readingsPath = CLAUDE_SWITCHER_READINGS_PATH, { prefix = '' } = {}) {
   const readings = new Map()
   for (const [key, entry] of Object.entries(await readSwitcherCache(readingsPath))) {
-    if (key.startsWith('login:') || typeof entry?.email !== 'string') continue
+    if (key.startsWith('login:') || !key.startsWith(prefix) || typeof entry?.email !== 'string') continue
     const newest = newestReading(entry)
     const email = entry.email.toLowerCase()
     if (newest && !(readings.get(email)?.at >= newest.at)) readings.set(email, newest)
@@ -309,7 +309,7 @@ export async function readClaudeAutoSwitchPool(storePath = resolveClaudeStorePat
 }
 
 /** Where the Claude app keeps the account it is signed in to, as a plain uuid (`lastKnownAccountUuid`). */
-/** How long after the app switches plans its first reading of the new one may take before that plan reads as spent. */
+/** How old the app's last reading of its previous plan may be while the plan it switched to still waits for its first. */
 export const APP_SWITCH_READ_GRACE_MS = 10 * 60 * 1000
 
 export const CLAUDE_APP_CONFIG_PATH = path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'config.json')
@@ -319,14 +319,14 @@ export const CLAUDE_APP_CONFIG_PATH = path.join(os.homedir(), 'Library', 'Applic
  * signed in to another plan, with no saved switcher login that still renews (`deadEmails`: Anthropic refused it, so it
  * spends nothing). claude-auto-switch counts such a plan by its newest
  * reading, less any reset since (desktop-switch-decision.mjs copyStanding), so the dashboard counts it the same way.
- * The plan the app has just switched to stays idle until the app's first reading of it arrives (`appReadings`, by
- * email: { at }), at most APP_SWITCH_READ_GRACE_MS after the switch; until then its newest reading is still its room.
+ * The plan the app has just switched to stays idle while the app's newest reading (`appReadings`, by email: { at }) is
+ * (the app's own, not the CLI's) still of another plan and under APP_SWITCH_READ_GRACE_MS old; until the app reads it, its newest reading is its room.
  * Empty when the app's account or the switcher's store cannot be read.
  */
 export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), appConfigPath = CLAUDE_APP_CONFIG_PATH, appCopiesDir = path.join(path.dirname(storePath), 'desktop-logins'), deadEmails = new Set(), { appReadings = new Map(), now = Date.now() } = {}) {
   const idle = new Set()
   const current = existsSync(appConfigPath) ? (await readJsonFile(appConfigPath).catch(() => null))?.lastKnownAccountUuid : null
-  const switchedAt = existsSync(appConfigPath) ? statSync(appConfigPath).mtimeMs : null
+  const newestApp = [...appReadings].reduce((best, [email, reading]) => (reading.at > (best?.at ?? -Infinity) ? { email, at: reading.at } : best), null)
   const store = existsSync(storePath) ? await readJsonFile(storePath).catch(() => null) : null
   if (typeof current !== 'string' || !current || !Array.isArray(store?.accounts) || !existsSync(appCopiesDir)) return idle
   const saved = new Set(store.accounts.map((account) => String(account?.email ?? '').trim().toLowerCase()).filter((email) => email && !deadEmails.has(email)))
@@ -335,7 +335,7 @@ export async function readIdleAppPlans(storePath = resolveClaudeStorePath(), app
     const email = typeof meta?.email === 'string' ? meta.email.trim().toLowerCase() : ''
     if (!email || saved.has(email)) continue
     const held = String(meta.accountUuid ?? '').toLowerCase() === current.toLowerCase()
-    const unreadSinceSwitch = switchedAt != null && now >= switchedAt && now - switchedAt <= APP_SWITCH_READ_GRACE_MS && !((appReadings.get(email)?.at ?? 0) >= switchedAt)
+    const unreadSinceSwitch = newestApp != null && newestApp.email !== email && now - newestApp.at <= APP_SWITCH_READ_GRACE_MS
     if (!held || unreadSinceSwitch) idle.add(email)
   }
   return idle
@@ -453,7 +453,7 @@ export async function syncClaudeOnce({ config, device, fetcher = fetch, logins =
     const row = results.at(-1)
     if (row?.email === email && row.ok) Object.assign(row, { ok: false, reason: 'sign-in expired (renewal refused); row published as signed out' })
   }
-  const idle = await readIdleAppPlans(storePath, appConfigPath, undefined, new Set(dead.map(({ email }) => email.trim().toLowerCase())), { appReadings, now })
+  const idle = await readIdleAppPlans(storePath, appConfigPath, undefined, new Set(dead.map(({ email }) => email.trim().toLowerCase())), { appReadings: await readSwitcherReadingsByEmail(readingsPath, { prefix: 'desktop:' }), now })
   for (const [email, { login, profile, usage: kept, readAt }] of byEmail) {
     const usage = kept ?? (await fetchClaudeUsage(login.oauth, fetcher, { refresh }))
     if (usage.error) {
