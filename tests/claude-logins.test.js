@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -12,6 +12,7 @@ import {
   buildClaudeSyncPayload,
   discoverClaudeLogins,
   fetchClaudeUsage,
+  readIdleAppPlans,
   syncClaudeOnce,
 } from '../bin/lib/claude-logins.js'
 
@@ -335,6 +336,24 @@ test('a plan whose saved login is dead, with the app on another plan, goes up id
   assert.deepEqual(parked.accountState.account.autoSwitch, { inPool: true, idle: true })
   assert.equal(parked.rateLimits.rateLimits.secondary.usedPercent, 46)
   assert.deepEqual((await sync('uuid-d')).accountState.account.autoSwitch, { inPool: true }, 'the app is spending it')
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('a plan the app has just switched to stays idle until the app reads it', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-switch-idle-'))
+  const storePath = path.join(dir, 'accounts.json')
+  const appConfigPath = path.join(dir, 'config.json')
+  await writeFile(storePath, JSON.stringify({ accounts: [] }))
+  await mkdir(path.join(dir, 'desktop-logins', 'uuid-e'), { recursive: true })
+  await writeFile(path.join(dir, 'desktop-logins', 'uuid-e', 'meta.json'), JSON.stringify({ email: 'e@example.com', accountUuid: 'uuid-e' }))
+  await writeFile(appConfigPath, JSON.stringify({ lastKnownAccountUuid: 'uuid-e' }))
+  const switchedAt = Date.parse('2026-11-25T18:11:43Z')
+  await utimes(appConfigPath, switchedAt / 1000, switchedAt / 1000)
+  const idle = (at, now) => readIdleAppPlans(storePath, appConfigPath, undefined, new Set(), { appReadings: new Map([['e@example.com', { at }]]), now })
+  const lastRead = Date.parse('2026-11-19T13:07:15Z')
+  assert.ok((await idle(lastRead, switchedAt + 60_000)).has('e@example.com'), 'switched a minute ago, read six days ago: its reading is still its room')
+  assert.ok(!(await idle(switchedAt + 66_000, switchedAt + 70_000)).has('e@example.com'), 'the app has read it since the switch')
+  assert.ok(!(await idle(lastRead, switchedAt + 11 * 60_000)).has('e@example.com'), 'no reading ten minutes after the switch: the app is spending it')
   await rm(dir, { recursive: true, force: true })
 })
 
