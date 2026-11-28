@@ -5,13 +5,13 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
 import path from 'node:path'
+import { AGENT_FILES as files, UPLOADER_LABEL as label } from './switcher-health-files.mjs'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 if (process.argv.slice(2).join(' ') !== '--apply') throw new Error('Use --apply')
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-const files = ['bin/switcher-health-agent.js', 'bin/lib/sync-all.js', 'bin/lib/login-file.js', 'bin/lib/reset-credits.js', 'bin/lib/plan-order.js', 'bin/lib/dashboard-request.js', 'bin/lib/claude-logins.js', 'bin/lib/system-proxy.js', 'bin/lib/repair-claude.js']
-if (run('git', ['-C', root, 'status', '--porcelain', '--', ...files, 'scripts/install-switcher-health-sync.mjs']).trim()) throw new Error('Commit the uploader before installing its snapshot')
+if (run('git', ['-C', root, 'status', '--porcelain', '--', ...files, 'scripts/install-switcher-health-sync.mjs', 'scripts/switcher-health-files.mjs']).trim()) throw new Error('Commit the uploader before installing its snapshot')
 const revision = run('git', ['-C', root, 'rev-parse', 'HEAD']).trim()
-const home = os.homedir(), label = 'com.tarioyou.codex-usage-sync-all'
+const home = os.homedir()
 const plist = path.join(home, 'Library/LaunchAgents', label + '.plist')
 if (!existsSync(plist)) throw new Error('The paired hosted uploader must already be installed')
 const release = path.join(home, '.local/share/codex-usage/sync-agent', revision)
